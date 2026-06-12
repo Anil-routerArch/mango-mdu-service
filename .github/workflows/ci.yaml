@@ -1,0 +1,53 @@
+name: Go Continuous Integration
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Verify Module Dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Check Code Formatting
+        run: |
+          unformatted=$(find . -name "*.go" -not -path "*/vendor/*" -not -path "*/tmp_test/*" -print0 | xargs -0 -r gofmt -l)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not formatted properly:"
+            echo "$unformatted"
+            echo "Please run 'gofmt -w .' on your local files."
+            exit 1
+          fi
+
+      - name: Run Unit Tests
+        run: |
+          # Mock the required environment variables enforced by the discovery and logger libraries
+          export SERVICE_NAME="mango-go-foundation-service"
+          export SERVICE_TYPE="mango-go-foundation-service"
+          export SERVICE_VERSION="dev"
+          export SYSTEM_URI_PRIVATE="https://localhost:17007"
+          export SYSTEM_URI_PUBLIC="https://localhost:8088"
+          export DISCOVERY_TOPIC="service_events"
+          
+          go test -v -race ./...
+
+      - name: Compile Binary
+        run: |
+          make build
