@@ -5,6 +5,8 @@ This document details the architectural layout, database models, and internal lo
 Temporary scaffold placeholder note:
 the sample `items` CRUD, `sample_items` table, and related example flow below are starter scaffold artifacts only. They are not intended to represent the final MDU service design.
 
+The example diagram and schema notes below describe the current scaffold sample flow only. They are not a final statement of MDU routing, subsystem exposure, or production domain structure.
+
 ---
 
 ## 1. High-Level Architecture
