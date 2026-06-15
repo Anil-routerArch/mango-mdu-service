@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/routerarchitects/mango-go-foundation-service/internal/db"
-	"github.com/routerarchitects/mango-go-foundation-service/internal/models"
+	"github.com/routerarchitects/mango-mdu-service/internal/db"
+	"github.com/routerarchitects/mango-mdu-service/internal/models"
 	"github.com/routerarchitects/ra-common-mods/apperror"
 )
 

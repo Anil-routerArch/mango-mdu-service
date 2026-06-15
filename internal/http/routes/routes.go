@@ -2,7 +2,7 @@ package routes
 
 import (
 	"github.com/gofiber/fiber/v3"
-	"github.com/routerarchitects/mango-go-foundation-service/internal/http/handlers"
+	"github.com/routerarchitects/mango-mdu-service/internal/http/handlers"
 	subsysteroutes "github.com/routerarchitects/ow-common-mods/fiber/system-routes"
 )
 

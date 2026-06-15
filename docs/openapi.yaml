@@ -1,15 +1,15 @@
 openapi: 3.0.0
 info:
-  title: "{{SERVICE_NAME}} API"
+  title: "owmdu API"
   version: "1.0.0"
   description: |
-    REST API definition for {{SERVICE_NAME}} microservice.
+    REST API definition for owmdu microservice.
     
     ### Dual-Port HTTP Architecture
     The microservice operates two isolated HTTP interfaces:
-    1. **Public Port (default: 8088)**: Exposes business-level API endpoints (such as `/api/v1/items`).
+    1. **Public Port (default: 16010)**: Exposes business-level API endpoints (such as `/api/v1/items`).
        * Authentication: Enabled by default, uses public/private token validation via OpenWiFi Security service.
-    2. **Private Port (default: 17007)**: Exposes internal administration, metrics, and diagnostics.
+    2. **Private Port (default: 17010)**: Exposes internal administration, metrics, and diagnostics.
        * Authentication: Requires both `X-INTERNAL-NAME` and `X-API-KEY` headers.
     
     Both ports serve the unauthenticated health endpoint `/livez`.
@@ -21,7 +21,7 @@ servers:
         default: "localhost"
         description: "Hostname/IP of the public service"
       publicPort:
-        default: "8088"
+        default: "16010"
         description: "Public API interface port"
   - url: "https://{host}:{privatePort}"
     description: "Private/Internal HTTP API Interface"
@@ -30,7 +30,7 @@ servers:
         default: "localhost"
         description: "Hostname/IP of the private service"
       privatePort:
-        default: "17007"
+        default: "17010"
         description: "Private management/diagnostics port"
 security:
   - PublicTokenAuth: []

@@ -6,11 +6,11 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	// Set required environment variables enforced by discovery/logger common packages
-	t.Setenv("SERVICE_NAME", "mango-go-foundation-service")
-	t.Setenv("SERVICE_TYPE", "mango-go-foundation-service")
+	t.Setenv("SERVICE_NAME", "owmdu")
+	t.Setenv("SERVICE_TYPE", "owmdu")
 	t.Setenv("SERVICE_VERSION", "dev")
-	t.Setenv("SYSTEM_URI_PRIVATE", "https://localhost:17007")
-	t.Setenv("SYSTEM_URI_PUBLIC", "https://localhost:8088")
+	t.Setenv("SYSTEM_URI_PRIVATE", "https://localhost:17010")
+	t.Setenv("SYSTEM_URI_PUBLIC", "https://localhost:16010")
 	t.Setenv("DISCOVERY_TOPIC", "service_events")
 
 	cfg, err := Load()
@@ -18,12 +18,12 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("expected no error loading configuration defaults, got: %v", err)
 	}
 
-	if cfg.Server.HTTPPort != 8088 {
-		t.Errorf("expected default HTTPPort to be 8088, got: %d", cfg.Server.HTTPPort)
+	if cfg.Server.HTTPPort != 16010 {
+		t.Errorf("expected default HTTPPort to be 16010, got: %d", cfg.Server.HTTPPort)
 	}
 
-	if cfg.Server.PrivatePort != 17007 {
-		t.Errorf("expected default PrivatePort to be 17007, got: %d", cfg.Server.PrivatePort)
+	if cfg.Server.PrivatePort != 17010 {
+		t.Errorf("expected default PrivatePort to be 17010, got: %d", cfg.Server.PrivatePort)
 	}
 
 	if cfg.Database.Port != 5432 {

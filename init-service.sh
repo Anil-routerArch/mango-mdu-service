@@ -18,7 +18,7 @@ usage() {
     echo "  target-directory  Optional destination folder. If omitted, runs in-place."
     echo ""
     echo "Example:"
-    echo "  $0 mango-go-foundation-service 16012 17012 ./tmp_test"
+    echo "  $0 mango-mdu-service 16010 17010 ./tmp_test"
     exit 1
 }
 
@@ -109,15 +109,15 @@ find . -type f \( \
     -name "*.sql" \
     \) -not -path "*/.git/*" -not -name "init-service.sh" -print0 | while IFS= read -r -d '' file; do
     # Replace foundation module path with the new module path
-    sed -i "s|github.com/routerarchitects/mango-go-foundation-service|github.com/routerarchitects/$SERVICE_NAME|g" "$file"
+    sed -i "s|github.com/routerarchitects/mango-mdu-service|github.com/routerarchitects/$SERVICE_NAME|g" "$file"
     
     # Replace service name placeholder
-    sed -i "s|{{SERVICE_NAME}}|$SERVICE_NAME|g" "$file"
-    sed -i "s|mango-go-foundation-service|$SERVICE_NAME|g" "$file"
+    sed -i "s|owmdu|$SERVICE_NAME|g" "$file"
+    sed -i "s|mango-mdu-service|$SERVICE_NAME|g" "$file"
     
     # Replace ports placeholders
-    sed -i "s|{{PUBLIC_PORT}}|$PUBLIC_PORT|g" "$file"
-    sed -i "s|{{PRIVATE_PORT}}|$PRIVATE_PORT|g" "$file"
+    sed -i "s|16010|$PUBLIC_PORT|g" "$file"
+    sed -i "s|17010|$PRIVATE_PORT|g" "$file"
 done
 
 # 3. Rename environment files to match the service name

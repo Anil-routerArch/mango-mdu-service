@@ -1,6 +1,6 @@
-# Mango Cloud Go Foundation Service
+# Mango MDU Service
 
-A standardized, production-ready microservice foundation skeleton for the Mango Cloud (OpenWiFi) environment. This service provides a pre-configured architecture featuring dual-port HTTP server separation, PostgreSQL integration, automated schema migrations, and Service Discovery out-of-the-box.
+A repo-ready foundation for the Mango Cloud MDU backend service in the OpenWiFi environment. This service is intended to evolve into the MDU orchestration layer that integrates with OWSEC and PROV.
 
 ---
 
@@ -45,9 +45,9 @@ A standardized, production-ready microservice foundation skeleton for the Mango 
 
 ---
 
-## Scaffolding a New Service
+## Bootstrap Reference
 
-To instantiate a new service using this foundation template:
+This repository started from a Go service foundation template. The example scaffold command is kept only as a reference for how the repo was initialized.
 
 1. Execute the `init-service.sh` script, providing your new service name, public API port, private API port, and target directory:
    ```bash
@@ -56,7 +56,7 @@ To instantiate a new service using this foundation template:
 
 2. **Example**:
    ```bash
-   ./init-service.sh mango-go-foundation-service 16012 17012 ../mango-go-foundation-service
+   ./init-service.sh mango-mdu-service 16010 17010 ../mango-mdu-service
    ```
 
 3. Navigate to the generated directory and start customizing.

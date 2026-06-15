@@ -7,18 +7,18 @@
 version: '3.8'
 
 services:
-  {{SERVICE_NAME}}:
-    image: {{SERVICE_NAME}}:latest
+  owmdu:
+    image: owmdu:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: openwifi_{{SERVICE_NAME}}
+    container_name: openwifi_owmdu
     networks:
       openwifi:
         aliases:
-          - {{SERVICE_NAME}}.wlan.local
+          - owmdu.wlan.local
     env_file:
-      - {{SERVICE_NAME}}.env
+      - owmdu.env
     depends_on:
       init-kafka:
         condition: service_completed_successfully
@@ -27,9 +27,9 @@ services:
     restart: unless-stopped
     volumes:
       # Data directory for SQL state, logs, and uploads
-      - "./{{SERVICE_NAME}}_data:/app/data"
+      - "./owmdu_data:/app/data"
       # Share SSL/TLS certificates mounted from the compose folder
       - "./certs:/app/certs"
     ports:
-      - "{{PUBLIC_PORT}}:{{PUBLIC_PORT}}"
-      - "{{PRIVATE_PORT}}:{{PRIVATE_PORT}}"
+      - "16010:16010"
+      - "17010:17010"

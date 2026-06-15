@@ -2,7 +2,7 @@
 bin/
 dist/
 out/
-/mango-go-foundation-service
+/owmdu
 
 # Dependency directory (if vendoring)
 vendor/

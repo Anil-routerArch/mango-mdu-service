@@ -1,6 +1,6 @@
-# Service Design: {{SERVICE_NAME}}
+# Service Design: owmdu
 
-This document details the architectural layout, database models, and internal logic flows for the **{{SERVICE_NAME}}** microservice.
+This document details the architectural layout, database models, and internal logic flows for the **owmdu** microservice.
 
 ---
 

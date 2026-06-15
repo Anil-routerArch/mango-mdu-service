@@ -39,11 +39,11 @@ jobs:
       - name: Run Unit Tests
         run: |
           # Mock the required environment variables enforced by the discovery and logger libraries
-          export SERVICE_NAME="mango-go-foundation-service"
-          export SERVICE_TYPE="mango-go-foundation-service"
+          export SERVICE_NAME="owmdu"
+          export SERVICE_TYPE="owmdu"
           export SERVICE_VERSION="dev"
-          export SYSTEM_URI_PRIVATE="https://localhost:17007"
-          export SYSTEM_URI_PUBLIC="https://localhost:8088"
+          export SYSTEM_URI_PRIVATE="https://localhost:17010"
+          export SYSTEM_URI_PUBLIC="https://localhost:16010"
           export DISCOVERY_TOPIC="service_events"
           
           go test -v -race ./...

@@ -6,8 +6,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v3"
-	"github.com/routerarchitects/mango-go-foundation-service/internal/models"
-	"github.com/routerarchitects/mango-go-foundation-service/internal/services"
+	"github.com/routerarchitects/mango-mdu-service/internal/models"
+	"github.com/routerarchitects/mango-mdu-service/internal/services"
 	"github.com/routerarchitects/ra-common-mods/apperror"
 )
 
