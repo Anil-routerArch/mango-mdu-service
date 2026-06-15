@@ -37,3 +37,5 @@ mem.pprof
 # Local certs and temporary scaffold tests
 certs/
 tmp_test/
+
+init-service.shinit-service.sh
