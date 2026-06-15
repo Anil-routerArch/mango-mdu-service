@@ -18,14 +18,14 @@ Important: the currently checked-in sample CRUD, sample database schema, and `/a
 │   └── schema/                  # SQL schema migrations directory
 │       └── 0001_initial.sql     # Placeholder SQL table setup
 ├── docs/                        # Specifications and API contracts templates
-│   ├── requirements.md          # Requirements template
+│   ├── requirement.md           # Working requirements document
 │   ├── design.md                # Technical design doc template
 │   └── openapi.yaml             # OpenAPI (Swagger) api definition
 ├── configs/                     # Configurations for development/testing
 │   └── local-dev.env            # Env configuration for local running (outside Docker)
 ├── deployments/                 # Deployment-related configurations
 │   └── docker-compose/
-│       ├── docker-compose.env   # Env template for Docker Compose execution
+│       ├── mango-mdu-service.env # Env template for Docker Compose execution
 │       └── docker-compose.yaml  # Docker Compose deployment integration template
 ├── external/                    # Third-party API client integration wrappers
 │   └── README.md                # Developer guide for external adapters
@@ -40,28 +40,9 @@ Important: the currently checked-in sample CRUD, sample database schema, and `/a
 ├── .dockerignore                # Exclusions for Docker build context
 ├── .gitignore                   # Exclusions for Git repository
 ├── Dockerfile                   # Multi-stage production container configuration
-├── init-service.sh              # Scaffolding helper script to rename/configure
 ├── Makefile                     # Build, run, test, and containerize commands
 ├── README.md                    # This developer guide
 ```
-
----
-
-## Bootstrap Reference
-
-This repository started from a Go service foundation template. The example scaffold command is kept only as a reference for how the repo was initialized.
-
-1. Execute the `init-service.sh` script, providing your new service name, public API port, private API port, and target directory:
-   ```bash
-   ./init-service.sh <new-service-name> <public-port> <private-port> [target-directory]
-   ```
-
-2. **Example**:
-   ```bash
-   ./init-service.sh mango-mdu-service 16010 17010 ../mango-mdu-service
-   ```
-
-3. Navigate to the generated directory and start customizing.
 
 ---
 
@@ -96,18 +77,16 @@ make docker-build
 ```
 
 ### 2. Integrate with Mango Cloud Compose Stack
-1. When you run `./init-service.sh`, prompt for the path of your `docker-compose` directory. The script will automatically copy the generated `.env` configuration file to that directory.
-
-2. Alternatively, copy it manually:
+1. Copy the checked-in environment template into your deployment compose directory:
    ```bash
-   cp deployments/docker-compose/<your-service-name>.env /path_to/mango-cloud-deployment/docker-compose/
+   cp deployments/docker-compose/mango-mdu-service.env /path_to/mango-cloud-deployment/docker-compose/
    ```
 
-3. Paste the service block displayed on the screen (or from `deployments/docker-compose/docker-compose.yaml`) inside the `services:` block of your deployment's `docker-compose.yml`.
+2. Paste the service block from `deployments/docker-compose/docker-compose.yaml` inside the `services:` block of your deployment's `docker-compose.yml`.
 
-4. Re-launch the compose deployment:
+3. Re-launch the compose deployment:
    ```bash
-   docker compose up -d --build <your-service-name>
+   docker compose up -d --build mango-mdu-service
    ```
 
 ---

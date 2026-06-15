@@ -2,6 +2,9 @@
 
 This document details the architectural layout, database models, and internal logic flows for the **mango-mdu-service** microservice.
 
+Temporary scaffold placeholder note:
+the sample `items` CRUD, `sample_items` table, and related example flow below are starter scaffold artifacts only. They are not intended to represent the final MDU service design.
+
 ---
 
 ## 1. High-Level Architecture

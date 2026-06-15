@@ -12,10 +12,11 @@ info:
     The microservice operates two isolated HTTP interfaces:
     1. **Public Port (default: 16010)**: Exposes business-level API endpoints (such as `/api/v1/items`).
        * Authentication: Enabled by default, uses public/private token validation via OpenWiFi Security service.
-    2. **Private Port (default: 17010)**: Exposes internal administration, metrics, and diagnostics.
+    2. **Private Port (default: 17010)**: Exposes internal administration, diagnostics, and the same subsystem/system routes used for operational control.
        * Authentication: Requires both `X-INTERNAL-NAME` and `X-API-KEY` headers.
     
     Both ports serve the unauthenticated health endpoint `/livez`.
+    The scaffold currently exposes `/api/v1/system` on both public and private listeners, with different auth middleware on each listener.
 servers:
   - url: "https://{host}:{publicPort}"
     description: "Public HTTP API Interface"
@@ -52,9 +53,14 @@ paths:
           description: "Service is unhealthy"
 
   /api/v1/system:
+    servers:
+      - url: "https://{host}:{publicPort}"
+        description: "Public HTTP API Interface"
+      - url: "https://{host}:{privatePort}"
+        description: "Private/Internal HTTP API Interface"
     get:
       summary: "Retrieve system diagnostics and metrics"
-      description: "Returns system status info or resource usage based on the requested command."
+      description: "Returns system status info or resource usage based on the requested command. In the current scaffold this route is registered on both public and private listeners."
       parameters:
         - name: "command"
           in: "query"
@@ -69,7 +75,7 @@ paths:
           description: "Invalid command query"
     post:
       summary: "Modify log levels or query diagnostics schema"
-      description: "Dynamically mutate runtime subsystem log levels or fetch subsystem metadata."
+      description: "Dynamically mutate runtime subsystem log levels or fetch subsystem metadata. In the current scaffold this route is registered on both public and private listeners."
       requestBody:
         required: true
         content:
@@ -182,7 +188,7 @@ paths:
         "404":
           description: "Item not found"
     delete:
-      summary: "Delete an item"
+      summary: "Delete an item (temporary scaffold placeholder)"
       parameters:
         - name: "id"
           in: "path"
