@@ -2,7 +2,7 @@
 bin/
 dist/
 out/
-/owmdu
+/mango-mdu-service
 
 # Dependency directory (if vendoring)
 vendor/

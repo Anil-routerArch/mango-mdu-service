@@ -17,7 +17,7 @@ COPY . .
 ARG VERSION
 ARG BUILD_TIMESTAMP
 ARG COMMIT_HASH
-ARG APP_NAME=owmdu
+ARG APP_NAME=mango-mdu-service
 
 ENV CGO_ENABLED=0 \
     GOOS=linux \
@@ -47,7 +47,7 @@ RUN apk add --no-cache ca-certificates bash curl
 
 WORKDIR /app
 
-ARG APP_NAME=owmdu
+ARG APP_NAME=mango-mdu-service
 ARG VERSION
 ARG BUILD_TIMESTAMP
 ARG COMMIT_HASH
@@ -71,4 +71,4 @@ USER appuser
 # Expose Public Port (16010) and Private/System Port (17010)
 EXPOSE 16010 17010
 
-ENTRYPOINT ["/app/owmdu"]
+ENTRYPOINT ["/app/mango-mdu-service"]

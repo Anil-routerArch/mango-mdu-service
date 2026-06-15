@@ -1,8 +1,8 @@
 # ==============================================================================
-# Development Makefile for owmdu
+# Development Makefile for mango-mdu-service
 # ==============================================================================
 
-APP_NAME = owmdu
+APP_NAME = mango-mdu-service
 VERSION ?= v0.1.0
 COMMIT_HASH = $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIMESTAMP = $(shell date -u +%s)
@@ -15,7 +15,7 @@ LDFLAGS = -X github.com/routerarchitects/ra-common-mods/buildinfo.version=$(VERS
 all: build
 
 build:
-	@echo "Compiling owmdu binary..."
+	@echo "Compiling mango-mdu-service binary..."
 	@mkdir -p bin
 	go build -ldflags="-s -w $(LDFLAGS)" -o bin/$(APP_NAME) ./cmd
 
@@ -30,7 +30,7 @@ certs:
 	fi
 
 run: certs
-	@echo "Running owmdu locally..."
+	@echo "Running mango-mdu-service locally..."
 	@if [ -f configs/local-dev.env ]; then \
 		set -a && . ./configs/local-dev.env && set +a && go run ./cmd; \
 	else \

@@ -39,8 +39,8 @@ jobs:
       - name: Run Unit Tests
         run: |
           # Mock the required environment variables enforced by the discovery and logger libraries
-          export SERVICE_NAME="owmdu"
-          export SERVICE_TYPE="owmdu"
+          export SERVICE_NAME="mango-mdu-service"
+          export SERVICE_TYPE="mango-mdu-service"
           export SERVICE_VERSION="dev"
           export SYSTEM_URI_PRIVATE="https://localhost:17010"
           export SYSTEM_URI_PUBLIC="https://localhost:16010"

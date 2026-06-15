@@ -112,7 +112,7 @@ find . -type f \( \
     sed -i "s|github.com/routerarchitects/mango-mdu-service|github.com/routerarchitects/$SERVICE_NAME|g" "$file"
     
     # Replace service name placeholder
-    sed -i "s|owmdu|$SERVICE_NAME|g" "$file"
+    sed -i "s|mango-mdu-service|$SERVICE_NAME|g" "$file"
     sed -i "s|mango-mdu-service|$SERVICE_NAME|g" "$file"
     
     # Replace ports placeholders

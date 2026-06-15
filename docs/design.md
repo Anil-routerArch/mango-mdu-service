@@ -1,6 +1,6 @@
-# Service Design: owmdu
+# Service Design: mango-mdu-service
 
-This document details the architectural layout, database models, and internal logic flows for the **owmdu** microservice.
+This document details the architectural layout, database models, and internal logic flows for the **mango-mdu-service** microservice.
 
 ---
 

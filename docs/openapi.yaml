@@ -1,9 +1,9 @@
 openapi: 3.0.0
 info:
-  title: "owmdu API"
+  title: "mango-mdu-service API"
   version: "1.0.0"
   description: |
-    REST API definition for owmdu microservice.
+    REST API definition for mango-mdu-service microservice.
     
     ### Dual-Port HTTP Architecture
     The microservice operates two isolated HTTP interfaces:

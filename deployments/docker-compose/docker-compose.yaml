@@ -7,18 +7,18 @@
 version: '3.8'
 
 services:
-  owmdu:
-    image: owmdu:latest
+  mango-mdu-service:
+    image: mango-mdu-service:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: openwifi_owmdu
+    container_name: openwifi_mango-mdu-service
     networks:
       openwifi:
         aliases:
-          - owmdu.wlan.local
+          - mango-mdu-service.wlan.local
     env_file:
-      - owmdu.env
+      - mango-mdu-service.env
     depends_on:
       init-kafka:
         condition: service_completed_successfully
@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
     volumes:
       # Data directory for SQL state, logs, and uploads
-      - "./owmdu_data:/app/data"
+      - "./mango-mdu-service_data:/app/data"
       # Share SSL/TLS certificates mounted from the compose folder
       - "./certs:/app/certs"
     ports:
