@@ -38,4 +38,4 @@ mem.pprof
 certs/
 tmp_test/
 
-init-service.shinit-service.sh
+init-service.sh
