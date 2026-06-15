@@ -1,0 +1,41 @@
+# Build outputs and binaries
+bin/
+dist/
+out/
+/mango-mdu-service
+
+# Dependency directory (if vendoring)
+vendor/
+
+# Local configuration and environment secrets overrides
+*.local
+.env
+.env.*
+!env/
+
+# IDE / Editor configurations
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Test outputs, coverage reports, and log files
+*.out
+*.log
+*.test
+cpu.pprof
+mem.pprof
+
+# Local certs and temporary scaffold tests
+certs/
+tmp_test/
+
+init-service.sh

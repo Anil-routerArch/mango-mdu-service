@@ -1,0 +1,35 @@
+# ==============================================================================
+# OpenWiFi docker-compose.yml Integration Template
+# Merge the service block below into the "services:" block of the main deployment:
+# /openwifi-sdk/mango-cloud-deployment/docker-compose/docker-compose.yml
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  mango-mdu-service:
+    image: mango-mdu-service:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openwifi_mango-mdu-service
+    networks:
+      openwifi:
+        aliases:
+          - mango-mdu-service.wlan.local
+    env_file:
+      - mango-mdu-service.env
+    depends_on:
+      init-kafka:
+        condition: service_completed_successfully
+      postgresql:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      # Data directory for SQL state, logs, and uploads
+      - "./mango-mdu-service_data:/app/data"
+      # Share SSL/TLS certificates mounted from the compose folder
+      - "./certs:/app/certs"
+    ports:
+      - "16010:16010"
+      - "17010:17010"
