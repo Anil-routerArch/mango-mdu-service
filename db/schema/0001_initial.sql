@@ -1,4 +1,6 @@
--- Initial Database Schema Placeholder for Go Foundation Service
+-- Temporary scaffold placeholder schema.
+-- This sample_items table is starter example data only and is not part of the
+-- planned mango-mdu-service domain model.
 
 CREATE TABLE IF NOT EXISTS sample_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

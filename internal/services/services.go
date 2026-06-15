@@ -11,7 +11,8 @@ import (
 	"github.com/routerarchitects/ra-common-mods/apperror"
 )
 
-// ItemService defines the contract for item management business logic.
+// ItemService defines temporary scaffold placeholder business logic for the
+// sample item CRUD. It is not the intended MDU service contract.
 type ItemService interface {
 	Create(ctx context.Context, req models.CreateItemRequest) (*models.SampleItem, error)
 	GetByID(ctx context.Context, id string) (*models.SampleItem, error)
@@ -24,7 +25,8 @@ type itemService struct {
 	db *db.Database
 }
 
-// NewItemService creates a new concrete instance of ItemService.
+// NewItemService creates the temporary scaffold placeholder service used by the
+// sample item CRUD endpoints.
 func NewItemService(database *db.Database) ItemService {
 	return &itemService{db: database}
 }

@@ -2,6 +2,8 @@
 
 A repo-ready foundation for the Mango Cloud MDU backend service in the OpenWiFi environment. This service is intended to evolve into the MDU orchestration layer that integrates with OWSEC and PROV.
 
+Important: the currently checked-in sample CRUD, sample database schema, and `/api/v1/items` endpoints are temporary scaffold placeholder code only. They are starter examples carried over from the foundation template and must not be interpreted as actual MDU domain, API, or schema decisions.
+
 ---
 
 ## Folder Structure

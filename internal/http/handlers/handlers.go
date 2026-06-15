@@ -13,6 +13,8 @@ import (
 
 var validate = validator.New()
 
+// ItemHandler is temporary scaffold placeholder HTTP code kept only to preserve
+// a runnable starter service until real MDU handlers replace the sample item CRUD.
 type ItemHandler struct {
 	svc services.ItemService
 }
@@ -21,7 +23,8 @@ func NewItemHandler(service services.ItemService) *ItemHandler {
 	return &ItemHandler{svc: service}
 }
 
-// CreateItem handles POST /api/v1/items
+// CreateItem handles POST /api/v1/items.
+// Temporary scaffold placeholder endpoint only.
 func (h *ItemHandler) CreateItem(c fiber.Ctx) error {
 	var req models.CreateItemRequest
 	if err := c.Bind().Body(&req); err != nil {
@@ -40,7 +43,8 @@ func (h *ItemHandler) CreateItem(c fiber.Ctx) error {
 	return c.Status(http.StatusCreated).JSON(models.ItemResponse{Data: *item})
 }
 
-// GetItem handles GET /api/v1/items/:id
+// GetItem handles GET /api/v1/items/:id.
+// Temporary scaffold placeholder endpoint only.
 func (h *ItemHandler) GetItem(c fiber.Ctx) error {
 	id := c.Params("id")
 	if id == "" {
@@ -55,7 +59,8 @@ func (h *ItemHandler) GetItem(c fiber.Ctx) error {
 	return c.JSON(models.ItemResponse{Data: *item})
 }
 
-// ListItems handles GET /api/v1/items
+// ListItems handles GET /api/v1/items.
+// Temporary scaffold placeholder endpoint only.
 func (h *ItemHandler) ListItems(c fiber.Ctx) error {
 	items, err := h.svc.List(c.Context())
 	if err != nil {
@@ -70,7 +75,8 @@ func (h *ItemHandler) ListItems(c fiber.Ctx) error {
 	return c.JSON(models.ItemListResponse{Data: items})
 }
 
-// UpdateItem handles PUT /api/v1/items/:id
+// UpdateItem handles PUT /api/v1/items/:id.
+// Temporary scaffold placeholder endpoint only.
 func (h *ItemHandler) UpdateItem(c fiber.Ctx) error {
 	id := c.Params("id")
 	if id == "" {
@@ -94,7 +100,8 @@ func (h *ItemHandler) UpdateItem(c fiber.Ctx) error {
 	return c.JSON(models.ItemResponse{Data: *item})
 }
 
-// DeleteItem handles DELETE /api/v1/items/:id
+// DeleteItem handles DELETE /api/v1/items/:id.
+// Temporary scaffold placeholder endpoint only.
 func (h *ItemHandler) DeleteItem(c fiber.Ctx) error {
 	id := c.Params("id")
 	if id == "" {
