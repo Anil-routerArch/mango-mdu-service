@@ -1,24 +1,23 @@
-# Mango MDU Service Requirements
+# Mango MDU Service Phase 1 Requirements
 
 ## Document Purpose
 
-This document defines the **master requirements** for the full lifecycle of `mango-mdu-service`.
+This document defines the **Phase 1 requirements baseline** for `mango-mdu-service`.
 
-MDU Service is the Mango Cloud orchestration service for operator-facing workflows. Its role is to provide a stable Mango-facing API layer between the UI and the broader OpenWiFi / Mango service ecosystem, including identity, provisioning, billing, gateway runtime operations, topology, and analytics.
+Phase 1 is intentionally limited to:
 
-This document is intentionally broader than a Phase 1 implementation document. It defines:
+- auth and session middleware
+- current caller context
+- user lifecycle via OWSEC
+- operator wrappers via PROV
+- entity wrappers via PROV
+- venue wrappers via PROV
+- management policy wrappers via PROV
+- management role wrappers via PROV
+- effective access summary
+- user-to-role, policy, and entity assignment orchestration
 
-- service mission and architectural role
-- development phases
-- ownership and source-of-truth boundaries
-- downstream dependency model
-- whole-service API-family roadmap
-- data and persistence rules
-- implementation constraints for the Go microservice
-
-This document is the **whole-service roadmap and scope baseline**.
-
-Cross-phase implementation, delivery, runtime, CI, and security guardrails are defined separately in `mango-mdu-common-requirements.md`. Detailed phase-specific requirements documents, beginning with Phase 1, shall inherit from both this master document and the common requirements document.
+This document does **not** define later-phase billing, topology, analytics, jobs, saga, rollout, or AI behavior.
 
 ---
 
@@ -26,1300 +25,919 @@ Cross-phase implementation, delivery, runtime, CI, and security guardrails are d
 
 | Field | Value |
 |---|---|
-| Document Title | Mango MDU Service Requirements |
+| Document Title | Mango MDU Service Phase 1 Requirements |
 | Service Name | `mango-mdu-service` |
 | Repository | `routerarchitects/mango-mdu-service` |
 | Service Type | Internal orchestration microservice |
 | Primary Language | Go (Golang) |
-| Current Purpose | Master service requirements |
-| Status | Draft master baseline |
+| Current Purpose | Phase 1 requirements baseline |
+| Status | Draft |
 | Last Updated | 2026-06-16 |
 | Primary Consumers | Mango Operator UI and approved internal callers |
-| Primary Downstream Services | OWSEC, PROV, Billing Service, OWGW, NW Topology Service, OWANALYTICS |
+| Primary Downstream Services | OWSEC, PROV |
 
 ---
 
-# 1. Executive Summary
+## 1. Executive Summary
 
-MDU Service shall be the Mango-facing orchestration layer for the MDU product domain.
+`mango-mdu-service` is the Phase 1 Mango-facing orchestration service for MDU workflows.
 
-It shall expose stable `/api/v1/mdu/*` contracts for UI and internal consumers while coordinating workflows across downstream systems that own identity, hierarchy, RBAC, billing, live device operations, topology, and analytics.
+In Phase 1, MDU shall provide stable `/api/v1/mdu/*` APIs for session context, users, operators, entities, venues, management policies, management roles, and access assignment workflows, while keeping OWSEC and PROV as the systems of record.
 
-MDU Service shall **not** become the source of truth for domains already owned by downstream services. Instead, it shall:
-
-- validate and normalize requests
-- enforce scope-aware behavior
-- compose and shape UI-facing responses
-- abstract away downstream route quirks and implementation details
-- provide a consistent contract for customer, hierarchy, access, device, billing, topology, and analytics workflows
-- evolve over phases from a foundational orchestrator into a broader cross-domain aggregation service
-
-The service shall start with a strict verified baseline for OWSEC and PROV interactions and then expand phase by phase into customer workspaces, billing integration, live device operations, topology, analytics, and eventually durable workflow management and advanced admin/automation capabilities.
+MDU must not become a local RBAC source of truth. It shall validate, orchestrate, normalize, and compose.
 
 ---
 
-# 2. Development Phases
-
-| Phase | Scope |
-|---|---|
-| Phase 1 | Orchestrator foundation, auth/session context, user lifecycle, operator/entity/venue/policy/role wrappers, access summary, and verified downstream contract normalization |
-| Phase 2 | Customer/sub-operator lifecycle, hierarchy workspace APIs, subtree navigation, lazy-loading pagination, billing-facing workspace integration, and customer bootstrap orchestration |
-| Phase 3 | Device inventory wrappers, venue-device assignment, live device state integration via OWGW, configuration wrappers, and operational device/config UX support |
-| Phase 4 | Topology, analytics, maps, metrics, health/workspace aggregation, client visibility foundations, and cross-domain operational views |
-| Phase 5 | Workflow hardening, idempotency, async job model, auditability, reconciliation, selective saga/forward-recovery for real multi-system workflows, rollout orchestration, AI hooks, and advanced admin/debug maturity |
-
-The phases are cumulative. Each phase builds on the previous one and must preserve already-established ownership boundaries for downstream systems.
-
-### Phase 1 intent
-Establish the verified OWSEC and PROV integration baseline and the core service foundation.
-
-### Phase 2 intent
-Introduce the higher-level customer/sub-operator and hierarchy-facing APIs the UI actually needs, including billing-aware workspace summaries.
-
-### Phase 3 intent
-Make the service operationally useful for device and configuration management by combining PROV ownership data with OWGW live/runtime integrations.
-
-### Phase 4 intent
-Expand the product into richer operational visibility through topology, analytics, maps, metrics, health, and aggregated workspace views.
-
-### Phase 5 intent
-Introduce durable workflow safety, async processing, reconciliation, rollout-oriented orchestration, AI hooks, and advanced operational maturity features.
-
----
-
-# 3. Source Priority and Conflict Resolution
-
-This document is synthesized from multiple inputs, but not all inputs have equal authority.
-
-The service requirements and implementation shall follow this priority order whenever there is a conflict.
-
-## 3.1 Absolute Authority for Phase 1
-
-The uploaded Phase 1 downstream mapping for PROV and UCENTRALSEC is the highest authority for Phase 1-specific ownership, endpoint mappings, and workflow rules.
-
-For Phase 1, that means:
-
-- OWSEC owns identity/session/admin-user lifecycle
-- PROV owns operators, entities, venues, policies, roles, and persisted RBAC scope structure
-- MDU must not become a separate RBAC source of truth
-- MDU must obey verified non-standard downstream route patterns
-
-## 3.2 Current Repository State
-
-The current `mango-mdu-service` repository defines the implementation baseline, package structure, app bootstrap, migration pattern, and deployment shape.
-
-It does **not** define domain truth. The repo README explicitly states that the sample CRUD, sample schema, and `/api/v1/items` endpoints are placeholder scaffold code only. The checked-in design doc says the same for the sample design flow and schema. fileciteturn14file0
-
-## 3.3 Functional Scope Discovery
-
-The operator UI Phase 1 documentation is authoritative for user workflows, screen expectations, navigation model, hierarchy behavior, visible actions, and the need for a backend orchestration layer that hides raw downstream complexity.
-
-## 3.4 Format Reference
-
-The Billing Service requirements document is used as the structural and stylistic reference for the depth, clarity, and phase-oriented format expected of this master specification.
-
-## 3.5 Future Breadth Reference
-
-The earlier `mdu_api_flow_rbac_saga_pagination(2).md` draft is used as a future-scope and API-breadth reference.
-
-It is useful for:
-
-- understanding likely future API families
-- seeing how broad the service becomes over time
-- identifying likely later-phase durability needs
-- understanding customer/billing/device/configuration workflow breadth
-- understanding lazy-loading and pagination direction
-
-It is **not** authoritative for Phase 1 ownership or RBAC design.
-
-## 3.6 Additional Whole-Service Downstream Inputs
-
-The OWGW, NW Topology, and OWANALYTICS OpenAPI documents are authoritative for understanding the broader whole-service dependency ecosystem.
-
-These inputs make clear that MDU is not only a PROV/OWSEC wrapper. It must ultimately orchestrate across:
-
-- identity and security
-- provisioning and RBAC
-- billing
-- live device operations
-- topology
-- telemetry and analytics
-
----
-
-# 4. Repository Baseline and Implementation Starting Point
-
-The current `mango-mdu-service` repository is a service scaffold with the correct implementation shape but placeholder business behavior. fileciteturn14file0
-
-The repository already provides:
-
-- Go service entrypoint and boot sequence
-- app wiring and dependency injection structure
-- HTTP routing and middleware area
-- PostgreSQL integration and startup migrations
-- service-layer and model-layer package structure
-- an external integrations boundary
-- Docker and Compose artifacts
-- CI workflow
-- docs placeholders
-
-This is valuable because the service does **not** need a new architectural skeleton. It needs the placeholder logic replaced with the real orchestrator design defined in this document.
-
-## 4.1 Repository Constraints
-
-The implementation shall preserve the repository’s clean structure:
-
-- `cmd/` for startup
-- `internal/app/` for wiring
-- `internal/http/` for transport and middleware
-- `internal/services/` for orchestration/use-cases
-- `internal/models/` for normalized contracts and DTOs
-- `external/` for downstream clients
-- `internal/db/` only for MDU-owned persistence concerns
-
-## 4.2 Repository Non-Truth Rule
-
-The existing scaffold docs and sample schema must not be treated as domain truth.
-
-No final API, domain, or schema decision shall be derived from the sample items CRUD or sample tables.
-
----
-
-# 5. Service Mission and Architectural Role
-
-## 5.1 Mission
-
-MDU Service shall provide a stable orchestration and aggregation layer for the Mango operator domain.
-
-It shall allow the UI and approved internal consumers to interact with the Mango/OpenWiFi ecosystem through one coherent MDU-facing API surface instead of directly coupling the frontend to many backend services.
-
-## 5.2 Core Role
-
-MDU Service is a **backend orchestrator and domain aggregation service**.
-
-That means it shall:
-
-- validate incoming requests
-- validate identity and access
-- resolve hierarchy context
-- orchestrate downstream calls
-- compose responses from multiple systems
-- hide backend service complexity
-- normalize errors
-- expose business-oriented API contracts
-- evolve over time into a richer cross-domain workspace service
-
-## 5.3 What MDU Service Is Not
-
-MDU Service shall not:
-
-- replace OWSEC as the identity or session owner
-- replace PROV as the hierarchy or RBAC persistence owner
-- replace Billing Service as the billing owner
-- replace OWGW as the live command/runtime device operations owner
-- replace topology service as the topology graph computation owner
-- replace analytics as the telemetry/time-series owner
-- expose raw downstream details when a business-facing contract is more appropriate
-- force every workflow into persistent saga state when synchronous orchestration is sufficient
-
----
-
-# 6. Core Architecture Rules
-
-1. MDU Service shall expose all MDU business APIs under `/api/v1/mdu/*`.
-2. MDU Service shall be the Mango-facing orchestration service for MDU workflows.
-3. MDU Service shall hide downstream route quirks, compatibility tokens, and service-specific oddities from upstream consumers.
-4. MDU Service shall preserve downstream systems as systems of record.
-5. OWSEC shall remain the source of truth for authentication, token validation, current caller identity, API-key validation, and admin-user CRUD.
-6. PROV shall remain the source of truth for operators, entities, venues, policies, roles, hierarchy persistence, RBAC persistence, inventory ownership, and configuration ownership.
-7. Billing Service shall remain the source of truth for billing plans, subscriptions, and billing lifecycle.
-8. OWGW shall remain the source of truth for live device runtime operations, command execution, and runtime diagnostics/actions.
-9. NW Topology Service shall remain the topology graph computation service.
-10. OWANALYTICS shall remain the source of truth for analytics/timepoints/historical telemetry.
-11. MDU Service shall not become a separate RBAC source of truth.
-12. MDU Service shall not create an alternate durable hierarchy ownership model unless explicitly approved in a future architecture revision.
-13. MDU Service shall not create a second inventory or billing source of truth.
-14. MDU Service shall use business-oriented API contracts for the UI wherever possible.
-15. Admin and debug views may expose deeper downstream concepts where operationally justified.
-16. Clean architecture and layered service boundaries shall be preserved.
-17. Local durable workflow persistence shall be introduced only where the active phase justifies it.
-18. Every added downstream dependency must be represented in OpenAPI, service design, observability, and error-mapping behavior.
-19. Phase-specific docs shall inherit from this master and the common requirements document and add detail, not contradict them.
-
----
-
-# 7. Service Ownership and Boundaries
-
-| Data / Workflow | Owner |
-|---|---|
-| Login / token issuance | OWSEC |
-| Token validation | OWSEC |
-| API-key validation | OWSEC |
-| Current caller profile | OWSEC |
-| Admin-user CRUD | OWSEC |
-| Operators | PROV |
-| Entities | PROV |
-| Venues | PROV |
-| Management policies | PROV |
-| Management roles | PROV |
-| Persisted RBAC scope structure | PROV |
-| Inventory records | PROV |
-| Configuration records | PROV |
-| Billing plans | Billing Service |
-| Billing subscriptions | Billing Service |
-| Billing lifecycle state | Billing Service |
-| Live device command/runtime state | OWGW |
-| Topology graph computation | NW Topology Service |
-| Device/client telemetry and historical analytics | OWANALYTICS |
-| UI-facing orchestration across the above | MDU Service |
-| Scope-aware workspaces and composed responses | MDU Service |
-| Future approved durable workflow state | MDU Service |
-
-## 7.1 Boundary Principle
-
-MDU Service owns **orchestration**, not the raw domain systems listed above.
-
-## 7.2 MDU-Owned Concerns
-
-MDU shall own:
-
-- API shaping
-- request validation
-- service-layer authorization
-- hierarchy-aware response composition
-- user-facing workflow orchestration
-- future workflow state where explicitly approved
-
----
-
-# 8. Whole-Service Domain Model
-
-Over its full lifecycle, MDU Service is expected to expose or orchestrate the following domains:
-
-- session and bootstrap
-- current user context
-- users
-- access summary
-- operators
-- customers / sub-operators
-- hierarchy nodes
-- entities
-- venues
-- policies
-- roles
-- billing workspaces
-- devices
-- live device status and actions
-- configurations
-- topology
-- analytics and time-series summaries
-- maps and overlays
-- clients
-- metrics
-- health summaries
-- rollout workflows
-- AI hooks
-- admin/debug views
-
-## 8.1 UI Terminology Rule
-
-The UI docs make clear that business-oriented terminology should dominate the normal API surface.
-
-Therefore, the MDU-facing model should prefer:
-
-- customer
-- sub-operator
-- node
-- site
-- building
-- tower
-- floor
-- venue
-- user
-- device
-- configuration
-- subscription
-- workspace
-- access summary
-
-instead of directly exposing raw downstream internal terms in normal workflows.
-
-### Exception
-Admin/debug APIs may surface underlying downstream concepts such as `managementPolicy` or `managementRole` when operationally useful.
-
----
-
-# 9. Downstream Service Ecosystem
-
-## 9.1 OWSEC / UCENTRALSEC
-
-OWSEC provides:
-
-- login/session routes
-- token validation
-- sub-token validation
-- API-key validation
-- current caller profile
-- admin-user CRUD
-
-This is the security and identity anchor of the service.
-
-## 9.2 PROV / OWPROV
-
-PROV provides:
-
-- operators
-- entities
-- venues
-- management policies
-- management roles
-- hierarchy persistence
-- RBAC persistence and scope structure
-- inventory objects
-- configuration objects
-
-This is the hierarchy, access, inventory, and configuration anchor of the service.
-
-## 9.3 Billing Service
-
-Billing Service provides:
-
-- billing plans
-- subscriptions
-- billing summaries and states
-- plan-selection/assignment workflows from the billing domain side
-
-This is the billing anchor of the service.
-
-## 9.4 OWGW / uCentral Gateway
-
-OWGW provides runtime device operations and command surfaces.
-
-Its OpenAPI shows a broad live/runtime control domain including command execution records and device actions such as configure, ping, reboot, factory reset, script, LEDs, event queue, RRM, Wi-Fi scan, request, trace, upgrade, reenroll, certificate update, transfer, and package operations. That makes OWGW a key dependency for live device state, diagnostics, support workflows, and device command orchestration. fileciteturn8file1L47-L118
-
-### MDU implication
-MDU must distinguish between:
-
-- inventory/source-of-truth device data from PROV
-- live/runtime/action state from OWGW
-
-## 9.5 NW Topology Service
-
-Topology is a dedicated topology computation service.
-
-Its `/topology` API explicitly builds topology using analytics board timepoints, board device inventory data, and Wi‑Fi client history, and can tolerate some historical-client lookup failures without failing the whole topology response. That means MDU should treat topology as its own downstream domain rather than attempting to re-implement topology graph assembly internally. fileciteturn9file0L4-L4
-
-### MDU implication
-MDU shall use topology service for topology workspaces and topology-oriented operational views.
-
-## 9.6 OWANALYTICS
-
-OWANALYTICS gathers statistics about devices used in OpenWiFi and groups them by provisioning entities or venues. Its OpenAPI defines timepoint-style device and Wi‑Fi client telemetry structures used for trends, history, and metrics views. fileciteturn11file0L12-L19 fileciteturn12file0L4-L4
-
-### MDU implication
-MDU shall use analytics for telemetry summaries, trends, historical views, KPI panels, and future overlays/maps/health experiences.
-
----
-
-# 10. Verified Phase 1 Integration Rules
-
-Phase 1 shall follow the exact verified downstream mapping for OWSEC and PROV.
-
-## 10.1 Verified OWSEC Routes
-
-Verified OWSEC routes include:
-
-- `GET /oauth2?me=true`
-- `POST /oauth2`
-- `DELETE /oauth2/{token}`
-- `GET /validateToken?token=...`
-- `GET /validateSubToken?token=...`
-- `GET /validateApiKey?apikey=...`
-- `GET /users`
-- `GET /user/{id}`
-- `POST /user/0`
-- `PUT /user/{id}`
-- `DELETE /user/{id}`
-
-## 10.2 Verified PROV Routes
-
-Verified PROV routes include:
-
-- `GET /operator`
-- `GET /operator/{uuid}`
-- `POST /operator/{uuid}`
-- `PUT /operator/{uuid}`
-
-- `GET /entity`
-- `GET /entity/{uuid}`
-- `POST /entity/{uuid}`
-- `PUT /entity/{uuid}`
-- `POST /entity?setTree=true`
-
-- `GET /venue`
-- `GET /venue/{uuid}`
-- `POST /venue/{uuid}`
-- `PUT /venue/{uuid}`
-
-- `GET /managementPolicy`
-- `GET /managementPolicy/{uuid}`
-- `POST /managementPolicy/{uuid}`
-
-- `GET /managementRole`
-- `GET /managementRole/{id}`
-- `POST /managementRole/{id}`
-
-## 10.3 Critical Verified Route Quirks
-
-The following quirks are mandatory for Phase 1:
-
-1. PROV create routes are compatibility detail routes, not collection POST routes.
-2. The path token used for those create routes is not the created resource ID.
-3. OWSEC admin-user create uses `POST /user/0`.
-4. Operator create auto-creates the linked entity and MDU must not create a second entity for that workflow.
-5. Normal entity creation uses `POST /entity/{uuid}` and not the tree-import route.
-6. Current caller profile uses `GET /oauth2?me=true`.
-7. API-key validation must use `/validateApiKey?apikey=...`.
-
----
-
-# 11. Phase 1 Requirements
-
-Phase 1 is the verified orchestrator foundation.
-
-## 11.1 Objectives
-
-Phase 1 shall:
-
-- establish auth/session middleware
-- provide current-user/session context
-- provide user lifecycle through OWSEC
-- provide operator/entity/venue/policy/role wrappers through PROV
-- provide access-summary and access-assignment orchestration
-- normalize verified downstream contracts into clean MDU-facing APIs
-
-## 11.2 Scope
-
-Phase 1 includes:
-
-### Session and Auth-Aware APIs
-- token validation middleware
-- API-key validation middleware where required
-- `GET /api/v1/mdu/me`
-
-### User APIs
-- create user
-- list users
-- get user detail
-- update user
-- delete user
+## 2. Phase 1 Scope
+
+### In Scope
+
+- auth and session middleware
+- current caller context
+- user lifecycle via OWSEC
+- operator wrappers via PROV
+- entity wrappers via PROV
+- venue wrappers via PROV
+- management policy wrappers via PROV
+- management role wrappers via PROV
 - effective access summary
+- user-to-role, policy, and entity assignment orchestration
 
-### Operator APIs
-- create operator
-- list operators
-- get operator
-- update operator
+### Out of Scope
 
-### Entity APIs
-- create entity
-- list entities
-- get entity
-- update entity
-- list child entities
+- billing
+- OWGW
+- topology
+- analytics
+- jobs
+- saga
+- async workflows
+- rollout
+- AI
 
-### Venue APIs
-- create venue under entity
-- list entity venues
-- get venue
-- update venue
-- list child venues
+---
 
-### Policy APIs
-- create policy
-- list policies
-- get policy
+## 3. Verified Phase 1 Downstream Truth
 
-### Role APIs
-- create role
-- list roles
-- get role
+- User create must call `POST /user/0` in OWSEC.
+- Current caller must be resolved using `GET /oauth2?me=true`.
+- Token validation uses OWSEC validation endpoints.
+- Operator create must call `POST /operator/{uuid}`.
+- Entity create must call `POST /entity/{uuid}` and **not** the tree import route.
+- Venue create must call `POST /venue/{uuid}`.
+- Policy create must call `POST /managementPolicy/{uuid}`.
+- Role create must call `POST /managementRole/{id}`.
+- MDU must not become a local RBAC source of truth.
 
-### Access Assignment APIs
-- assign entity-scoped access
-- assign role-based access
-- assign policy-linked access
-- get user access summary
+---
 
-## 11.3 Functional Requirements
+## 4. Core Architecture Rules
 
-### 11.3.1 Session and Current Caller Context
-MDU shall provide a composed `/me` endpoint that validates the token, resolves the current caller through OWSEC, and enriches the result with PROV-derived access and scope information.
+1. MDU shall expose Phase 1 APIs under `/api/v1/mdu/*`.
+2. MDU shall orchestrate across OWSEC and PROV only in Phase 1.
+3. OWSEC shall remain the source of truth for user identity, current caller, token validation, and user CRUD.
+4. PROV shall remain the source of truth for operators, entities, venues, management policies, management roles, and persisted RBAC structure.
+5. MDU shall not create local RBAC truth.
+6. MDU shall not create local hierarchy truth.
+7. MDU shall not create local user truth.
+8. MDU shall hide downstream route quirks from upstream consumers.
+9. For direct wrappers, MDU should reuse downstream schema bodies rather than inventing new wrapper bodies.
+10. MDU-specific bodies should exist only where MDU composes or enriches data beyond a direct downstream wrapper.
 
-### 11.3.2 User Lifecycle
-MDU shall expose stable user APIs while translating those calls to OWSEC admin-user endpoints and preserving downstream restrictions such as the use of `/user/0` for create.
+---
 
-### 11.3.3 Provisioning Wrappers
-MDU shall expose clean wrapper APIs for operators, entities, venues, policies, and roles while hiding PROV’s compatibility-detail create routes from upstream consumers.
+## 5. Verified Downstream Quirks That MDU Must Hide
 
-### 11.3.4 Access Assignment
-MDU shall compose user access workflows using PROV role and policy objects instead of creating local RBAC truth.
+- PROV create routes are compatibility detail routes.
+- callers must not supply the compatibility path token.
+- MDU injects it internally.
+- `/user/0` is required for user creation.
+- operator create auto-creates linked entity.
+- normal entity create is not tree import.
+- raw route irregularities must not leak into UI-facing contracts.
 
-### 11.3.5 Error and Observability Baseline
-Every Phase 1 endpoint shall participate in the standardized error envelope and observability model defined by the common requirements document.
+---
 
-## 11.4 Phase 1 API Inventory
+## 6. Local Persistence in Phase 1
 
-### Session
+- no local RBAC truth
+- no local hierarchy truth
+- no local user truth
+- no local ownership tables for assignment
+- only standard service metadata, migrations, and support concerns if needed
+
+---
+
+## 7. Phase 1 Endpoint Inventory
+
+| Domain    | MDU Endpoint                               | Method | Downstream Mapping                                       |
+| --------- | ------------------------------------------ | ------ | -------------------------------------------------------- |
+| Session   | `/api/v1/mdu/me`                           | GET    | validate token + `GET /oauth2?me=true` + PROV enrichment |
+| Users     | `/api/v1/mdu/users`                        | POST   | `POST /user/0`                                           |
+| Users     | `/api/v1/mdu/users`                        | GET    | `GET /users`                                             |
+| Users     | `/api/v1/mdu/users/{userId}`               | GET    | `GET /user/{id}`                                         |
+| Users     | `/api/v1/mdu/users/{userId}`               | PATCH  | `PUT /user/{id}`                                         |
+| Users     | `/api/v1/mdu/users/{userId}`               | DELETE | `DELETE /user/{id}`                                      |
+| Users     | `/api/v1/mdu/users/{userId}/access`        | GET    | composed OWSEC + PROV                                    |
+| Operators | `/api/v1/mdu/operators`                    | POST   | `POST /operator/{uuid}`                                  |
+| Operators | `/api/v1/mdu/operators`                    | GET    | `GET /operator`                                          |
+| Operators | `/api/v1/mdu/operators/{operatorId}`       | GET    | `GET /operator/{uuid}`                                   |
+| Operators | `/api/v1/mdu/operators/{operatorId}`       | PATCH  | `PUT /operator/{uuid}`                                   |
+| Entities  | `/api/v1/mdu/entities`                     | POST   | `POST /entity/{uuid}`                                    |
+| Entities  | `/api/v1/mdu/entities`                     | GET    | `GET /entity`                                            |
+| Entities  | `/api/v1/mdu/entities/{entityId}`          | GET    | `GET /entity/{uuid}`                                     |
+| Entities  | `/api/v1/mdu/entities/{entityId}`          | PATCH  | `PUT /entity/{uuid}`                                     |
+| Entities  | `/api/v1/mdu/entities/{entityId}/children` | GET    | composed from PROV                                       |
+| Venues    | `/api/v1/mdu/entities/{entityId}/venues`   | POST   | `POST /venue/{uuid}`                                     |
+| Venues    | `/api/v1/mdu/entities/{entityId}/venues`   | GET    | `GET /venue?entity={entityId}`                           |
+| Venues    | `/api/v1/mdu/venues/{venueId}`             | GET    | `GET /venue/{uuid}`                                      |
+| Venues    | `/api/v1/mdu/venues/{venueId}`             | PATCH  | `PUT /venue/{uuid}`                                      |
+| Venues    | `/api/v1/mdu/venues/{venueId}/children`    | GET    | composed from PROV                                       |
+| Policies  | `/api/v1/mdu/policies`                     | POST   | `POST /managementPolicy/{uuid}`                          |
+| Policies  | `/api/v1/mdu/policies`                     | GET    | `GET /managementPolicy`                                  |
+| Policies  | `/api/v1/mdu/policies/{policyId}`          | GET    | `GET /managementPolicy/{uuid}`                           |
+| Roles     | `/api/v1/mdu/roles`                        | POST   | `POST /managementRole/{id}`                              |
+| Roles     | `/api/v1/mdu/roles`                        | GET    | `GET /managementRole`                                    |
+| Roles     | `/api/v1/mdu/roles/{roleId}`               | GET    | `GET /managementRole/{id}`                               |
+
+---
+
+## 8. Downstream Schema Reuse Rule
+
+For direct Phase 1 wrappers, MDU should reuse downstream body shapes instead of inventing new MDU schemas.
+
+Direct wrapper request and response bodies should reuse:
+
+- Users → `UserInfo`
+- Operators → `Operator` / `OperatorList`
+- Entities → `Entity` / `EntityList`
+- Venues → `Venue` / `VenueList`
+- Policies → `ManagementPolicy` / `ManagementPolicyList`
+- Roles → `ManagementRole` / `ManagementRoleList`
+
+MDU-owned schemas should exist only for:
+
+- `/api/v1/mdu/me`
+- `/api/v1/mdu/users/{userId}/access`
+- access-assignment endpoints
+
+---
+
+## 9. Main Schema Field Tables
+
+### 9.1 `UserInfo`
+
+| Field | Type | Required on Create | Mutable on Update | Notes |
+|---|---|---:|---:|---|
+| `id` | string | no | no | OWSEC user identifier |
+| `name` | string | yes | yes | display name |
+| `description` | string | no | yes | optional |
+| `email` | string | yes | yes | unique user email |
+| `avatar` | string | no | yes | optional |
+| `validated` | boolean | no | limited | downstream-controlled lifecycle field |
+| `notes` | array | no | yes | optional |
+| `locale` | string | no | yes | optional |
+| `location` | string | no | yes | optional |
+| `owner` | string | no | limited | do not treat as MDU ownership |
+| `suspended` | boolean | no | yes | admin update use case |
+| `blacklisted` | boolean | no | yes | admin update use case |
+| `userrole` | string | no | limited | raw downstream field; not MDU RBAC truth |
+| `securitypolicy` | string | no | limited | downstream security field |
+
+### 9.2 `Operator`
+
+| Field | Type | Required on Create | Mutable on Update | Notes |
+|---|---|---:|---:|---|
+| `id` | string | no | no | operator identifier |
+| `name` | string | yes | yes | operator display name |
+| `description` | string | no | yes | optional |
+| `notes` | array | no | yes | optional |
+| `created` | integer | no | no | server-managed |
+| `modified` | integer | no | no | server-managed |
+| `managementPolicy` | string | no | yes | linked policy id or empty |
+| `managementRoles` | array | no | limited | downstream-managed linkage |
+| `deviceRules` | object | no | yes | downstream shape |
+| `variables` | array | no | yes | downstream shape |
+| `defaultOperator` | boolean | no | no | downstream-managed |
+| `sourceIP` | array | no | yes | optional |
+| `registrationId` | string | no | limited | create/use constraints apply |
+| `entityId` | string | no | no | linked entity created by PROV |
+
+### 9.3 `Entity`
+
+| Field | Type | Required on Create | Mutable on Update | Notes |
+|---|---|---:|---:|---|
+| `id` | string | no | no | entity identifier |
+| `name` | string | yes | yes | authoritative create field |
+| `description` | string | no | yes | mutable |
+| `notes` | array | no | yes | mutable |
+| `parent` | string | no | limited | authoritative create field |
+| `operatorId` | string | no | no | downstream-managed link |
+| `children` | array | no | no | derived linkage |
+| `venues` | array | no | no | derived linkage |
+| `managementPolicy` | string | no | yes | linked policy |
+| `managementPolicies` | array | no | no | downstream-managed linkage |
+| `managementRoles` | array | no | no | downstream-managed linkage |
+
+### 9.4 `Venue`
+
+| Field | Type | Required on Create | Mutable on Update | Notes |
+|---|---|---:|---:|---|
+| `id` | string | no | no | venue identifier |
+| `name` | string | yes | yes | required |
+| `description` | string | no | yes | optional |
+| `notes` | array | no | yes | optional |
+| `entity` | string | conditional | yes | mutually exclusive with `parent` on create |
+| `parent` | string | conditional | indirect | mutually exclusive with `entity` on create |
+| `subscriber` | string | no | limited | downstream-owned |
+| `children` | array | no | no | not valid create input |
+| `managementPolicy` | string | no | yes | policy link |
+| `devices` | array | no | no | derived linkage |
+| `topology` | object | no | limited | do not treat as normal create input |
+| `design` | string | no | limited | do not treat as normal create input |
+| `deviceConfiguration` | array | no | yes | downstream shape |
+| `contacts` | array | no | yes | downstream shape |
+| `location` | string | no | yes | optional |
+| `deviceRules` | object | no | yes | downstream shape |
+
+### 9.5 `ManagementPolicy`
+
+| Field | Type | Required on Create | Mutable on Update | Notes |
+|---|---|---:|---:|---|
+| `id` | string | no | no | policy identifier |
+| `name` | string | yes | yes | required |
+| `description` | string | no | yes | optional |
+| `notes` | array | no | yes | optional |
+| `entries` | array | no | yes | effective access entries |
+| `inUse` | array | no | no | runtime linkage |
+| `tags` | array | no | yes | optional |
+| `entity` | string | yes | yes | owning entity scope |
+| `venue` | string | no | yes | optional venue scope |
+
+### 9.6 `ManagementRole`
+
+| Field | Type | Required on Create | Mutable on Update | Notes |
+|---|---|---:|---:|---|
+| `id` | string | no | no | role identifier |
+| `name` | string | yes | yes | required |
+| `description` | string | no | yes | optional |
+| `notes` | array | no | yes | optional |
+| `managementPolicy` | string | no | yes | linked policy id |
+| `users` | array | no | yes | OWSEC user ids |
+| `inUse` | array | no | no | downstream linkage |
+| `tags` | array | no | yes | optional |
+| `entity` | string | yes | yes | linked entity scope |
+| `venue` | string | no | yes | optional venue scope |
+
+---
+
+## 10. Phase 1 Resource Validation Rules
+
+### Entity create
+
+Only treat these as authoritative create fields:
+
+- `name`
+- `description`
+- `notes`
+- `parent`
+
+### Entity update
+
+Normal mutable core fields:
+
+- `name`
+- `description`
+- `notes`
+
+### Venue create
+
+- `entity` and `parent` are mutually exclusive
+- children cannot be present at create
+- topology and design should not be treated as normal create inputs
+
+### Operator create
+
+- automatically creates linked entity
+- MDU must not duplicate that work
+
+---
+
+## 11. Session and Auth APIs
+
+### Endpoint
+
 - `GET /api/v1/mdu/me`
 
-### Users
+### Purpose
+
+Return the current caller context after OWSEC validation and MDU composition.
+
+### Downstream mapping
+
+- token validation through OWSEC validation endpoints
+- `GET /oauth2?me=true`
+- PROV enrichment for effective access summary
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+None.
+
+### Request body schema
+
+None.
+
+### Response schema
+
+MDU-owned composed `/me` schema containing:
+
+- current caller identity from OWSEC
+- effective role and policy summary from PROV
+- effective scope summary
+
+### Validation rules
+
+- bearer token required on authenticated public flow
+- current caller must resolve from OWSEC
+- MDU shall follow the verified Phase 1 API-key validation rule from the integration baseline, even where legacy or raw downstream OpenAPI naming differs
+
+### Orchestration notes
+
+- validate token first
+- resolve current caller with `GET /oauth2?me=true`
+- enrich with effective access from PROV
+- do not persist local session truth
+
+### Auth and Session Acceptance
+
+- current caller is resolved via `GET /oauth2?me=true`
+- token validation uses OWSEC validation endpoints
+- response includes composed effective access context
+- errors are normalized into the MDU error envelope
+
+---
+
+## 12. User APIs
+
+### Endpoint
+
 - `POST /api/v1/mdu/users`
 - `GET /api/v1/mdu/users`
 - `GET /api/v1/mdu/users/{userId}`
 - `PATCH /api/v1/mdu/users/{userId}`
 - `DELETE /api/v1/mdu/users/{userId}`
-- `GET /api/v1/mdu/users/{userId}/access`
 
-### Operators
+### Purpose
+
+Provide direct user lifecycle wrappers over OWSEC admin-user APIs.
+
+### Downstream mapping
+
+- create → `POST /user/0`
+- list → `GET /users`
+- detail → `GET /user/{id}`
+- update → `PUT /user/{id}`
+- delete → `DELETE /user/{id}`
+
+### Path parameters
+
+| Name | Required | Notes |
+|---|---:|---|
+| `userId` | yes for detail/update/delete | OWSEC user id |
+
+### Query parameters
+
+#### Users list
+
+| Name | Notes |
+|---|---|
+| `offset` | downstream pagination |
+| `limit` | downstream pagination |
+| `filter` | downstream filter support |
+| `idOnly` | downstream compact response mode |
+| `select` | downstream field selection |
+| `nameSearch` | name search |
+| `emailSearch` | email search |
+
+#### User detail
+
+| Name | Notes |
+|---|---|
+| `byEmail` | interpret identifier as email when supported |
+
+#### User update
+
+| Name | Notes |
+|---|---|
+| `email_verification` | downstream update flag |
+| `forgotPassword` | downstream reset flow flag |
+| `resetMFA` | downstream reset flag |
+
+### Request body schema
+
+- create request body → `UserInfo` create-compatible downstream body
+- update request body → `UserInfo` update-compatible downstream body
+
+### Response schema
+
+- single-user responses → `UserInfo`
+- list response → downstream users list response shape
+
+### Validation rules
+
+- create must use `POST /user/0`
+- Phase 1 supports normal update semantics first
+- MDU should not invent a second user schema for direct wrappers
+
+### Orchestration notes
+
+- MDU is a thin OWSEC wrapper for direct user CRUD
+- do not persist local user truth
+- normalize query parameter names and error envelope
+
+### User API Acceptance
+
+- create uses `/user/0`
+- list supports downstream query filters
+- detail supports `byEmail`
+- update maps to OWSEC update
+- delete maps to OWSEC delete
+- errors normalized into MDU error envelope
+
+---
+
+## 13. Operator APIs
+
+### Endpoint
+
 - `POST /api/v1/mdu/operators`
 - `GET /api/v1/mdu/operators`
 - `GET /api/v1/mdu/operators/{operatorId}`
 - `PATCH /api/v1/mdu/operators/{operatorId}`
 
-### Entities
+### Purpose
+
+Expose direct operator wrappers over PROV.
+
+### Downstream mapping
+
+- create → `POST /operator/{uuid}`
+- list → `GET /operator`
+- detail → `GET /operator/{uuid}`
+- update → `PUT /operator/{uuid}`
+
+### Path parameters
+
+| Name | Required | Notes |
+|---|---:|---|
+| `operatorId` | yes for detail/update | PROV operator id |
+
+### Query parameters
+
+#### Operator list
+
+| Name | Notes |
+|---|---|
+| `offset` | downstream pagination |
+| `limit` | downstream pagination |
+| `select` | field selection |
+| `countOnly` | count-only mode |
+
+### Request body schema
+
+- create → `Operator`
+- update → `Operator`
+
+### Response schema
+
+- detail/create/update → `Operator`
+- list → `OperatorList`
+
+### Validation rules
+
+- operator create uses compatibility create route `POST /operator/{uuid}`
+- operator create auto-creates linked entity
+- MDU must not create that entity separately
+
+### Orchestration notes
+
+- inject compatibility path token internally
+- do not leak the raw create-route quirk to callers
+
+### Operator API Acceptance
+
+- create uses `POST /operator/{uuid}`
+- list supports downstream pagination/query options
+- detail maps to `GET /operator/{uuid}`
+- update maps to `PUT /operator/{uuid}`
+- operator create does not trigger a duplicate entity create flow
+
+---
+
+## 14. Entity APIs
+
+### Endpoint
+
 - `POST /api/v1/mdu/entities`
 - `GET /api/v1/mdu/entities`
 - `GET /api/v1/mdu/entities/{entityId}`
 - `PATCH /api/v1/mdu/entities/{entityId}`
 - `GET /api/v1/mdu/entities/{entityId}/children`
 
-### Venues
+### Purpose
+
+Expose direct entity wrappers and a composed children helper.
+
+### Downstream mapping
+
+- create → `POST /entity/{uuid}`
+- list → `GET /entity`
+- detail → `GET /entity/{uuid}`
+- update → `PUT /entity/{uuid}`
+- children → composed from PROV
+
+### Path parameters
+
+| Name | Required | Notes |
+|---|---:|---|
+| `entityId` | yes for detail/update/children | PROV entity id |
+
+### Query parameters
+
+#### Entity list
+
+| Name | Notes |
+|---|---|
+| `offset` | downstream pagination |
+| `limit` | downstream pagination |
+| `select` | field selection |
+| `countOnly` | count-only mode |
+
+### Request body schema
+
+- create → `Entity`
+- update → `Entity`
+
+### Response schema
+
+- detail/create/update → `Entity`
+- list → `EntityList`
+- children → MDU-composed entity children response
+
+### Validation rules
+
+- use `POST /entity/{uuid}`
+- do not use the tree import route for normal Phase 1 create
+- authoritative create fields are `name`, `description`, `notes`, `parent`
+- authoritative update fields are `name`, `description`, `notes`
+
+### Orchestration notes
+
+- inject compatibility path token internally
+- children endpoint may compose from parent-child linkage in PROV responses
+
+### Entity API Acceptance
+
+- create uses `POST /entity/{uuid}`
+- tree import route is not used for normal create
+- list supports downstream pagination/query options
+- children response is composed from PROV
+- errors are normalized
+
+---
+
+## 15. Venue APIs
+
+### Endpoint
+
 - `POST /api/v1/mdu/entities/{entityId}/venues`
 - `GET /api/v1/mdu/entities/{entityId}/venues`
 - `GET /api/v1/mdu/venues/{venueId}`
 - `PATCH /api/v1/mdu/venues/{venueId}`
 - `GET /api/v1/mdu/venues/{venueId}/children`
 
-### Policies
+### Purpose
+
+Expose venue wrappers and composed venue-children behavior.
+
+### Downstream mapping
+
+- create → `POST /venue/{uuid}`
+- list by entity → `GET /venue?entity={entityId}`
+- detail → `GET /venue/{uuid}`
+- update → `PUT /venue/{uuid}`
+- children → composed from PROV
+
+### Path parameters
+
+| Name | Required | Notes |
+|---|---:|---|
+| `entityId` | yes for entity venue list/create | parent entity scope |
+| `venueId` | yes for detail/update/children | PROV venue id |
+
+### Query parameters
+
+#### Venue list
+
+| Name | Notes |
+|---|---|
+| `entity` | entity scope filter |
+| `venue` | parent venue filter |
+| `offset` | downstream pagination |
+| `limit` | downstream pagination |
+| `select` | field selection |
+| `countOnly` | count-only mode |
+| `RRMvendor` | downstream query option |
+
+#### Venue detail
+
+| Name | Notes |
+|---|---|
+| `getDevices` | include devices when supported |
+| `getChildren` | include children when supported |
+
+#### Venue update
+
+| Name | Notes |
+|---|---|
+| `updateAllDevices` | downstream update option |
+| `rebootAllDevices` | downstream update option |
+| `testUpdateOnly` | downstream update option |
+| `upgradeAllDevices` | downstream update option |
+| `revisionsAvailable` | downstream update option |
+| `revision` | downstream update option |
+
+### Request body schema
+
+- create → `Venue`
+- update → `Venue`
+
+### Response schema
+
+- detail/create/update → `Venue`
+- list → `VenueList`
+- children → MDU-composed venue children response
+
+### Validation rules
+
+- create uses `POST /venue/{uuid}`
+- `entity` and `parent` are mutually exclusive
+- `children` cannot be present at create
+- `topology` and `design` are not normal create inputs
+
+### Orchestration notes
+
+- entity-scoped create route should still map to PROV venue create shape
+- list-by-entity should normalize the entity filter for callers
+
+### Venue API Acceptance
+
+- create uses `POST /venue/{uuid}`
+- list supports downstream venue query parameters
+- detail supports `getDevices` and `getChildren`
+- update supports documented downstream query flags
+- create rejects invalid `entity`/`parent` combinations
+
+---
+
+## 16. Management Policy APIs
+
+### Endpoint
+
 - `POST /api/v1/mdu/policies`
 - `GET /api/v1/mdu/policies`
 - `GET /api/v1/mdu/policies/{policyId}`
 
-### Roles
+### Purpose
+
+Expose direct management policy wrappers over PROV.
+
+### Downstream mapping
+
+- create → `POST /managementPolicy/{uuid}`
+- list → `GET /managementPolicy`
+- detail → `GET /managementPolicy/{uuid}`
+
+### Path parameters
+
+| Name | Required | Notes |
+|---|---:|---|
+| `policyId` | yes for detail | PROV policy id |
+
+### Query parameters
+
+#### Policy list
+
+| Name | Notes |
+|---|---|
+| `entity` | entity scope filter |
+| `venue` | venue scope filter |
+| `offset` | downstream pagination |
+| `limit` | downstream pagination |
+| `select` | field selection |
+| `countOnly` | count-only mode |
+
+#### Policy detail
+
+| Name | Notes |
+|---|---|
+| `expandInUse` | expand in-use references |
+
+### Request body schema
+
+- create → `ManagementPolicy`
+
+### Response schema
+
+- detail/create → `ManagementPolicy`
+- list → `ManagementPolicyList`
+
+### Validation rules
+
+- create uses `POST /managementPolicy/{uuid}`
+- direct wrapper must preserve downstream `entries[]` semantics
+
+### Orchestration notes
+
+- MDU should preserve the `managementPolicy.entries[]` structure
+- MDU should not reshape the serialized inner `policy` document for direct wrappers
+
+### Policy API Acceptance
+
+- create uses `POST /managementPolicy/{uuid}`
+- list supports entity/venue/pagination query parameters
+- detail supports `expandInUse`
+- wrapper preserves downstream `ManagementPolicy` body shape
+
+---
+
+## 17. Management Role APIs
+
+### Endpoint
+
 - `POST /api/v1/mdu/roles`
 - `GET /api/v1/mdu/roles`
 - `GET /api/v1/mdu/roles/{roleId}`
 
-### Access Assignment
+### Purpose
+
+Expose direct management role wrappers over PROV.
+
+### Downstream mapping
+
+- create → `POST /managementRole/{id}`
+- list → `GET /managementRole`
+- detail → `GET /managementRole/{id}`
+
+### Path parameters
+
+| Name | Required | Notes |
+|---|---:|---|
+| `roleId` | yes for detail | PROV role id |
+
+### Query parameters
+
+#### Role list
+
+| Name | Notes |
+|---|---|
+| `entity` | entity scope filter |
+| `offset` | downstream pagination |
+| `limit` | downstream pagination |
+| `select` | field selection |
+| `countOnly` | count-only mode |
+
+#### Role detail
+
+| Name | Notes |
+|---|---|
+| `expandInUse` | expand in-use references |
+
+### Request body schema
+
+- create → `ManagementRole`
+
+### Response schema
+
+- detail/create → `ManagementRole`
+- list → `ManagementRoleList`
+
+### Validation rules
+
+- create uses `POST /managementRole/{id}`
+- direct wrapper must preserve downstream users/policy/entity linkage shape
+
+### Orchestration notes
+
+- `managementRole.users[]` links OWSEC user ids
+- `managementRole.managementPolicy` links the downstream policy object
+
+### Role API Acceptance
+
+- create uses `POST /managementRole/{id}`
+- list supports entity/pagination query parameters
+- detail supports `expandInUse`
+- wrapper preserves downstream `ManagementRole` body shape
+
+---
+
+## 18. Access Assignment APIs
+
+### Endpoint
+
 - `POST /api/v1/mdu/users/{userId}/entities/{entityId}`
 - `POST /api/v1/mdu/users/{userId}/roles`
 - `POST /api/v1/mdu/users/{userId}/policies`
+- `GET /api/v1/mdu/users/{userId}/access`
 
-## 11.5 Deliverables
+### Purpose
 
-Phase 1 shall deliver:
+Provide MDU-owned orchestration for user-to-entity, role, and policy assignment plus effective access summary.
 
-- production-grade service bootstrap
-- auth/session middleware
-- normalized user/provisioning/access wrapper APIs
-- OpenAPI for implemented endpoints
-- integration adapters for OWSEC and PROV
-- removal of placeholder scaffold APIs from the production route surface
+### Downstream mapping
 
-## 11.6 Explicit Non-Goals for Phase 1
+- composed OWSEC + PROV workflow
+- no single direct downstream wrapper for effective access summary
 
-Phase 1 does not yet require:
+### Path parameters
 
-- customer/sub-operator business APIs as first-class concepts
-- billing workspace aggregation
-- full device runtime/live-state aggregation
-- topology aggregation
-- analytics aggregation
+| Name | Required | Notes |
+|---|---:|---|
+| `userId` | yes | OWSEC user id |
+| `entityId` | yes for entity assignment | target entity scope |
+
+### Query parameters
+
+None required by default for the assignment endpoints.
+
+### Request body schema
+
+MDU-owned assignment request schemas only, for:
+
+- role assignment inputs
+- policy assignment inputs
+- entity assignment inputs
+
+### Response schema
+
+MDU-owned access summary schemas for:
+
+- `/users/{userId}/access`
+- assignment operation results where composed output is needed
+
+### Validation rules
+
+- no local ownership table
+- no local RBAC table
+- assignments must resolve to PROV `managementPolicy` and `managementRole` objects
+
+### Orchestration notes
+
+- user identity comes from OWSEC
+- access structure comes from PROV
+- entity assignment, role assignment, and policy assignment must end in PROV-managed linkage
+
+### Access Assignment Acceptance
+
+- user access summary composes OWSEC + PROV
+- assignment flows do not create local RBAC truth
+- errors are normalized into MDU envelope
+- direct wrapper schemas are not invented where downstream shapes already exist
+
+---
+
+## 19. `/validateApiKey` Note
+
+MDU shall follow the verified Phase 1 API-key validation rule from the integration baseline, even where legacy or raw downstream OpenAPI naming differs.
+
+---
+
+## 20. Phase 1 Deliverables
+
+- auth and session middleware
+- current caller context endpoint
+- user lifecycle wrappers over OWSEC
+- operator, entity, venue, management policy, and management role wrappers over PROV
+- effective access summary
+- user-to-role, policy, and entity assignment orchestration
+- normalized MDU error envelope
+- OpenAPI and requirements alignment for implemented Phase 1 endpoints
+
+---
+
+## 21. Phase 1 Explicit Non-Goals
+
+- billing
+- topology
+- analytics
+- OWGW runtime operations
+- jobs
+- saga
 - async workflow persistence
-- saga/compensation model for normal CRUD flows
 - rollout orchestration
 - AI hooks
 
----
-
-# 12. Phase 2 Requirements
-
-Phase 2 makes the service product-facing for customer/sub-operator and hierarchy workspaces.
-
-## 12.1 Objectives
-
-Phase 2 shall:
-
-- introduce customer/sub-operator lifecycle APIs
-- implement hierarchy browsing and subtree navigation
-- support lazy-loading hierarchy APIs for the UI
-- support customer bootstrap flows
-- expose customer workspace APIs
-- integrate billing-facing workspace summaries
-- make the service useful for the actual operator portal experience
-
-## 12.2 Scope
-
-Phase 2 includes:
-
-### Customer / Sub-Operator Lifecycle APIs
-- create child customer/sub-operator
-- list permitted customers/sub-operators
-- get customer detail
-- update customer metadata and status
-- expose customer workspace summary
-- expose child-scope and parent-scope relationships needed by the UI
-
-### Customer Bootstrap Orchestration
-- create first admin user through OWSEC
-- create or resolve required hierarchy scope through PROV
-- create or resolve required access structures through PROV
-- attach customer bootstrap metadata required by the UI flow
-- optionally initiate or attach billing-selection context where product-approved
-
-### Hierarchy Workspace APIs
-- subtree roots
-- node detail
-- node children
-- lazy child expansion with pagination metadata
-- breadcrumb/context payloads
-- workspace tab support payloads
-- scope switching support for the UI shell
-
-### Billing-Facing Workspace Integration
-- current subscription summary
-- available plans summary
-- direct-child billing visibility
-- customer billing summary panels
-- operator-facing child billing list summaries where approved
-
-## 12.3 Functional Requirements
-
-### 12.3.1 Customer/Sub-Operator Domain Abstraction
-MDU shall introduce the MDU-facing business concepts of customer and sub-operator even when the underlying implementation uses downstream hierarchy objects. This abstraction shall remain stable for the UI.
-
-### 12.3.2 Customer Create Workflow
-A customer/sub-operator create workflow shall be orchestrated by MDU using downstream services. At minimum the workflow must support:
-- customer details
-- first admin user details
-- scoped hierarchy placement
-- initial access setup
-- optional billing context linkage
-
-### 12.3.3 Customer Workspace
-MDU shall expose customer workspace payloads that aggregate the minimum data needed for:
-- overview
-- users
-- hierarchy
-- billing summary
-- operational summary placeholders for later phases
-
-### 12.3.4 Hierarchy Navigation
-MDU shall support hierarchy-first navigation with APIs that allow:
-- subtree root loading
-- child expansion
-- context switching
-- stable node identifiers
-- breadcrumb-friendly path information
-- tab/workspace composition around the selected scope
-
-### 12.3.5 Lazy-Loading and Pagination
-Recursive hierarchy APIs shall avoid full unbounded tree responses by default. They shall support child counts, paged child loading, and stable continuation semantics suitable for tree UIs.
-
-### 12.3.6 Billing Summary Composition
-MDU shall aggregate Billing Service data into customer and operator workspaces while keeping Billing Service as the system of record for plan/subscription truth.
-
-## 12.4 API Families Expected in Phase 2
-
-Examples of expected Phase 2 API families include:
-
-- `/api/v1/mdu/customers`
-- `/api/v1/mdu/customers/{customerId}`
-- `/api/v1/mdu/customers/{customerId}/workspace`
-- `/api/v1/mdu/customers/{customerId}/users`
-- `/api/v1/mdu/customers/{customerId}/billing`
-- `/api/v1/mdu/hierarchy`
-- `/api/v1/mdu/hierarchy/{nodeId}`
-- `/api/v1/mdu/hierarchy/{nodeId}/children`
-- `/api/v1/mdu/workspaces/{nodeId}/context`
-- `/api/v1/mdu/bootstrap/*` style APIs if approved
-
-## 12.5 Deliverables
-
-Phase 2 shall deliver:
-
-- stable customer/sub-operator API contracts
-- hierarchy APIs suitable for the UI shell and hierarchy tree
-- billing summary integration contracts
-- first-admin bootstrap orchestration
-- paginated hierarchy child loading
-- customer workspace payloads for the UI
-
-## 12.6 Design Rule
-
-Even when the UI uses the language “customer” and “sub-operator,” MDU should still treat these as orchestrated concepts over underlying systems unless a later architecture explicitly assigns durable local ownership.
-
-## 12.7 Explicit Non-Goals for Phase 2
-
-Phase 2 does not yet require:
-
-- live device runtime aggregation
-- device command orchestration
-- full topology APIs
-- analytics/time-series views
-- durable workflow engine
-- async jobs
-- large-batch recovery models
-- maps or AI features
-
----
-
-# 13. Phase 3 Requirements
-
-Phase 3 expands MDU into device and configuration orchestration.
-
-## 13.1 Objectives
-
-Phase 3 shall:
-
-- make the service operationally useful for device and configuration workflows
-- integrate live device data and actions from OWGW
-- wrap inventory/configuration data from PROV
-- provide device and configuration contracts suitable for the UI
-
-## 13.2 Scope
-
-Phase 3 includes:
-
-### Device Inventory Wrappers
-- device inventory list/detail/create/update/delete
-- bulk device import
-- serial-based lookup flows
-- entity and venue scoped inventory filtering
-- inventory status normalization for UI-facing tables and detail pages
-
-### Venue Device Assignment
-- assign devices to venues
-- unassign devices
-- list devices by venue
-- move devices between compatible scopes where approved
-- batch assignment and import summaries
-
-### Live Device State via OWGW
-- current live status snapshot
-- online/offline and last-contact style state surfaces
-- support-safe diagnostics summaries
-- safe action wrappers for approved commands
-- command submission and result tracking where needed by the UI
-- runtime failure normalization
-
-### Configuration Wrappers
-- configuration list/detail/create/update/delete
-- venue configuration assignment
-- AP-specific configuration assignment
-- effective configuration preview
-- apply configuration workflows
-- configuration validation/error surfacing
-
-## 13.3 Functional Requirements
-
-### 13.3.1 Inventory vs Live State Separation
-MDU shall keep inventory and live state separate in the orchestration layer. PROV-backed inventory data and OWGW-backed runtime state shall be composed deliberately rather than merged into an uncontrolled shadow model.
-
-### 13.3.2 Device Detail Composition
-Device detail APIs shall progressively combine:
-- inventory metadata
-- venue and hierarchy placement
-- live runtime state
-- action eligibility
-- configuration linkage
-
-### 13.3.3 Device Actions
-MDU shall expose only approved device actions through validated MDU contracts. Each action must include:
-- authorization checks
-- request validation
-- safe command mapping to OWGW
-- result/status normalization
-- audit visibility
-
-### 13.3.4 Batch and Import Flows
-Batch device imports and assignment flows shall return structured success/failure breakdowns that allow the UI and operators to understand what happened without inspecting raw downstream responses.
-
-### 13.3.5 Configuration Management
-MDU shall expose stable configuration APIs that abstract away the underlying complexity of configuration records, venue assignments, and AP-specific overrides.
-
-### 13.3.6 Effective Configuration Preview
-MDU shall support “effective configuration” views that help the UI show what is actually applied or would be applied to a device or venue after inheritance and assignment are considered.
-
-## 13.4 Data Composition Rule for Devices
-
-MDU shall not flatten all device concerns into one fake source of truth.
-
-It shall explicitly recognize:
-
-1. **Inventory truth** from PROV
-2. **Live/runtime truth** from OWGW
-3. **Historical telemetry** from analytics
-4. **Topology relationships** from topology service
-
-The MDU-facing device APIs shall progressively compose these concerns into coherent UI-facing responses.
-
-## 13.5 API Families Expected in Phase 3
-
-Examples of expected Phase 3 API families include:
-
-- `/api/v1/mdu/devices`
-- `/api/v1/mdu/devices/{serialNumber}`
-- `/api/v1/mdu/devices/import`
-- `/api/v1/mdu/venues/{venueId}/devices`
-- `/api/v1/mdu/devices/{serialNumber}/status`
-- `/api/v1/mdu/devices/{serialNumber}/diagnostics`
-- `/api/v1/mdu/devices/{serialNumber}/actions/*`
-- `/api/v1/mdu/configurations`
-- `/api/v1/mdu/configurations/{configurationId}`
-- `/api/v1/mdu/venues/{venueId}/configuration/*`
-- `/api/v1/mdu/access-points/{serialNumber}/configuration/*`
-
-## 13.6 Deliverables
-
-Phase 3 shall deliver:
-
-- device inventory API surface
-- venue assignment API surface
-- live status and diagnostics composition
-- configuration management API surface
-- effective configuration preview/apply endpoints
-- command-safe action wrappers for approved OWGW workflows
-- device/configuration UI support contracts
-
-## 13.7 Safety Rule
-
-MDU shall not expose every OWGW command raw and unfiltered to end users. It shall expose only approved device actions behind validated MDU contracts with authorization, auditability, and response normalization.
-
-## 13.8 Explicit Non-Goals for Phase 3
-
-Phase 3 does not yet require:
-
-- topology graph APIs as a first-class user feature
-- analytics trend/history dashboards
-- map overlays
-- async workflow engine
-- rollout orchestration
-- AI recommendations
-- generalized saga-based recovery
-
----
-
-# 14. Phase 4 Requirements
-
-Phase 4 expands the service into topology, analytics, maps, metrics, health, and richer operational aggregation.
-
-## 14.1 Objectives
-
-Phase 4 shall:
-
-- provide rich operational visibility views
-- integrate topology and analytics as first-class downstream dependencies
-- support health, KPI, trend, and historical workspace views
-- make MDU the true cross-domain operational workspace backend
-
-## 14.2 Scope
-
-Phase 4 includes:
-
-### Topology
-- topology workspace APIs
-- node/floor/venue/site/building topology summaries
-- device connectivity views
-- overlay-ready responses for topology UIs
-- topology detail composition with hierarchy context and permissions
-
-### Analytics and Time-Series
-- telemetry summaries
-- trend/timepoint APIs
-- historical device summaries
-- historical client summaries
-- KPI panels and dashboard widgets
-- health scoring / summary models where approved
-- scoped analytics for customer and hierarchy workspaces
-
-### Maps and Metrics Foundations
-- map/overlay payloads
-- venue/floor-level visualization support
-- node health summaries
-- metrics workspace summaries
-- signal/coverage/association density support payloads where approved
-
-### Client Visibility Foundations
-- scoped client summaries
-- client visibility panels inside workspaces
-- client history integration through analytics sources
-- client-centric diagnostics support payloads for future phases
-
-## 14.3 Functional Requirements
-
-### 14.3.1 Topology Aggregation
-MDU shall consume topology-service outputs and shape them into workspace-friendly responses that include scope, permissions, UI metadata, and optional enrichment from inventory and analytics domains.
-
-### 14.3.2 Analytics Aggregation
-MDU shall consume analytics-service outputs and expose summaries, KPIs, historical trends, and scoped operational data without duplicating analytics ownership.
-
-### 14.3.3 Dashboard and Workspace Health Views
-MDU shall expose health and overview APIs that combine data from multiple domains to support:
-- operator overview dashboards
-- customer workspaces
-- hierarchy-node workspaces
-- device and venue summaries
-
-### 14.3.4 Map and Overlay Support
-MDU shall expose payloads that support visual and spatial UI layers while keeping map/topology/analytics responsibilities separated under the orchestration model.
-
-### 14.3.5 Client Visibility
-MDU shall introduce client visibility foundations sufficient for UI-level summaries and analytics-backed historical views without yet becoming a full standalone client-management system.
-
-## 14.4 Service-Composition Rule
-
-For topology/analytics/maps/metrics domains, MDU shall aggregate and normalize, but it shall not attempt to replace the specialized downstream services that compute or own those domains.
-
-## 14.5 API Families Expected in Phase 4
-
-Examples include:
-
-- `/api/v1/mdu/topology/*`
-- `/api/v1/mdu/analytics/*`
-- `/api/v1/mdu/maps/*`
-- `/api/v1/mdu/metrics/*`
-- `/api/v1/mdu/workspaces/{nodeId}/health`
-- `/api/v1/mdu/workspaces/{nodeId}/overview`
-- `/api/v1/mdu/clients/*`
-- `/api/v1/mdu/dashboard/*`
-
-## 14.6 Deliverables
-
-Phase 4 shall deliver:
-
-- topology workspace API contracts
-- analytics/time-series summary API contracts
-- KPI and health panels for core workspaces
-- map/overlay support payloads
-- client visibility foundations
-- dashboard-ready operational aggregation contracts
-
-## 14.7 Explicit Non-Goals for Phase 4
-
-Phase 4 does not yet require:
-
-- generalized durable workflow engine
-- broad async job framework
-- full reconciliation system
-- rollout orchestration engine
-- AI execution hooks
-- advanced admin/debug toolchain beyond what is needed to support topology/analytics operations
-
----
-
-# 15. Phase 5 Requirements
-
-Phase 5 introduces workflow durability and advanced operational maturity.
-
-## 15.1 Objectives
-
-Phase 5 shall:
-
-- provide durable workflow safety where truly needed
-- support idempotency
-- support async jobs
-- support reconciliation and forward recovery
-- support rollout orchestration
-- support AI hooks and advanced admin/debug maturity
-- make the service safe for large and long-running workflows
-
-## 15.2 Scope
-
-Phase 5 includes:
-
-### Workflow Hardening
-- idempotency keys
-- mutation deduplication
-- stored workflow/result status where approved
-- retry-safe write APIs
-- support-safe replay semantics
-
-### Async Job Model
-- background jobs
-- job status visibility
-- long-running operation tracking
-- worker health and supportability
-- operator-facing operation status endpoints where needed
-
-### Auditability and Reconciliation
-- mutation audit logs
-- failed-workflow visibility
-- reconcile-needed statuses
-- operational repair/admin tooling
-- support/debug visibility for orchestration outcomes
-
-### Selective Saga / Forward Recovery
-- compensation only for real multi-system workflows that justify it
-- forward-recovery models where rollback is not correct
-- import/onboarding/delete teardown durability for selected workflows
-- persisted workflow step tracking where approved
-
-### Rollouts / AI / Advanced Admin
-- rollout orchestration hooks
-- AI recommendation/explainability hooks
-- advanced debug/admin APIs
-- operational diagnostics endpoints
-- support workflows for manual intervention and recovery
-
-## 15.3 Functional Requirements
-
-### 15.3.1 Idempotency
-MDU shall support idempotent write behavior for selected mutation APIs using stable keys, request hashing, stored outcome references, and safe duplicate handling semantics.
-
-### 15.3.2 Long-Running Workflow Visibility
-MDU shall expose workflow and operation status models for imports, batch operations, customer bootstrap workflows, rollout-like workflows, and other long-running orchestrations.
-
-### 15.3.3 Recovery and Reconciliation
-When a workflow spans multiple systems of record and partial completion matters, MDU shall support either:
-- forward recovery
-- selective compensation
-- reconcile-needed state
-- manual intervention visibility
-
-### 15.3.4 Rollout-Oriented Orchestration
-Where the product introduces staged rollout workflows, MDU shall coordinate them as higher-level orchestrations rather than leaking raw downstream command complexity.
-
-### 15.3.5 AI and Recommendation Hooks
-AI-related features shall remain:
-- scope-aware
-- authorization-aware
-- explainable
-- approval-gated for side effects
-
-### 15.3.6 Advanced Admin/Debug
-MDU shall expose support- and admin-oriented APIs for operational visibility, tracing, repair, and inspection without forcing standard end-user APIs to expose raw backend internals.
-
-## 15.4 Design Rule
-
-Saga/compensation shall not be a universal default. It shall be introduced only where:
-
-1. multiple systems of record are involved
-2. partial completion matters
-3. retry is insufficient
-4. workflow persistence is explicitly justified
-
-## 15.5 API Families Expected in Phase 5
-
-Examples include:
-
-- `/api/v1/mdu/operations/*`
-- `/api/v1/mdu/jobs/*`
-- `/api/v1/mdu/reconciliation/*`
-- `/api/v1/mdu/rollouts/*`
-- `/api/v1/mdu/ai/*`
-- `/api/v1/mdu/admin/debug/*`
-- `/api/v1/mdu/audit/*`
-
-## 15.6 Deliverables
-
-Phase 5 shall deliver:
-
-- idempotency model and storage
-- async workflow execution model
-- workflow/job status APIs
-- audit/reconciliation support
-- selective compensation/forward-recovery support
-- rollout/AI/admin maturity surfaces
-- support tooling visibility for operational incidents
-
----
-
-# 16. Whole-Service API Family Roadmap
-
-Across all phases, the service is expected to expose these API families.
-
-## 16.1 Session and Bootstrap
-- current session
-- current scope
-- role/access bootstrap
-- backend bootstrap support
-
-## 16.2 Users and Access
-- user CRUD
-- access summary
-- policy/role/entity assignment
-- future profile abstractions
-
-## 16.3 Customers and Sub-Operators
-- create/list/detail/update/status
-- first-admin bootstrap
-- workspace APIs
-- child-scope lifecycle flows
-
-## 16.4 Hierarchy
-- roots
-- node detail
-- node children
-- subtree expansion
-- breadcrumbs/context payloads
-- workspace-tab support
-
-## 16.5 Provisioning Wrappers
-- operator/entity/venue wrappers
-- role/policy wrappers
-- access workflows
-
-## 16.6 Billing Workspaces
-- current subscription
-- available plans
-- child billing summary
-- billing visibility by scope
-
-## 16.7 Devices
-- inventory CRUD wrappers
-- imports
-- venue assignment
-- live status
-- diagnostics
-- device actions
-- firmware/support hooks
-
-## 16.8 Configurations
-- configuration CRUD wrappers
-- venue assignment
-- AP-specific assignment
-- preview/apply
-
-## 16.9 Topology
-- topology summaries
-- contextual topology workspaces
-- connectivity views
-- overlay support payloads
-
-## 16.10 Analytics and Metrics
-- timepoint summaries
-- trend APIs
-- historical views
-- KPI/health panels
-- map/overlay support
-
-## 16.11 Advanced Operational Domains
-- maps
-- clients
-- rollouts
-- AI hooks
-- admin/debug APIs
-- workflow status APIs
-
----
-
-# 17. Data and Persistence Requirements
-
-## 17.1 Early-Phase Persistence Rule
-
-In early phases, local persistence shall remain minimal and justified.
-
-Valid early uses:
-
-- migration tracking
-- operational metadata
-- bounded audit support
-- request correlation support
-- configuration for feature flags if needed
-- idempotency support once introduced
-
-Invalid early uses:
-
-- authoritative RBAC persistence
-- second hierarchy store
-- second inventory store
-- second billing store
-- speculative ownership tables that conflict with downstream truth
-
-## 17.2 Later-Phase Persistence
-
-Later phases may add MDU-owned persistence for:
-
-- workflow executions
-- job state
-- compensation/recovery metadata
-- import tracking
-- audit logs
-- reconciliation status
-- support/debug metadata
-- bounded cached summaries
-
-Every such table must correspond to an approved phase requirement and be documented in migrations and design docs.
-
-## 17.3 Caching Rule
-
-Any cache used by MDU shall be:
-
-- non-authoritative
-- TTL-bounded
-- safe to lose
-- observable
-- explicitly scoped to performance optimization rather than ownership transfer
-
----
-
-# 18. Whole-Service Non-Functional Expectations
-
-Cross-phase implementation, runtime, observability, CI, and security guardrails are defined in `mango-mdu-common-requirements.md`.
-
-At the master level, MDU Service is expected to support:
-
-- interactive UI performance
-- bounded downstream composition
-- scoped aggregation at hierarchy/customer/device/workspace levels
-- phased introduction of durable workflow state only when justified
-- stable error envelopes
-- production-grade observability and supportability
-
----
-
-# 19. Recommended Build Sequence
-
-Recommended implementation order:
-
-1. remove scaffold placeholder behavior
-2. finalize app wiring, config, downstream adapters, and middleware
-3. implement Phase 1 session/user/provisioning/access foundation
-4. implement customer/hierarchy/billing workspace APIs
-5. implement device/configuration wrappers and safe live-state composition
-6. integrate topology and analytics aggregation
-7. introduce durable workflow features where justified
-8. expand into rollouts, AI hooks, advanced admin/debug
-
----
-
-# 20. Acceptance Criteria for the Master Requirements
-
-This master document is acceptable only if:
-
-1. It defines the whole service, not only Phase 1.
-2. It preserves the exact Phase 1 ownership and downstream rules.
-3. It uses the earlier draft as future-breadth guidance without importing outdated ownership assumptions into Phase 1.
-4. It incorporates the broader downstream ecosystem: OWSEC, PROV, Billing Service, OWGW, NW Topology Service, and OWANALYTICS.
-5. It clearly separates whole-service roadmap concerns from cross-phase engineering guardrails, which now live in the common requirements document.
-6. It is compatible with the current repository scaffold while being far more complete than the scaffold docs.
-7. It provides a solid base from which detailed phase documents can be written.
-
----
-
-# 21. Final Architectural Rules
-
-1. `mango-mdu-service` is the Mango operator-domain orchestration service.
-2. This document defines the whole-service roadmap and architecture.
-3. Phase 1 is governed by the exact verified downstream mapping for OWSEC and PROV.
-4. OWSEC owns identity and session truth.
-5. PROV owns hierarchy, roles, policies, inventory ownership, configuration ownership, and RBAC persistence truth.
-6. Billing Service owns billing truth.
-7. OWGW owns live device runtime and command execution surfaces.
-8. NW Topology Service owns topology graph computation.
-9. OWANALYTICS owns telemetry/timepoint analytics.
-10. MDU owns orchestration, API shaping, scope-aware workflow composition, and future cross-domain workspace aggregation.
-11. MDU shall not become a second system of record for domains already owned elsewhere unless a future approved architecture explicitly grants that role.
-12. Detailed phase specifications shall be produced from this master requirements document, beginning with a detailed Phase 1 document.
