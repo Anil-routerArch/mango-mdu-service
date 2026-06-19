@@ -53,19 +53,16 @@ PROV remains the system of record for users, customers, hierarchy, roles, polici
 
 1. MDU shall expose Mango-facing APIs under `/api/v1/mdu/*`.
 2. The UI shall authenticate directly with OWSEC.
-3. MDU shall not expose a competing login or signup API unless a future approved architecture explicitly adds that requirement.
-4. Protected MDU business APIs shall accept `Authorization: Bearer <owsec-token>`.
-5. MDU shall validate the inbound bearer token using OWSEC-owned validation mechanisms before executing protected business APIs.
-6. MDU shall call downstream private APIs using trusted service credentials such as `x-api` or equivalent.
-7. MDU shall forward the inbound user token to downstream private APIs using `x-authorization` when the downstream service needs user context.
-8. PROV shall resolve user, customer, scope, role, policy, and RBAC decisions using its own source-of-truth data.
-9. MDU shall not become a separate RBAC, hierarchy, customer, user, inventory, configuration, billing, topology, or analytics source of truth.
-10. MDU shall normalize downstream responses and errors into stable UI-facing contracts.
-11. MDU shall hide downstream route quirks and compatibility paths from the UI.
-12. Local persistence in MDU shall be minimal and limited to MDU-owned operational concerns.
-13. Durable workflow or job state shall be introduced only in later phases where explicitly justified.
-14. Wildcard route families in this master document represent planned namespaces, not final endpoint-level contracts, unless a route is explicitly enumerated.
-15. MDU shall remain an orchestration service, not a replacement for downstream domain services.
+3. Protected MDU business APIs shall accept `Authorization: Bearer <owsec-token>`.
+4. MDU shall validate the inbound bearer token using OWSEC-owned validation mechanisms before executing protected business APIs.
+5. MDU shall call downstream private APIs using trusted service credentials such as `x-api` or equivalent.
+6. MDU shall forward the inbound user token to downstream private APIs using `x-authorization` when the downstream service needs user context.
+7. PROV shall resolve user, customer, scope, role, policy, and RBAC decisions using its own source-of-truth data.
+8. MDU shall not become a separate RBAC, hierarchy, customer, user, inventory, configuration, billing, topology, or analytics source of truth.
+9. MDU shall normalize downstream responses and errors into stable UI-facing contracts.
+10. MDU shall hide downstream route quirks and compatibility paths from the UI.
+11. Local persistence in MDU shall be minimal and limited to MDU-owned operational concerns.
+12. MDU shall remain an orchestration service, not a replacement for downstream domain services.
 
 ---
 
@@ -85,23 +82,20 @@ PROV remains the system of record for users, customers, hierarchy, roles, polici
 1. MDU shall run as a Dockerized Go microservice.
 2. Service configuration shall be provided through environment variables, config files, or approved secret-management mechanisms.
 3. Secrets shall not be hardcoded.
-4. Protected business APIs require a valid OWSEC-issued bearer token unless a route is explicitly documented as internal-only machine access.
-5. Internal service authentication is mandatory for MDU-to-downstream private calls.
-6. Frontend or end-user tokens alone shall not be used as the service-authentication credential for private downstream calls.
-7. Logs shall not contain raw bearer tokens, raw `x-api` values, or raw `x-authorization` values.
+4. Internal service authentication is mandatory for MDU-to-downstream private calls.
+5. Frontend or end-user tokens alone shall not be used as the service-authentication credential for private downstream calls.
+6. Logs shall not contain raw bearer tokens, raw `x-api` values, or raw `x-authorization` values.
 
 ## 3.3 Common Module Usage
 
 MDU should use approved shared Router Architects and OpenWiFi common modules for logging, build metadata, service discovery, and common client or RPC wrapper behavior where applicable.
+Repo:https://github.com/routerarchitects/ow-common-mods
+Repo:https://github.com/routerarchitects/ra-common-mods
 
 MDU should not duplicate shared transport, logging, discovery, or internal-auth infrastructure without approved justification.
 
-## 3.4 API Contract Requirement
 
-1. Every stable MDU API should be represented in OpenAPI 3.x or an approved machine-readable contract format.
-2. CI should validate handlers and route behavior against the declared contract as the API surface matures.
-
-## 3.5 Required CI Checks
+## 3.4 Required CI Checks
 
 Required CI checks should include:
 
@@ -183,15 +177,28 @@ x-correlation-id: <correlation-id>
 
 The downstream service decides how to use `x-authorization`. For PROV, RBAC, scope, user, and customer checks are resolved inside PROV.
 
-## 5.4 Security Rules
+## 5.4 MDU-to-Billing Private Lane
+
+MDU calls Billing Service as a trusted internal service, but does not forward end-user bearer context for Phase 1 billing calls.
+
+```http
+x-api: <mdu-service-api-key>
+x-request-id: <request-id>
+x-correlation-id: <correlation-id>
+```
+
+Billing Service is the Phase 1 exception to the standard downstream forwarding rule. MDU shall authenticate using the trusted internal service credential only and shall not forward the end-user bearer token unless a later approved integration contract explicitly requires it.
+
+## 5.5 Security Rules
 
 1. OWSEC owns login, token issuance, and token/session validation primitives.
 2. MDU validates inbound protected requests before orchestration.
 3. MDU authenticates to downstreams using service credentials.
 4. MDU forwards user context only where needed by downstream authorization or business logic.
-5. Downstream systems retain their own authorization rules.
-6. MDU shall not bypass downstream authorization by using only machine credentials for user-sensitive workflows.
-7. MDU shall not persist browser bearer tokens.
+5. Billing-service calls shall use service credentials only unless a later approved billing integration contract explicitly requires forwarded user context.
+6. Downstream systems retain their own authorization rules.
+7. MDU shall not bypass downstream authorization by using only machine credentials for user-sensitive workflows.
+8. MDU shall not persist browser bearer tokens.
 
 ---
 
@@ -297,28 +304,66 @@ Verified PROV route families for early phases include:
 - `/managementRole/{id}`
 - PROV-owned user/customer routes as required by the implementation baseline
 
-Critical PROV quirks:
-
-1. Create routes may use compatibility detail paths, not collection POST paths.
-2. The create-route path token may not be the created resource ID.
-3. Operator creation may auto-create linked hierarchy objects; MDU must not duplicate those objects.
-4. PROV remains responsible for RBAC enforcement.
 
 ## 8.3 Billing Service
 
 Billing Service owns plans, subscriptions, billing lifecycle, invoices, and billing state. MDU may compose billing summaries but shall not persist billing truth.
 
+Billing integration is not implemented in the current MDU baseline. This section is present to document the intended ownership boundary only.
+
 ## 8.4 OWGW
 
 OWGW owns live device runtime operations, command execution, and diagnostics. MDU shall expose only approved and validated action wrappers rather than raw unfiltered command access.
+
+MDU shall call OWGW using service authentication and only for approved operational workflows.
+
+Verified OWGW route families include:
+
+- `/device/{serialNumber}`
+- `/device/{serialNumber}/logs`
+- `/device/{serialNumber}/healthchecks`
+- `/device/{serialNumber}/capabilities`
+- `/device/{serialNumber}/statistics`
+- `/device/{serialNumber}/status`
+- `/device/{serialNumber}/configure`
+- `/device/{serialNumber}/upgrade`
+- `/device/{serialNumber}/reboot`
+- `/device/{serialNumber}/trace`
+- `/device/{serialNumber}/telemetry`
+- selected device action routes required by approved MDU workflows only
+
+OWGW-backed MDU work should focus on device runtime reads, diagnostics, and approved actions only. 
+
 
 ## 8.5 NW Topology Service
 
 NW Topology Service owns topology graph computation. MDU shall consume topology outputs and shape them into workspace-friendly responses.
 
+MDU shall call Topology Service using the approved downstream auth model for topology reads.
+
+Verified Topology Service route families include:
+
+- `/livez`
+- `/topology`
+- `/system`
+
+`GET /topology` is the primary business route in the attached contract. It accepts `boardId` and optional `interval` query parameters. The attached OpenAPI also states that topology data is assembled from board timepoints, board device inventory data, and Wi-Fi client history data.
+
+
 ## 8.6 OWANALYTICS
 
 OWANALYTICS owns telemetry, historical timepoints, client history, and analytics data. MDU shall consume analytics outputs for summaries, trends, health views, and dashboards.
+
+MDU shall call OWANALYTICS using service authentication for approved read-only analytics workflows.
+
+Verified OWANALYTICS route families include:
+
+- `/board/{id}/devices`
+- `/board/{id}/timepoints`
+- `/wifiClientHistory`
+- `/wifiClientHistory/{client}`
+
+
 
 ---
 
@@ -358,7 +403,6 @@ MDU shall propagate:
 5. MDU shall not log raw token or secret values.
 6. MDU shall preserve traceability across all orchestrated downstream calls.
 7. MDU should propagate actor context, request ID, correlation ID, and user context needed for downstream auditing.
-8. MDU does not require a local audit database in early phases.
 
 ---
 
@@ -399,17 +443,13 @@ Rules:
 
 ## 10.3 Retry, Timeout, and Failure-Isolation Rules
 
-1. MDU is primarily a stateless orchestration service and shall not introduce database-backed idempotency, workflow, or webhook ledgers unless a later approved phase requires durable workflow state.
-2. MDU shall not automatically retry unsafe write operations unless the downstream operation is explicitly confirmed to be idempotent.
-3. Read-oriented downstream calls may use limited retries for transient failures where safe.
-4. If the caller provides an `Idempotency-Key`, MDU should forward it to downstream services that support idempotent handling.
-5. MDU shall not become the source of truth for idempotency state in early phases.
-6. Every downstream call shall use a bounded timeout.
-7. As a default guideline, read-oriented downstream calls should use short timeouts, and write or action-oriented downstream calls may use slightly longer bounded timeouts.
-8. MDU shall return normalized timeout and dependency-failure errors.
-9. Workspace, dashboard, and other composed read APIs shall use bounded fan-out and shall not perform unbounded hierarchy, venue, device, or child-node expansion within a single request.
-10. If an optional read-composition dependency such as Billing, Analytics, or Topology is unavailable, MDU may return a degraded or partial read response only where that route contract explicitly allows it.
-11. Write APIs shall fail cleanly and shall not return partial success unless the workflow explicitly supports that behavior.
+1. MDU shall remain a mostly stateless orchestration service in early phases and shall not add durable idempotency or workflow state unless a later approved phase requires it.
+2. MDU shall not automatically retry write or action calls unless the downstream operation is explicitly safe to retry.
+3. MDU may use limited retries for safe read calls when failures are transient.
+4. Every downstream call shall use a bounded timeout, and MDU shall return normalized timeout or dependency-failure errors.
+5. Composed read APIs shall use bounded fan-out and shall not expand hierarchy, venue, device, or child-node data without limits in a single request.
+6. If an optional read dependency such as Billing, Analytics, or Topology is unavailable, MDU may return partial data only where the route contract explicitly allows it.
+7. Write APIs shall fail cleanly and shall not return partial success unless the workflow is explicitly designed for it.
 
 ## 10.4 Device Action Safety Rules
 
@@ -425,147 +465,7 @@ Rules:
 
 ---
 
-# 11. Data and Persistence Rules
-
-## 11.1 Early-Phase Persistence
-
-Early MDU persistence shall be minimal.
-
-Allowed early uses:
-
-- migration tracking
-- operational metadata
-- correlation/request tracing metadata where needed
-- bounded audit support where approved
-- feature-flag or local service configuration where justified
-
-Not allowed in early phases:
-
-- local RBAC truth
-- local hierarchy truth
-- local user/customer truth
-- local inventory truth
-- local configuration truth
-- local billing truth
-
-## 11.2 Later-Phase Persistence
-
-Later phases may add MDU-owned persistence for:
-
-- workflow executions
-- job state
-- idempotency records
-- import tracking
-- audit logs
-- reconciliation status
-- support/debug metadata
-- bounded non-authoritative caches
-
-Every such table must map to an approved phase requirement.
-
-## 11.3 Caching
-
-Any cache in MDU shall be:
-
-- non-authoritative
-- TTL-bounded
-- safe to lose
-- observable
-- explicitly scoped to performance optimization
-
----
-
-# 12. Core Workflow Specifications
-
-These workflows define service behavior at master-spec level. Detailed request/response schemas belong in phase-specific docs or API specs.
-
-## 12.1 Login and Session Bootstrap
-
-**Trigger:** UI login and initial app load.
-
-**Systems:** UI, OWSEC, MDU, optionally PROV.
-
-**Flow:**
-1. UI authenticates directly with OWSEC.
-2. OWSEC returns bearer token to UI.
-3. UI calls `GET /api/v1/mdu/session` or `GET /api/v1/mdu/me`.
-4. MDU validates the token through OWSEC validation mechanisms.
-5. MDU retrieves caller/profile/bootstrap context as required.
-6. MDU returns normalized session/bootstrap payload.
-
-## 12.2 Create Customer or Sub-Operator
-
-**Trigger:** authorized UI action to create customer.
-
-**Systems:** UI, MDU, PROV.
-
-**Flow:**
-1. UI calls `POST /api/v1/mdu/customers`.
-2. MDU validates token and payload.
-3. MDU calls PROV using service auth and `x-authorization`.
-4. PROV enforces RBAC and creates the source-of-truth object.
-5. MDU returns normalized business-facing customer payload.
-
-## 12.3 Assign User Access
-
-**Trigger:** authorized UI action to assign user to entity, role, or policy.
-
-**Systems:** UI, MDU, PROV.
-
-**Flow:**
-1. UI calls assignment route.
-2. MDU validates token, route scope, and payload.
-3. MDU forwards to PROV using machine auth and user context.
-4. PROV resolves authorization and persists the access truth.
-5. MDU returns normalized access result.
-
-## 12.4 Browse Hierarchy and Load Workspace Context
-
-**Trigger:** user expands tree or opens workspace.
-
-**Systems:** UI, MDU, PROV, optionally Billing, Topology, or Analytics depending on phase.
-
-**Flow:**
-1. UI requests hierarchy node or workspace context.
-2. MDU validates token and route parameters.
-3. MDU loads source hierarchy context from PROV.
-4. MDU optionally enriches with billing, topology, or analytics data depending on phase.
-5. MDU returns normalized workspace context.
-
-## 12.5 Load Billing Summary
-
-**Trigger:** UI opens customer billing tab.
-
-**Systems:** UI, MDU, Billing Service.
-
-**Flow:**
-1. UI calls MDU billing-summary route.
-2. MDU validates token and scope.
-3. MDU calls Billing Service through approved private service auth.
-4. MDU normalizes billing payload and returns UI-facing summary.
-
-## 12.6 Get Device Status and Trigger Approved Device Action
-
-**Trigger:** UI opens device view or runs an approved device action.
-
-**Systems:** UI, MDU, PROV, OWGW.
-
-**Flow:**
-1. UI requests device detail, status, diagnostics, or approved action.
-2. MDU validates token, identifiers, and action allow-list.
-3. MDU retrieves inventory identity from PROV where needed.
-4. MDU retrieves runtime state or forwards approved action to OWGW.
-5. MDU returns a normalized device-facing response.
-
-Rules:
-
-- Inventory truth remains downstream-owned.
-- Runtime truth remains downstream-owned.
-- Raw arbitrary command execution is not exposed.
-
----
-
-# 13. Development Phases
+# 11. Development Phases
 
 The phases are cumulative. Each phase shall preserve ownership boundaries and security rules from previous phases.
 
@@ -747,78 +647,7 @@ Phase 5 includes:
 
 ---
 
-# 14. Recommended Build and Delivery Sequence
-
-1. Remove or isolate scaffold placeholder APIs.
-2. Finalize configuration, routing, middleware, and downstream adapter structure.
-3. Implement OWSEC token-validation middleware.
-4. Implement outbound service credentials and `x-authorization` forwarding.
-5. Implement Phase 1 session, user, customer, provisioning, and access wrappers backed by PROV/OWSEC.
-6. Implement Phase 2 customer, hierarchy, workspace, and billing APIs.
-7. Implement Phase 3 device and configuration APIs.
-8. Implement Phase 4 topology, analytics, metrics, health, and dashboard APIs.
-9. Implement Phase 5 workflow durability, audit, reconciliation, rollout, AI, and admin/debug APIs.
-
----
-
-# 15. Acceptance Criteria
-
-This master document is acceptable only if:
-
-1. it defines the whole service, not only Phase 1
-2. it preserves direct UI login through OWSEC
-3. it makes PROV the source of truth for users, customers, hierarchy, roles, policies, and RBAC
-4. it makes MDU an orchestration and API-shaping service, not a duplicate source of truth
-5. it uses `x-api` or equivalent service credentials for downstream private calls
-6. it uses `x-authorization` to forward the user token to downstream services that need user context
-7. it keeps RBAC resolution inside PROV for PROV-owned domains
-8. it is compatible with the existing Go repository structure
-9. it provides a clear base for detailed phase-specific documents and later machine-readable contract generation
-
----
-
-# 16. YAML Readiness Appendix
-
-This appendix keeps only the metadata needed later for YAML generation.
-
-## 16.1 Service Metadata
-
-| Field | Value |
-|---|---|
-| service_name | `mango-mdu-service` |
-| repository | `routerarchitects/mango-mdu-service` |
-| runtime | Go |
-| packaging | Docker |
-| base_api_path | `/api/v1/mdu` |
-| exposure_type | internal Mango orchestration service |
-
-## 16.2 Auth Metadata
-
-- inbound_user_auth: OWSEC bearer token
-- downstream_machine_auth: `x-api` or equivalent
-- downstream_user_context_header: `x-authorization`
-- required_trace_headers: `X-Request-Id`, `X-Correlation-Id`
-
-## 16.3 Dependencies
-
-- OWSEC
-- PROV
-- Billing Service
-- OWGW
-- NW Topology Service
-- OWANALYTICS
-
-## 16.4 State Rules
-
-- local_domain_truth: not allowed for downstream-owned domains
-- workflow_state: later phase only
-- job_state: later phase only
-- idempotency_records: later phase only
-- cache_usage: optional, non-authoritative, TTL-bounded
-
----
-
-# 17. Final Architectural Rules
+# 12. Final Architectural Rules
 
 1. `mango-mdu-service` is the Mango operator-domain orchestration service.
 2. The UI authenticates directly with OWSEC.
