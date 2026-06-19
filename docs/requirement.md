@@ -4,9 +4,9 @@
 
 This document defines the master requirements for the full lifecycle of `mango-mdu-service`.
 
-`mango-mdu-service` is the MangoCloud operator-domain orchestration service for MDU workflows. It exposes stable Mango-facing APIs under `/api/v1/mdu/*`, validates inbound access, shapes UI-facing business contracts, and coordinates calls to downstream systems that own authentication, users, customers, hierarchy, RBAC, inventory, configuration, billing, live device operations, topology, and analytics.
+`mango-mdu-service` is the MangoCloud operator-domain orchestration service for MDU workflows. It exposes versioned Mango-facing APIs under `/api/v1/mdu/*`, validates inbound access, shapes UI-facing business contracts, and coordinates calls to downstream systems that own authentication, users, customers, hierarchy, RBAC, inventory, configuration, billing, live device operations, topology, and analytics.
 
-This document is the whole-service master specification and roadmap baseline. Phase-specific requirements documents shall inherit from this document and from the common engineering requirements document.
+This document is the whole-service master specification and roadmap baseline. Phase-specific requirements documents shall inherit from this document and from `docs/common-requirement.md`.
 
 This document is intentionally a commit-ready service requirements baseline, not only an architecture note. It defines service boundaries, trust rules, phased scope, workflow expectations, validation direction, and operational behavior while keeping the content lean enough to maintain.
 
@@ -23,10 +23,11 @@ This document is intentionally a commit-ready service requirements baseline, not
 | Primary Language | Go |
 | Runtime | Dockerized Go service |
 | Status | Master baseline |
-| Last Updated | 2026-06-18 |
+| Last Updated | 2026-06-19 |
 | Primary Consumers | Mango Operator UI and approved internal callers |
 | Primary Downstream Services | OWSEC, PROV, Billing Service, OWGW, NW Topology Service, OWANALYTICS |
 | Base API Namespace | `/api/v1/mdu/*` |
+| Common Cross-Phase Rules | `docs/common-requirement.md` |
 
 ---
 
@@ -36,7 +37,7 @@ MDU Service shall be the Mango-facing orchestration layer for the MDU product do
 
 The browser/UI authenticates directly with OWSEC. OWSEC owns login, session issuance, browser bearer tokens, and token validation primitives. After login, the UI calls MDU business APIs using the OWSEC-issued bearer token.
 
-MDU validates inbound requests, normalizes business-facing contracts, composes multi-service payloads, forwards approved user context to downstream private APIs, hides downstream route quirks, and returns stable UI-facing responses. MDU shall not become a second source of truth for domains already owned by downstream services.
+MDU validates inbound requests, normalizes business-facing contracts, composes multi-service payloads, forwards approved user context to downstream private APIs, hides downstream route quirks, and returns versioned UI-facing responses. MDU shall not become a second source of truth for domains already owned by downstream services.
 
 The downstream trust model is:
 
@@ -59,58 +60,25 @@ PROV remains the system of record for users, customers, hierarchy, roles, polici
 6. MDU shall forward the inbound user token to downstream private APIs using `x-authorization` when the downstream service needs user context.
 7. PROV shall resolve user, customer, scope, role, policy, and RBAC decisions using its own source-of-truth data.
 8. MDU shall not become a separate RBAC, hierarchy, customer, user, inventory, configuration, billing, topology, or analytics source of truth.
-9. MDU shall normalize downstream responses and errors into stable UI-facing contracts.
+9. MDU shall normalize downstream responses and errors into versioned UI-facing contracts.
 10. MDU shall hide downstream route quirks and compatibility paths from the UI.
 11. Local persistence in MDU shall be minimal and limited to MDU-owned operational concerns.
 12. MDU shall remain an orchestration service, not a replacement for downstream domain services.
+13. Stability within `/api/v1/mdu/*` shall be additive by default; breaking contract changes require an approved versioning or migration plan.
+14. Token validation behavior may be online or cached per the approved OWSEC integration contract, but protected APIs shall enforce token validity, expiry, and required caller claims before orchestration.
+15. API family names in this document describe workflow groupings, not a requirement to mirror downstream resource trees one-for-one.
 
 ---
 
-# 3. Common Cross-Phase Requirements
+# 3. Normative Document Set
 
-## 3.1 Delivery and Engineering Rules
+This master document is normative for service scope, ownership boundaries, trust lanes, and the phase roadmap.
 
-1. Each phase requires automated CI/CD tests passing.
-2. A phase is not complete unless required CI jobs pass.
-3. Every PR shall rely on automated CI execution as primary test evidence.
-4. New route families shall not be merged without corresponding handler, service, and adapter-level coverage.
-5. Docker image build and container startup smoke test shall run in CI.
-6. Placeholder scaffold APIs shall not remain exposed in production route groups.
+`docs/common-requirement.md` is normative for cross-phase engineering rules, security guardrails, CI expectations, runtime requirements, observability requirements, and documentation synchronization rules.
 
-## 3.2 Runtime and Security Baseline
+Repo-tracked phase documents are normative only for the phase they define.
 
-1. MDU shall run as a Dockerized Go microservice.
-2. Service configuration shall be provided through environment variables, config files, or approved secret-management mechanisms.
-3. Secrets shall not be hardcoded.
-4. Internal service authentication is mandatory for MDU-to-downstream private calls.
-5. Frontend or end-user tokens alone shall not be used as the service-authentication credential for private downstream calls.
-6. Logs shall not contain raw bearer tokens, raw `x-api` values, or raw `x-authorization` values.
-
-## 3.3 Common Module Usage
-
-MDU should use approved shared Router Architects and OpenWiFi common modules for logging, build metadata, service discovery, and common client or RPC wrapper behavior where applicable.
-Repo:https://github.com/routerarchitects/ow-common-mods
-Repo:https://github.com/routerarchitects/ra-common-mods
-
-MDU should not duplicate shared transport, logging, discovery, or internal-auth infrastructure without approved justification.
-
-
-## 3.4 Required CI Checks
-
-Required CI checks should include:
-
-- formatting check
-- static analysis or linting
-- unit tests
-- handler or API tests
-- service-layer orchestration tests
-- downstream adapter tests
-- authentication and token-validation tests
-- error-envelope tests
-- request-context propagation tests
-- OpenAPI or contract validation where applicable
-- Docker build
-- container startup smoke test
+Repo-tracked OpenAPI, design, and implementation artifacts may provide supporting evidence, but no requirement in this master document depends on an external attachment or an uncommitted source.
 
 ---
 
@@ -137,13 +105,15 @@ MDU shall use the following business-facing terms unless a phase-specific contra
 
 Rules:
 
-1. Business-facing terms should be preferred over raw downstream route names.
+1. Business-facing terms shall be preferred over raw downstream route names.
 2. Raw downstream naming may remain in internal adapters and approved debug/admin APIs.
 3. MDU shall not rename source-of-truth identifiers unless it also preserves a stable mapping rule.
 
 ---
 
 # 5. Trust Lanes and Security Model
+
+Header names shown in this document are canonical examples only. HTTP header matching remains case-insensitive, but implementation and OpenAPI shall use one canonical spelling consistently per header.
 
 ## 5.1 Browser-to-OWSEC Auth Lane
 
@@ -162,7 +132,7 @@ The browser/UI calls MDU business APIs using the OWSEC-issued bearer token.
 Authorization: Bearer <owsec-token>
 ```
 
-MDU validates the token with OWSEC before business orchestration.
+MDU validates the token with OWSEC before business orchestration. Validation shall cover token validity, expiry, and caller identity claims required by the target workflow. If validation results are cached, the cache TTL shall remain bounded by the approved OWSEC integration contract and shall not outlive token expiry.
 
 ## 5.3 MDU-to-Downstream Private Lane
 
@@ -179,7 +149,7 @@ The downstream service decides how to use `x-authorization`. For PROV, RBAC, sco
 
 ## 5.4 MDU-to-Billing Private Lane
 
-MDU calls Billing Service as a trusted internal service, but does not forward end-user bearer context for Phase 1 billing calls.
+MDU calls Billing Service as a trusted internal service, but does not forward end-user bearer context for the billing calls covered by this document.
 
 ```http
 x-api: <mdu-service-api-key>
@@ -187,7 +157,7 @@ x-request-id: <request-id>
 x-correlation-id: <correlation-id>
 ```
 
-Billing Service is the Phase 1 exception to the standard downstream forwarding rule. MDU shall authenticate using the trusted internal service credential only and shall not forward the end-user bearer token unless a later approved integration contract explicitly requires it.
+Billing Service is the current exception to the standard downstream forwarding rule. MDU shall authenticate using the trusted internal service credential only and shall not forward the end-user bearer token unless an approved integration contract explicitly requires it. The billing calls covered by this document are limited to non-mutation summary or read-oriented workflows and therefore do not rely on forwarded end-user bearer context.
 
 ## 5.5 Security Rules
 
@@ -210,10 +180,10 @@ Billing Service is the Phase 1 exception to the standard downstream forwarding r
 | Token validation | OWSEC | MDU consumes validation |
 | Users | PROV | MDU exposes user workflow APIs and forwards to PROV |
 | Customers / sub-operators | PROV | MDU exposes customer workflow APIs and forwards to PROV |
-| Operators | PROV | MDU exposes normalized wrapper APIs |
+| Operators | PROV | MDU exposes normalized operator workflows |
 | Entities / hierarchy | PROV | MDU exposes normalized hierarchy APIs |
 | Venues | PROV | MDU exposes normalized venue APIs |
-| Roles and policies | PROV | MDU exposes wrapper/access APIs only |
+| Roles and policies | PROV | MDU exposes access-management workflows only |
 | RBAC and scope resolution | PROV | MDU does not resolve or persist RBAC |
 | Inventory ownership | PROV | MDU wraps and composes inventory APIs |
 | Configuration ownership | PROV | MDU wraps and composes configuration APIs |
@@ -229,6 +199,8 @@ Rules:
 1. MDU owns API shaping, request validation, response composition, error normalization, and approved orchestration logic.
 2. MDU does not own persistent truth for downstream-owned domains.
 3. MDU may maintain minimal operational state only where explicitly approved by phase scope.
+4. Approved local operational state may include request correlation metadata, async operation state, idempotency records, audit support data, reconciliation markers, and bounded caches.
+5. MDU shall not persist authoritative business truth for users, customers, hierarchy, policies, roles, inventory, configuration, billing, topology, or analytics.
 
 ---
 
@@ -256,6 +228,8 @@ Rules:
 
 # 8. Downstream Dependency Model
 
+The route families in this section are current known downstream inputs for planning and integration design. They are not the authoritative contract by themselves; authoritative behavior must remain tied to repo-tracked requirements, design, and OpenAPI artifacts. Inclusion here means the dependency is known to the service roadmap, not that every listed route family is active in every phase.
+
 ## 8.1 OWSEC
 
 OWSEC owns authentication and session security.
@@ -267,7 +241,7 @@ MDU shall use OWSEC for:
 - resolving token/session validity
 - retrieving caller profile where explicitly needed
 
-Verified OWSEC routes for early phases include:
+Current known OWSEC routes include:
 
 - `POST /oauth2` for login/session issuance, called directly by the UI
 - `DELETE /oauth2/{token}` for logout/session removal where applicable
@@ -289,7 +263,7 @@ x-authorization: Bearer <owsec-token>
 
 PROV is responsible for resolving RBAC, scope, customer, and user permissions.
 
-Verified PROV route families for early phases include:
+Current known PROV route families include:
 
 - `/operator`
 - `/operator/{uuid}`
@@ -309,7 +283,9 @@ Verified PROV route families for early phases include:
 
 Billing Service owns plans, subscriptions, billing lifecycle, invoices, and billing state. MDU may compose billing summaries but shall not persist billing truth.
 
-Billing integration is not implemented in the current MDU baseline. This section is present to document the intended ownership boundary only.
+Billing integration is not implemented in the current service baseline. This section documents ownership boundaries and future integration expectations only.
+
+Billing reads, if introduced under the current baseline, shall be limited to non-mutation summary workflows unless a repo-tracked requirements document explicitly defines a stronger end-user authorization model for billing actions.
 
 ## 8.4 OWGW
 
@@ -317,7 +293,7 @@ OWGW owns live device runtime operations, command execution, and diagnostics. MD
 
 MDU shall call OWGW using service authentication and only for approved operational workflows.
 
-Verified OWGW route families include:
+Current known OWGW route families include:
 
 - `/device/{serialNumber}`
 - `/device/{serialNumber}/logs`
@@ -332,7 +308,7 @@ Verified OWGW route families include:
 - `/device/{serialNumber}/telemetry`
 - selected device action routes required by approved MDU workflows only
 
-OWGW-backed MDU work should focus on device runtime reads, diagnostics, and approved actions only. 
+OWGW-backed MDU work shall focus on device runtime reads, diagnostics, and approved actions only.
 
 
 ## 8.5 NW Topology Service
@@ -341,13 +317,13 @@ NW Topology Service owns topology graph computation. MDU shall consume topology 
 
 MDU shall call Topology Service using the approved downstream auth model for topology reads.
 
-Verified Topology Service route families include:
+Current known Topology Service route families include:
 
 - `/livez`
 - `/topology`
 - `/system`
 
-`GET /topology` is the primary business route in the attached contract. It accepts `boardId` and optional `interval` query parameters. The attached OpenAPI also states that topology data is assembled from board timepoints, board device inventory data, and Wi-Fi client history data.
+The current known topology read shape centers on `GET /topology` with `boardId` and optional `interval` query parameters. Once a topology contract is committed in this repo, that committed artifact shall be the authoritative source for topology request and response details.
 
 
 ## 8.6 OWANALYTICS
@@ -356,7 +332,7 @@ OWANALYTICS owns telemetry, historical timepoints, client history, and analytics
 
 MDU shall call OWANALYTICS using service authentication for approved read-only analytics workflows.
 
-Verified OWANALYTICS route families include:
+Current known OWANALYTICS route families include:
 
 - `/board/{id}/devices`
 - `/board/{id}/timepoints`
@@ -402,7 +378,8 @@ MDU shall propagate:
 4. Downstream service credentials and end-user tokens serve different purposes and shall not be conflated.
 5. MDU shall not log raw token or secret values.
 6. MDU shall preserve traceability across all orchestrated downstream calls.
-7. MDU should propagate actor context, request ID, correlation ID, and user context needed for downstream auditing.
+7. MDU shall propagate actor context, request ID, correlation ID, and user context needed for downstream auditing when the downstream workflow requires auditability.
+8. Implementation and OpenAPI shall choose a single canonical spelling for each header and use it consistently across the service contract.
 
 ---
 
@@ -416,34 +393,39 @@ MDU shall propagate:
 4. Unsupported enum values shall return a validation error.
 5. MDU shall validate allow-listed action names for OWGW-backed action routes.
 6. MDU shall not accept write requests that implicitly create local truth for downstream-owned domains.
-7. For list APIs such as users, customers, entities, venues, and devices, MDU should normalize pagination, filtering, and sorting behavior even when downstream implementations differ.
+7. For list APIs such as users, customers, entities, venues, and devices, MDU shall normalize pagination, filtering, and sorting behavior even when downstream implementations differ.
 
 ## 10.2 Error Rules
 
 MDU shall expose a consistent error envelope for UI-facing APIs.
 
-Normalized error categories should include:
+Normalized error categories shall include at minimum:
 
 - `validation_error`
 - `unauthorized`
 - `forbidden`
 - `not_found`
 - `conflict`
+- `rate_limited`
+- `bad_gateway`
+- `dependency_auth_failed`
 - `downstream_timeout`
 - `downstream_unavailable`
+- `not_implemented`
 - `partial_data`
 - `internal_error`
 
 Rules:
 
 1. MDU shall not expose raw downstream stack traces, secrets, or internal implementation details.
-2. MDU shall map downstream failures into stable UI-facing semantics.
-3. Pure write APIs should not return partial success unless the workflow is explicitly modeled to do so.
+2. MDU shall map downstream failures into versioned UI-facing semantics.
+3. Pure write APIs shall not return partial success unless the workflow is explicitly modeled to do so.
 4. Composed read APIs may return partial data only if the route contract explicitly allows it.
+5. Downstream authentication failures, invalid downstream responses, and dependency throttling shall not collapse into a generic internal error when a more precise normalized category applies.
 
 ## 10.3 Retry, Timeout, and Failure-Isolation Rules
 
-1. MDU shall remain a mostly stateless orchestration service in early phases and shall not add durable idempotency or workflow state unless a later approved phase requires it.
+1. MDU shall remain a mostly stateless orchestration service and shall not add durable idempotency or workflow state unless a repo-tracked requirements document explicitly requires it.
 2. MDU shall not automatically retry write or action calls unless the downstream operation is explicitly safe to retry.
 3. MDU may use limited retries for safe read calls when failures are transient.
 4. Every downstream call shall use a bounded timeout, and MDU shall return normalized timeout or dependency-failure errors.
@@ -451,13 +433,25 @@ Rules:
 6. If an optional read dependency such as Billing, Analytics, or Topology is unavailable, MDU may return partial data only where the route contract explicitly allows it.
 7. Write APIs shall fail cleanly and shall not return partial success unless the workflow is explicitly designed for it.
 
-## 10.4 Device Action Safety Rules
+## 10.4 Partial-Data Contract Rules
+
+If a route allows partial data, the route contract shall define:
+
+1. whether the HTTP status remains success or becomes a degraded-success response
+2. which response sections may be absent, null, empty, or explicitly marked degraded
+3. how the response indicates which dependency failed
+4. whether retry guidance is exposed to the caller
+5. whether partial results are cacheable
+
+Routes that do not define partial-data behavior shall fail rather than return an ambiguous mixed-success payload.
+
+## 10.5 Device Action Safety Rules
 
 1. Device action APIs shall use an approved allow-list of supported actions.
 2. MDU shall not expose raw command passthrough or unrestricted runtime command execution.
 3. Device action routes shall define clear timeout, validation, and normalized error-mapping behavior.
 
-## 10.5 Operational and NFR Rules
+## 10.6 Operational and NFR Rules
 
 1. MDU shall be observable, traceable, and safe to operate as a dependency-orchestration service.
 2. MDU shall expose health and readiness endpoints according to platform conventions.
@@ -468,6 +462,8 @@ Rules:
 # 11. Development Phases
 
 The phases are cumulative. Each phase shall preserve ownership boundaries and security rules from previous phases.
+
+The phase sections describe roadmap scope only. They do not override the cross-phase requirements in `docs/common-requirement.md`, and the listed API families are indicative workflow groupings rather than a mandatory one-to-one route inventory.
 
 ## Phase 1: Orchestrator Foundation
 
@@ -484,9 +480,9 @@ Phase 1 includes:
 - direct OWSEC login boundary
 - service-authenticated downstream calls
 - `x-authorization` forwarding to downstream services
-- session/bootstrap APIs
+- token-backed session/bootstrap view APIs only; MDU does not own login or session issuance
 - PROV-backed users, operators, entities, venues, roles, policies, customers where needed for foundation
-- access-summary wrappers where PROV provides the RBAC result
+- access-summary workflows where PROV provides the RBAC result
 - normalized errors and observability
 - removal of production placeholder routes
 
@@ -503,7 +499,7 @@ Phase 1 does not require:
 - analytics dashboards
 - async workflow persistence
 
-### Expected API Families
+### Indicative API Families
 
 - `GET /api/v1/mdu/me`
 - `GET /api/v1/mdu/session`
@@ -522,7 +518,7 @@ Phase 1 is complete only when:
 1. protected business APIs validate OWSEC bearer tokens
 2. downstream private calls use service auth plus forwarded user context where required
 3. scaffold placeholder APIs are removed or isolated from production routes
-4. session/bootstrap and core PROV wrapper APIs are available
+4. token-backed session/bootstrap view APIs and core PROV-backed access APIs are available
 5. normalized error handling and structured correlation are implemented
 6. source-of-truth ownership rules remain preserved
 
@@ -553,7 +549,7 @@ Phase 2 does not require:
 - durable workflow engine
 - broad async jobs
 
-### Expected API Families
+### Indicative API Families
 
 - `/api/v1/mdu/customers/*`
 - `/api/v1/mdu/hierarchy/*`
@@ -585,7 +581,7 @@ Phase 3 does not require:
 - rollout engine
 - AI hooks
 
-### Expected API Families
+### Indicative API Families
 
 - `/api/v1/mdu/devices/*`
 - `/api/v1/mdu/configurations/*`
@@ -608,7 +604,7 @@ Phase 4 includes:
 - map/overlay payloads
 - workspace overview aggregation
 
-### Expected API Families
+### Indicative API Families
 
 - `/api/v1/mdu/topology/*`
 - `/api/v1/mdu/analytics/*`
@@ -635,7 +631,7 @@ Phase 5 includes:
 - AI recommendation hooks where approved
 - advanced admin/debug APIs
 
-### Expected API Families
+### Indicative API Families
 
 - `/api/v1/mdu/operations/*`
 - `/api/v1/mdu/jobs/*`
