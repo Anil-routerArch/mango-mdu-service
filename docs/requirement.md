@@ -149,15 +149,20 @@ The downstream service decides how to use `x-authorization`. For PROV, RBAC, sco
 
 ## 5.4 MDU-to-Billing Private Lane
 
-MDU calls Billing Service as a trusted internal service, but does not forward end-user bearer context for the billing calls covered by this document.
+MDU calls Billing Service as a trusted internal service after PROV resolves the caller's RBAC and scope for the target billing workflow. Billing Service does not receive the browser bearer token directly for the billing calls covered by this document.
 
 ```http
-x-api: <mdu-service-api-key>
-x-request-id: <request-id>
-x-correlation-id: <correlation-id>
+X-Internal-API-Key: <mdu-service-api-key>
+X-Actor-Id: <userId>
+X-Actor-Type: <actor-type>
+X-Actor-Role: <actor-role>
+X-Tenant-Id: <operatorId-or-tenantId>
+X-Request-Id: <request-id>
+X-Correlation-Id: <correlation-id>
+X-Source-Service: mango-mdu-service
 ```
 
-Billing Service is the current exception to the standard downstream forwarding rule. MDU shall authenticate using the trusted internal service credential only and shall not forward the end-user bearer token unless an approved integration contract explicitly requires it. The billing calls covered by this document are limited to non-mutation summary or read-oriented workflows and therefore do not rely on forwarded end-user bearer context.
+Billing Service is the current exception to the standard downstream forwarding rule. MDU shall authenticate using the trusted internal service credential, shall propagate actor and tenant audit context, and shall not forward the end-user bearer token unless an approved integration contract explicitly changes the billing contract.
 
 ## 5.5 Security Rules
 
@@ -165,7 +170,7 @@ Billing Service is the current exception to the standard downstream forwarding r
 2. MDU validates inbound protected requests before orchestration.
 3. MDU authenticates to downstreams using service credentials.
 4. MDU forwards user context only where needed by downstream authorization or business logic.
-5. Billing-service calls shall use service credentials only unless a later approved billing integration contract explicitly requires forwarded user context.
+5. Billing-service calls shall use service credentials plus required actor and tenant headers unless a later approved billing integration contract explicitly changes that model.
 6. Downstream systems retain their own authorization rules.
 7. MDU shall not bypass downstream authorization by using only machine credentials for user-sensitive workflows.
 8. MDU shall not persist browser bearer tokens.
@@ -281,11 +286,54 @@ Current known PROV route families include:
 
 ## 8.3 Billing Service
 
-Billing Service owns plans, subscriptions, billing lifecycle, invoices, and billing state. MDU may compose billing summaries but shall not persist billing truth.
+Billing Service owns plans, subscriptions, billing lifecycle, invoices, billing periods, usage estimates, and billing state. MDU exposes the Mango-facing billing workflows, orchestrates RBAC validation through PROV for every UI-facing billing call, and then calls Billing Service using the approved internal billing contract. MDU may compose billing views and workflow responses but shall not persist billing truth.
 
-Billing integration is not implemented in the current service baseline. This section documents ownership boundaries and future integration expectations only.
+For user-facing billing workflows, the normal sequence is:
 
-Billing reads, if introduced under the current baseline, shall be limited to non-mutation summary workflows unless a repo-tracked requirements document explicitly defines a stronger end-user authorization model for billing actions.
+1. UI calls MDU with `Authorization: Bearer <owsec-token>`.
+2. MDU validates the token with OWSEC.
+3. MDU calls PROV with service auth plus `x-authorization` to resolve RBAC and scope for the target operator, customer, entity, or billing workflow.
+4. If PROV authorizes the action, MDU calls Billing Service with `X-Internal-API-Key` plus actor, tenant, and trace headers.
+5. Billing Service returns Billing-owned data; MDU shapes the final Mango-facing response.
+
+MDU shall remain the only Mango-facing entry point for billing workflows. UI clients and PROV shall not call Billing Service directly for the business workflows covered by MDU contracts.
+
+Current known Billing Service route families include:
+
+- `/api/v1/billing/plans`
+- `/api/v1/billing/accounts`
+- `/api/v1/billing/accounts/{tenant_id}`
+- `/api/v1/billing/accounts/{tenant_id}/assigned-plans`
+- `/api/v1/billing/accounts/{tenant_id}/assigned-plans/{plan_code}`
+- `/api/v1/billing/accounts/{tenant_id}/subscription/plan`
+- `/api/v1/billing/accounts/{tenant_id}/subscription`
+- `/api/v1/billing/accounts/{tenant_id}/subscription/cancel`
+- `/api/v1/billing/accounts/{tenant_id}/invoices`
+- `/api/v1/billing/accounts/{tenant_id}/invoices/{invoice_id}`
+- `/api/v1/billing/accounts/{tenant_id}/invoices/{invoice_id}/download`
+- `/api/v1/billing/accounts/{tenant_id}/billing-period`
+- `/api/v1/billing/accounts/{tenant_id}/current-usage`
+
+MDU shall use these Billing Service APIs for the following workflow groups as they become part of approved MDU phase scope:
+
+- static plan discovery and visibility management
+- billing account creation and retrieval
+- subscription creation or ensure
+- subscription plan change
+- subscription cancellation
+- subscription retrieval
+- invoice listing, invoice details, and invoice download proxying
+- billing-period lookup
+- current-usage and guest-portal summary retrieval
+
+Rules:
+
+1. PROV remains responsible for RBAC, scope, hierarchy, and user permission checks for every UI-facing billing call.
+2. Billing Service remains responsible for billing state transitions, invoice truth, plan truth, subscription truth, usage values, and billing-period truth.
+3. MDU shall not forward the user bearer token to Billing Service for these workflows.
+4. MDU shall propagate actor, tenant, and trace metadata required by the Billing Service contract.
+5. MDU shall not expose Billing Service directly as a public API surface; MDU owns the Mango-facing billing API contracts and orchestration only.
+6. MDU shall not persist authoritative billing truth locally.
 
 ## 8.4 OWGW
 
@@ -368,6 +416,8 @@ MDU shall propagate:
 - `x-authorization: Bearer <owsec-token>` when user context is required by downstream
 - `x-request-id`
 - `x-correlation-id`
+- `X-Actor-Id`, `X-Actor-Type`, optional `X-Actor-Role`, and `X-Tenant-Id` for Billing Service workflows
+- `X-Source-Service` for downstream auditability where required by contract
 - approved trace headers where supported
 
 ## 9.4 Propagation Rules
@@ -378,7 +428,7 @@ MDU shall propagate:
 4. Downstream service credentials and end-user tokens serve different purposes and shall not be conflated.
 5. MDU shall not log raw token or secret values.
 6. MDU shall preserve traceability across all orchestrated downstream calls.
-7. MDU shall propagate actor context, request ID, correlation ID, and user context needed for downstream auditing when the downstream workflow requires auditability.
+7. For billing workflows, MDU shall first obtain the authorization decision from PROV and then propagate actor context, tenant context, request ID, correlation ID, and required source-service metadata to Billing Service.
 8. Implementation and OpenAPI shall choose a single canonical spelling for each header and use it consistently across the service contract.
 
 ---
@@ -425,7 +475,7 @@ Rules:
 
 ## 10.3 Retry, Timeout, and Failure-Isolation Rules
 
-1. MDU shall remain a mostly stateless orchestration service and shall not add durable idempotency or workflow state unless a repo-tracked requirements document explicitly requires it.
+1. MDU shall remain a mostly stateless orchestration service. When billing mutation APIs are introduced, MDU shall support idempotent retry behavior according to the approved route contract and may persist only the minimal idempotency or workflow state required for safe retries.
 2. MDU shall not automatically retry write or action calls unless the downstream operation is explicitly safe to retry.
 3. MDU may use limited retries for safe read calls when failures are transient.
 4. Every downstream call shall use a bounded timeout, and MDU shall return normalized timeout or dependency-failure errors.
@@ -536,7 +586,7 @@ Phase 2 includes:
 - customer bootstrap orchestration backed by PROV and OWSEC as applicable
 - hierarchy browsing and lazy child loading backed by PROV
 - workspace context APIs
-- billing summary integration backed by Billing Service
+- billing account, plan visibility, subscription, invoice, billing-period, and usage integrations backed by Billing Service
 - customer workspace payloads for UI tabs
 
 ### Non-Goals
@@ -554,6 +604,10 @@ Phase 2 does not require:
 - `/api/v1/mdu/customers/*`
 - `/api/v1/mdu/hierarchy/*`
 - `/api/v1/mdu/workspaces/*`
+- `/api/v1/mdu/billing/plans/*`
+- `/api/v1/mdu/billing/accounts/*`
+- `/api/v1/mdu/billing/subscriptions/*`
+- `/api/v1/mdu/billing/invoices/*`
 - `/api/v1/mdu/bootstrap/*` where approved
 
 ## Phase 3: Devices and Configurations
@@ -653,7 +707,7 @@ Phase 5 includes:
 6. MDU calls downstream services with service authentication such as `x-api`.
 7. MDU forwards user context to downstream services using `x-authorization` where required.
 8. PROV owns users, customers, hierarchy, policies, roles, RBAC, inventory ownership, and configuration ownership.
-9. Billing Service owns billing truth.
+9. Billing Service owns billing truth, while MDU owns the Mango-facing billing API contracts and orchestration path.
 10. OWGW owns live device runtime and command execution.
 11. NW Topology Service owns topology graph computation.
 12. OWANALYTICS owns telemetry and historical analytics.
