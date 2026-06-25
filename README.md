@@ -51,7 +51,7 @@ The current checked-in runtime baseline exposes:
 - public TLS interface on port `16010`
 - private TLS interface on port `17010`
 - unauthenticated `/livez` on both ports
-- authenticated `/api/v1/system` diagnostics routes via the shared `system-routes` module
+- authenticated `/api/v1/system` diagnostics routes on both ports via the shared `system-routes` module
 
 The MDU-specific Mango-facing `/api/v1/mdu/*` business APIs described in the Phase 1 docs are not yet implemented in this branch.
 

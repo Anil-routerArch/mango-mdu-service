@@ -37,7 +37,7 @@ func TestRouteVisibility(t *testing.T) {
 		t.Errorf("expected public app to register /api/v1/system route, but it did not")
 	}
 
-	// Check if private app does NOT have system route registered
+	// Check if private app has system route registered
 	hasPrivateSystemRoute := false
 	for _, route := range privateApp.GetRoutes() {
 		if route.Path == "/api/v1/system" {
@@ -45,7 +45,7 @@ func TestRouteVisibility(t *testing.T) {
 			break
 		}
 	}
-	if hasPrivateSystemRoute {
-		t.Errorf("expected private app NOT to register /api/v1/system route, but it did")
+	if !hasPrivateSystemRoute {
+		t.Errorf("expected private app to register /api/v1/system route, but it did not")
 	}
 }

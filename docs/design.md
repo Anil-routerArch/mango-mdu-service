@@ -37,7 +37,7 @@ The current checked-in migration baseline does not define any approved MDU-owned
 The current runtime baseline exposes:
 
 - `GET /livez` on both public and private ports without authentication
-- `/api/v1/system` diagnostics routes through the shared subsystem/system-routes module
+- `/api/v1/system` diagnostics routes on both public and private ports through the shared subsystem/system-routes module
 
 Refer to `docs/openapi.yaml` for the checked-in contract baseline. Mango-facing `/api/v1/mdu/*` business APIs should be documented as they are implemented.
 

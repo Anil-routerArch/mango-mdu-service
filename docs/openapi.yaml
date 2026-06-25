@@ -54,6 +54,8 @@ paths:
       description: "Returns system status info or resource usage based on the requested command."
       security:
         - PublicTokenAuth: []
+        - PrivateInternalNameAuth: []
+          PrivateApiKeyAuth: []
       parameters:
         - name: "command"
           in: "query"
@@ -71,6 +73,8 @@ paths:
       description: "Dynamically mutate runtime subsystem log levels or fetch subsystem metadata."
       security:
         - PublicTokenAuth: []
+        - PrivateInternalNameAuth: []
+          PrivateApiKeyAuth: []
       requestBody:
         required: true
         content:
