@@ -31,10 +31,10 @@ func RegisterPrivate(app *fiber.App, deps PrivateDeps) {
 	registerLivenessRoute(app)
 
 	// Create authenticated route group
-	group := app.Group("", deps.AuthHandler)
+	// group := app.Group("", deps.AuthHandler)
 
 	// Register system diagnostics routes
-	subsysteroutes.RegisterRoutes(deps.Subsystem, group)
+	// subsysteroutes.RegisterRoutes(deps.Subsystem, group)
 }
 
 func registerLivenessRoute(app *fiber.App) {

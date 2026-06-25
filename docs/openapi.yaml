@@ -53,8 +53,7 @@ paths:
       summary: "Retrieve system diagnostics and metrics"
       description: "Returns system status info or resource usage based on the requested command."
       security:
-        - PrivateInternalNameAuth: []
-          PrivateApiKeyAuth: []
+        - PublicTokenAuth: []
       parameters:
         - name: "command"
           in: "query"
@@ -71,8 +70,7 @@ paths:
       summary: "Modify log levels or query diagnostics schema"
       description: "Dynamically mutate runtime subsystem log levels or fetch subsystem metadata."
       security:
-        - PrivateInternalNameAuth: []
-          PrivateApiKeyAuth: []
+        - PublicTokenAuth: []
       requestBody:
         required: true
         content:
