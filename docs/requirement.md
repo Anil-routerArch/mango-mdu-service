@@ -4,7 +4,7 @@
 
 This document defines the master requirements for the full lifecycle of `mango-mdu-service`.
 
-`mango-mdu-service` is the MangoCloud operator-domain orchestration service for MDU workflows. It exposes versioned Mango-facing APIs under `/api/v1/mdu/*`, validates inbound access, shapes UI-facing business contracts, and coordinates calls to downstream systems that own authentication, users, customers, hierarchy, RBAC, inventory, configuration, billing, live device operations, topology, and analytics.
+`mango-mdu-service` is the MangoCloud operator-domain orchestration service for MDU workflows. It exposes versioned Mango-facing APIs under `/api/v1/mdu/*`, validates inbound access, shapes UI-facing business contracts, and coordinates calls to downstream systems that own authentication, customers, hierarchy, RBAC, inventory, configuration, billing, live device operations, topology, and analytics.
 
 This document is the whole-service master specification and roadmap baseline. Phase-specific requirements documents shall inherit from this document and from `docs/common-requirement.md`.
 
@@ -46,7 +46,7 @@ The downstream trust model is:
 3. The downstream service, especially PROV, interprets that forwarded user context and enforces its own authorization and RBAC.
 4. MDU does not resolve PROV RBAC locally and does not persist RBAC truth.
 
-PROV remains the system of record for users, customers, hierarchy, roles, policies, inventory ownership, and configuration ownership. Billing Service remains the system of record for billing. OWGW remains the system of record for live runtime operations. NW Topology Service remains the system of record for topology computation. OWANALYTICS remains the system of record for telemetry and historical analytics. MDU owns orchestration, shaping, composition, and approved workflow state only.
+OWSEC remains the system of record/authoritative owner for users. PROV remains the system of record for customers, hierarchy, roles, policies, inventory ownership, and configuration ownership. Billing Service remains the system of record for billing. OWGW remains the system of record for live runtime operations. NW Topology Service remains the system of record for topology computation. OWANALYTICS remains the system of record for telemetry and historical analytics. MDU owns orchestration, shaping, composition, and approved workflow state only.
 
 ---
 
@@ -183,7 +183,7 @@ Billing Service is the current exception to the standard downstream forwarding r
 |---|---|---|
 | Login and token issuance | OWSEC | Not owned by MDU |
 | Token validation | OWSEC | MDU consumes validation |
-| Users | PROV | MDU exposes user workflow APIs and forwards to PROV |
+| Users | OWSEC | Not owned by MDU (handled directly between UI and OWSEC) |
 | Customers / sub-operators | PROV | MDU exposes customer workflow APIs and forwards to PROV |
 | Operators | PROV | MDU exposes normalized operator workflows |
 | Entities / hierarchy | PROV | MDU exposes normalized hierarchy APIs |
@@ -257,7 +257,7 @@ Current known OWSEC routes include:
 
 ## 8.2 PROV
 
-PROV owns users, customers, operators, entities, venues, roles, policies, RBAC, hierarchy, inventory ownership, and configuration ownership.
+OWSEC is the authoritative owner for users. PROV owns customers, operators, entities, venues, roles, policies, RBAC, hierarchy, inventory ownership, and configuration ownership.
 
 MDU shall call PROV using service authentication and forwarded user context:
 
@@ -281,7 +281,7 @@ Current known PROV route families include:
 - `/managementPolicy/{uuid}`
 - `/managementRole`
 - `/managementRole/{id}`
-- PROV-owned user/customer routes as required by the implementation baseline
+- PROV-owned customer routes as required by the implementation baseline
 
 
 ## 8.3 Billing Service
@@ -443,7 +443,7 @@ MDU shall propagate:
 4. Unsupported enum values shall return a validation error.
 5. MDU shall validate allow-listed action names for OWGW-backed action routes.
 6. MDU shall not accept write requests that implicitly create local truth for downstream-owned domains.
-7. For list APIs such as users, customers, entities, venues, and devices, MDU shall normalize pagination, filtering, and sorting behavior even when downstream implementations differ.
+7. For list APIs such as customers, entities, venues, and devices, MDU shall normalize pagination, filtering, and sorting behavior even when downstream implementations differ.
 
 ## 10.2 Error Rules
 
@@ -531,7 +531,7 @@ Phase 1 includes:
 - service-authenticated downstream calls
 - `x-authorization` forwarding to downstream services
 - token-backed session/bootstrap view APIs only; MDU does not own login or session issuance
-- PROV-backed users, operators, entities, venues, roles, policies, customers where needed for foundation
+- PROV-backed operators, entities, venues, roles, policies, customers where needed for foundation
 - access-summary workflows where PROV provides the RBAC result
 - normalized errors and observability
 - removal of production placeholder routes
@@ -551,9 +551,8 @@ Phase 1 does not require:
 
 ### Indicative API Families
 
-- `GET /api/v1/mdu/me`
+- `GET /api/v1/mdu/me` — OWSEC is the authoritative owner for user identity; MDU calls PROV to fetch the authenticated user's Mango bootstrap context (operator scope, customer scope, roles, hierarchy visibility) and composes the normalized `/me` response
 - `GET /api/v1/mdu/session`
-- `/api/v1/mdu/users/*`
 - `/api/v1/mdu/operators/*`
 - `/api/v1/mdu/entities/*`
 - `/api/v1/mdu/venues/*`
@@ -706,7 +705,7 @@ Phase 5 includes:
 5. MDU validates the inbound token before protected business workflows.
 6. MDU calls downstream services with service authentication such as `x-api`.
 7. MDU forwards user context to downstream services using `x-authorization` where required.
-8. PROV owns users, customers, hierarchy, policies, roles, RBAC, inventory ownership, and configuration ownership.
+8. OWSEC is the authoritative owner for users. PROV owns customers, hierarchy, policies, roles, RBAC, inventory ownership, and configuration ownership.
 9. Billing Service owns billing truth, while MDU owns the Mango-facing billing API contracts and orchestration path.
 10. OWGW owns live device runtime and command execution.
 11. NW Topology Service owns topology graph computation.
