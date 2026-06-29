@@ -9,18 +9,18 @@ info:
     It intentionally normalizes downstream platform behavior into stable MDU-owned resources.
 
     Phase 1 integrations:
-    - OWSEC for authentication and user lifecycle outside this contract
-    - PROV for entities, venues, management roles, management policies, and effective scope resolution
-    - Billing Service for plans, billing accounts, visible plan assignment, and subscriptions
+    - OWSEC for authentication, user lifecycle (e.g. user listing, profile retrieve/update)
+    - PROV for entities, venues, management roles, management policies, contacts, subscribers, and effective scope resolution
 
     Phase 1 scope:
     - session and normalized access context
     - hierarchy read/write for entity and venue resources
-    - user scope assignment and scope lookup
-    - minimal billing façade for Phase 1 account and plan workflows
+    - user scope assignment, scope lookup, and management of roles, policies, contacts, and subscribers
+    - user CRUD is handled directly by OWSEC (identity management), while roles, policies, and operational details are handled by PROV
+    - operator/customer listing and creation are handled directly by PROV from the UI, while operator detail retrieval, updates, and deletion are orchestrated via MDU
 
     Explicit non-goal:
-    - user CRUD is handled directly by OWSEC and is not exposed by MDU in this API
+    - billing features are out-of-scope for Phase 1
 
 servers:
   - url: /api/v1
@@ -32,7 +32,10 @@ tags:
   - name: Entities
   - name: Venues
   - name: Users
-  - name: Billing
+  - name: Management Roles
+  - name: Management Policies
+  - name: Contacts
+  - name: Subscribers
 
 security:
   - bearerAuth: []
@@ -60,6 +63,117 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
+  /mdu/session:
+    get:
+      tags: [Session]
+      summary: Get active session and effective access context
+      description: |
+        Returns the authenticated caller and normalized effective access context.
+        Scope assignments are derived from downstream role and policy bindings.
+      operationId: getSession
+      responses:
+        '200':
+          description: Active session and normalized access context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionContext'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+
+  /mdu/operators/{operatorId}:
+    get:
+      tags: [Operators]
+      summary: Retrieve operator details
+      description: Fetches the profile and device configuration rules for the target operator/customer.
+      operationId: getOperator
+      parameters:
+        - $ref: '#/components/parameters/OperatorIdPath'
+      responses:
+        '200':
+          description: Operator details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorDetail'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    put:
+      tags: [Operators]
+      summary: Update operator details
+      description: Updates the target operator name, description, or device upgrade rules.
+      operationId: updateOperator
+      parameters:
+        - $ref: '#/components/parameters/OperatorIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorDetail'
+      responses:
+        '200':
+          description: Operator updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorDetail'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    delete:
+      tags: [Operators]
+      summary: Delete an operator
+      description: Deletes the target operator/customer from the system.
+      operationId: deleteOperator
+      parameters:
+        - $ref: '#/components/parameters/OperatorIdPath'
+      responses:
+        '204':
+          description: Operator deleted
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+
+  /mdu/operators/{operatorId}/subscribers:
+    get:
+      tags: [Subscribers]
+      summary: List subscribers for an operator
+      description: Retrieves the list of subscriber signup entries associated with this operator.
+      operationId: listOperatorSubscribers
+      parameters:
+        - $ref: '#/components/parameters/OperatorIdPath'
+      responses:
+        '200':
+          description: List of subscribers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubscriberSignup'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
   /mdu/hierarchy/tree:
     get:
       tags: [Hierarchy]
@@ -313,7 +427,318 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/users/{userId}/entities:
+  /mdu/policies:
+    get:
+      tags: [Policies]
+      summary: Retrieve a list of management policies
+      operationId: getPolicies
+      responses:
+        '200':
+          description: A list of management policies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementPolicyListResponse'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    post:
+      tags: [Policies]
+      summary: Create a new management policy
+      operationId: createPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagementPolicy'
+      responses:
+        '201':
+          description: Policy created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+
+  /mdu/policies/{policyId}:
+    get:
+      tags: [Policies]
+      summary: Retrieve details of a management policy
+      operationId: getPolicy
+      parameters:
+        - $ref: '#/components/parameters/PolicyIdPath'
+      responses:
+        '200':
+          description: Policy details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementPolicy'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    put:
+      tags: [Policies]
+      summary: Update a management policy
+      operationId: updatePolicy
+      parameters:
+        - $ref: '#/components/parameters/PolicyIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagementPolicy'
+      responses:
+        '200':
+          description: Policy updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    delete:
+      tags: [Policies]
+      summary: Delete a management policy
+      operationId: deletePolicy
+      parameters:
+        - $ref: '#/components/parameters/PolicyIdPath'
+      responses:
+        '204':
+          description: Policy deleted successfully
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+
+  /mdu/roles:
+    get:
+      tags: [Roles]
+      summary: Retrieve a list of management roles
+      operationId: getRoles
+      responses:
+        '200':
+          description: A list of management roles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementRoleListResponse'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    post:
+      tags: [Roles]
+      summary: Create a new management role
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagementRole'
+      responses:
+        '201':
+          description: Role created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementRole'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+
+  /mdu/roles/{roleId}:
+    get:
+      tags: [Roles]
+      summary: Retrieve details of a management role
+      operationId: getRole
+      parameters:
+        - $ref: '#/components/parameters/RoleIdPath'
+      responses:
+        '200':
+          description: Role details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementRole'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    put:
+      tags: [Roles]
+      summary: Update a management role
+      operationId: updateRole
+      parameters:
+        - $ref: '#/components/parameters/RoleIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagementRole'
+      responses:
+        '200':
+          description: Role updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementRole'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    delete:
+      tags: [Roles]
+      summary: Delete a management role
+      operationId: deleteRole
+      parameters:
+        - $ref: '#/components/parameters/RoleIdPath'
+      responses:
+        '204':
+          description: Role deleted successfully
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+
+  /mdu/customers:
+    get:
+      tags: [Customers]
+      summary: Retrieve a list of customers
+      description: Returns a list of customer profiles (backed by operator definitions).
+      operationId: getCustomers
+      responses:
+        '200':
+          description: A list of customers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerListResponse'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    post:
+      tags: [Customers]
+      summary: Create a new customer profile
+      description: Creates a new operator/customer profile record.
+      operationId: createCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerDetail'
+      responses:
+        '201':
+          description: Customer created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDetail'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+
+  /mdu/customers/{customerId}:
+    get:
+      tags: [Customers]
+      summary: Retrieve a specific customer profile
+      operationId: getCustomer
+      parameters:
+        - $ref: '#/components/parameters/CustomerIdPath'
+      responses:
+        '200':
+          description: Customer details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDetail'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    put:
+      tags: [Customers]
+      summary: Update a customer profile
+      operationId: updateCustomer
+      parameters:
+        - $ref: '#/components/parameters/CustomerIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerDetail'
+      responses:
+        '200':
+          description: Customer profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDetail'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    delete:
+      tags: [Customers]
+      summary: Delete a customer profile
+      operationId: deleteCustomer
+      parameters:
+        - $ref: '#/components/parameters/CustomerIdPath'
+      responses:
+        '204':
+          description: Customer deleted
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+
+  /mdu/users/{userId}/assignments:
     get:
       tags: [Users]
       summary: Get effective scoped assignments for a user
@@ -365,15 +790,15 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/users/{userId}/entities/{entityId}:
+  /mdu/users/{userId}/assignments/{assignmentId}:
     delete:
       tags: [Users]
-      summary: Remove a user's entity scope assignment
-      description: Removes the scoped access binding for the target user and entity.
-      operationId: deleteUserEntityAssignment
+      summary: Remove a user's scope assignment
+      description: Removes the scoped access binding for the target user by assignment ID.
+      operationId: deleteUserAssignment
       parameters:
         - $ref: '#/components/parameters/UserIdPath'
-        - $ref: '#/components/parameters/EntityIdPath'
+        - $ref: '#/components/parameters/AssignmentIdPath'
       responses:
         '204':
           description: Assignment removed
@@ -385,73 +810,49 @@ paths:
           $ref: '#/components/responses/ConflictError'
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
-
-  /mdu/billing/overview:
+  /mdu/users/{userId}/access-policy:
     get:
-      tags: [Billing]
-      summary: Get billing overview for an entity scope
-      description: Returns the normalized Phase 1 billing overview for the target entity scope.
-      operationId: getBillingOverview
+      tags: [Users]
+      summary: Retrieve the access policy for a user at a given scope
+      description: Fetches the configured management policy and template role for the target user at the specified entity or venue scope.
+      operationId: getUserAccessPolicy
       parameters:
+        - $ref: '#/components/parameters/UserIdPath'
         - $ref: '#/components/parameters/EntityIdQueryRequired'
+        - $ref: '#/components/parameters/VenueIdQuery'
       responses:
         '200':
-          description: Billing overview
+          description: Access policy details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BillingOverview'
-        '400':
-          $ref: '#/components/responses/BadRequestError'
+                $ref: '#/components/schemas/UserAccessPolicy'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
-
-  /mdu/billing/plans/available:
-    get:
-      tags: [Billing]
-      summary: Get available billing plans for an entity scope
-      operationId: getAvailableBillingPlans
+    put:
+      tags: [Users]
+      summary: Assign or update the access policy for a user
+      description: Sets or updates the management role, policies, and resource permissions for the target user at the specified entity scope.
+      operationId: updateUserAccessPolicy
       parameters:
-        - $ref: '#/components/parameters/EntityIdQueryRequired'
-      responses:
-        '200':
-          description: Available billing plans
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AvailableBillingPlansResponse'
-        '400':
-          $ref: '#/components/responses/BadRequestError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '503':
-          $ref: '#/components/responses/BackendUnavailableError'
-
-  /mdu/billing/subscriptions/select:
-    post:
-      tags: [Billing]
-      summary: Select or change the active billing plan
-      description: Selects or changes the active billing plan for the target entity scope.
-      operationId: selectBillingPlan
+        - $ref: '#/components/parameters/UserIdPath'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SelectBillingPlanRequest'
+              $ref: '#/components/schemas/UserAccessPolicy'
       responses:
         '200':
-          description: Billing plan selection result
+          description: Access policy updated successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlanSelectionResult'
+                $ref: '#/components/schemas/UserAccessPolicy'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '403':
@@ -489,6 +890,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Id'
+    OperatorIdPath:
+      name: operatorId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
     ScopeEntityId:
       name: scopeEntityId
       in: query
@@ -513,6 +920,36 @@ components:
     EntityIdQueryRequired:
       name: entityId
       in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    VenueIdQuery:
+      name: venueId
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/Id'
+    AssignmentIdPath:
+      name: assignmentId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    PolicyIdPath:
+      name: policyId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    RoleIdPath:
+      name: roleId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    CustomerIdPath:
+      name: customerId
+      in: path
       required: true
       schema:
         $ref: '#/components/schemas/Id'
@@ -762,25 +1199,6 @@ components:
         deviceCount:
           type: integer
 
-    EntityBillingSummary:
-      type: object
-      properties:
-        tenantId:
-          type: string
-        billingStatus:
-          type: string
-          enum: [disabled, active, suspended, cancelled]
-        currentPlanCode:
-          type: string
-          nullable: true
-        currentPlanName:
-          type: string
-          nullable: true
-        subscriptionStatus:
-          type: string
-          nullable: true
-          enum: [draft, active, canceled, terminated, pending]
-
     EntityDetail:
       allOf:
         - $ref: '#/components/schemas/EntitySummary'
@@ -800,8 +1218,6 @@ components:
               $ref: '#/components/schemas/IsoDateTime'
             updatedAt:
               $ref: '#/components/schemas/IsoDateTime'
-            billing:
-              $ref: '#/components/schemas/EntityBillingSummary'
 
     EntityListResponse:
       type: object
@@ -811,19 +1227,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EntitySummary'
-
-    EnsureBillingAccountInput:
-      type: object
-      properties:
-        customerName:
-          type: string
-        customerEmail:
-          type: string
-          format: email
-        billingCurrency:
-          type: string
-        billingTimezone:
-          type: string
 
     CreateEntityRequest:
       type: object
@@ -839,11 +1242,6 @@ components:
           type: string
           enum: [normal, subscriber]
           default: normal
-        ensureBillingAccount:
-          type: boolean
-          default: false
-        billing:
-          $ref: '#/components/schemas/EnsureBillingAccountInput'
 
     UpdateEntityRequest:
       type: object
@@ -965,125 +1363,199 @@ components:
         role:
           $ref: '#/components/schemas/RoleKey'
 
-    BillingPlanCharge:
+    UserAccessPolicy:
       type: object
-      required: [deviceType, unitAmountCents]
+      required: [scope, entityId, roleTemplate, resourcePermissions]
       properties:
-        deviceType:
+        scope:
           type: string
-        unitAmountCents:
-          type: integer
-
-    BillingPlanSummary:
-      type: object
-      required: [planCode, planName, planType, billingCycle, billingCurrency, enabled, charges]
-      properties:
-        planCode:
+          enum: [entity, venue]
+        entityId:
+          $ref: '#/components/schemas/Id'
+        venueId:
+          $ref: '#/components/schemas/Id'
+        roleTemplate:
           type: string
-        planName:
-          type: string
-        planType:
-          type: string
-        billingCycle:
-          type: string
-        billingCurrency:
-          type: string
-        enabled:
-          type: boolean
-        charges:
+          description: Role template name (e.g. Admin, Installer, etc.)
+        resourcePermissions:
           type: array
           items:
-            $ref: '#/components/schemas/BillingPlanCharge'
+            $ref: '#/components/schemas/ResourcePermission'
 
-    BillingAccountSummary:
+    ResourcePermission:
       type: object
-      required: [tenantId, entityId, billingStatus]
+      required: [resource, policies]
       properties:
-        tenantId:
+        resource:
+          type: string
+          enum: [entity, venue, operator, inventory, configuration, management policy, management role]
+        policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyAccessKey'
+
+    PolicyAccessKey:
+      type: string
+      enum: [NOACCESS, READ, MODIFY, DELETE, LIST, CREATE, FULL]
+
+    OperatorDetail:
+      type: object
+      required: [name]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+        description:
           type: string
         entityId:
           $ref: '#/components/schemas/Id'
-        billingStatus:
+          description: Associated entity ID
+        registrationId:
           type: string
-        customerName:
-          type: string
-        customerEmail:
+        createdAt:
+          $ref: '#/components/schemas/IsoDateTime'
+        updatedAt:
+          $ref: '#/components/schemas/IsoDateTime'
+
+    SubscriberSignup:
+      type: object
+      required: [email, registrationId, status]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        email:
           type: string
           format: email
-        billingCurrency:
+        userId:
+          $ref: '#/components/schemas/Id'
+        operatorId:
+          $ref: '#/components/schemas/Id'
+        macAddress:
           type: string
-        billingTimezone:
+        serialNumber:
           type: string
-
-    BillingSubscriptionSummary:
-      type: object
-      nullable: true
-      properties:
-        subscriptionVersion:
-          type: integer
-        currentPlanCode:
+        status:
           type: string
-        currentPlanName:
+        registrationId:
           type: string
-        subscriptionStatus:
-          type: string
-        startsAt:
+        createdAt:
           $ref: '#/components/schemas/IsoDateTime'
-        endsAt:
-          allOf:
-            - $ref: '#/components/schemas/IsoDateTime'
-          nullable: true
 
-    BillingOverview:
+    ManagementPolicy:
       type: object
-      required: [account, assignedPlans, availablePlans, currentSubscription]
+      required: [name]
       properties:
-        account:
-          $ref: '#/components/schemas/BillingAccountSummary'
-        assignedPlans:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+        description:
+          type: string
+        entries:
           type: array
           items:
-            $ref: '#/components/schemas/BillingPlanSummary'
-        availablePlans:
-          type: array
-          items:
-            $ref: '#/components/schemas/BillingPlanSummary'
-        currentSubscription:
-          $ref: '#/components/schemas/BillingSubscriptionSummary'
+            $ref: '#/components/schemas/ManagementPolicyEntry'
+        entity:
+          $ref: '#/components/schemas/Id'
+        venue:
+          $ref: '#/components/schemas/Id'
+        createdAt:
+          $ref: '#/components/schemas/IsoDateTime'
+        updatedAt:
+          $ref: '#/components/schemas/IsoDateTime'
 
-    AvailableBillingPlansResponse:
+    ManagementPolicyEntry:
+      type: object
+      required: [resources, access]
+      properties:
+        users:
+          type: array
+          items:
+            type: string
+        resources:
+          type: array
+          items:
+            type: string
+        access:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyAccessKey'
+
+    ManagementPolicyListResponse:
       type: object
       required: [items]
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/BillingPlanSummary'
+            $ref: '#/components/schemas/ManagementPolicy'
 
-    SelectBillingPlanRequest:
+    ManagementRole:
       type: object
-      required: [entityId, planCode]
+      required: [name, managementPolicy]
       properties:
-        entityId:
+        id:
           $ref: '#/components/schemas/Id'
-        planCode:
+        name:
+          type: string
+        description:
+          type: string
+        managementPolicy:
+          $ref: '#/components/schemas/Id'
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+        entity:
+          $ref: '#/components/schemas/Id'
+        venue:
+          $ref: '#/components/schemas/Id'
+        createdAt:
+          $ref: '#/components/schemas/IsoDateTime'
+        updatedAt:
+          $ref: '#/components/schemas/IsoDateTime'
+
+    ManagementRoleListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagementRole'
+
+    CustomerSummary:
+      type: object
+      required: [name]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+        description:
+          type: string
+        registrationId:
           type: string
 
-    PlanSelectionResult:
-      oneOf:
+    CustomerDetail:
+      allOf:
+        - $ref: '#/components/schemas/CustomerSummary'
         - type: object
-          required: [status, subscription]
           properties:
-            status:
-              type: string
-              enum: [success]
-            subscription:
-              $ref: '#/components/schemas/BillingSubscriptionSummary'
-        - type: object
-          required: [status, error]
-          properties:
-            status:
-              type: string
-              enum: [conflict]
-            error:
-              $ref: '#/components/schemas/ApiError'
+            entityId:
+              $ref: '#/components/schemas/Id'
+            createdAt:
+              $ref: '#/components/schemas/IsoDateTime'
+            updatedAt:
+              $ref: '#/components/schemas/IsoDateTime'
+
+    CustomerListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerSummary'
+
