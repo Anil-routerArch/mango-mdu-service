@@ -305,7 +305,7 @@ paths:
           $ref: '#/components/responses/NotFoundError'
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
-    patch:
+    put:
       tags: [Entities]
       summary: Update an entity
       operationId: updateEntity
@@ -433,7 +433,7 @@ paths:
           $ref: '#/components/responses/NotFoundError'
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
-    patch:
+    put:
       tags: [Venues]
       summary: Update a venue
       operationId: updateVenue
@@ -709,8 +709,6 @@ paths:
           $ref: '#/components/responses/NotFoundError'
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
-
-
 
   /users/{userId}/assignments:
     get:

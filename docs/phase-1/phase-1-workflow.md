@@ -447,7 +447,7 @@ To list, assign, or remove user bindings to entity and venue scopes:
     - The client sends a `CreateUserAssignmentRequest` containing `scopeType` (`entity` or `venue`), `scopeId`, and `role`.
     - MDU calls PROV `GET /managementRole` to check if a role already exists for that scope.
     - If a matching role exists, MDU updates it using `PUT /managementRole/{id}` to add the user's UUID to the `users` array.
-    - If no role exists, MDU creates one using `POST /managementRole/{id}` with the user's UUID in the `users` list.
+    - If no role exists, MDU creates one using `POST /managementRole` with the user's UUID in the `users` list.
   * **Remove Assignment (DELETE):**
     - MDU retrieves the `ManagementRole` identified by `assignmentId` using `GET /managementRole/{id}`.
     - MDU removes the user's UUID from the `users` array and updates the role using `PUT /managementRole/{id}`.
