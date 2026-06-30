@@ -9,15 +9,12 @@ info:
     It intentionally normalizes downstream platform behavior into stable MDU-owned resources.
 
     Phase 1 integrations:
-    - OWSEC for authentication, user lifecycle (e.g. user listing, profile retrieve/update)
-    - PROV for entities, venues, management roles, management policies, contacts, subscribers, and effective scope resolution
+    - OWSEC: authentication, token validation, and user identity/user CRUD handled directly outside MDU
+    - PROV: entities, venues, management roles, management policies, effective scope resolution, and operator-scoped subscriber listing
 
     Phase 1 scope:
-    - session and normalized access context
-    - hierarchy read/write for entity and venue resources
-    - user scope assignment, scope lookup, and management of roles, policies, contacts, and subscribers
-    - user CRUD is handled directly by OWSEC (identity management), while roles, policies, and operational details are handled by PROV
-    - operator listing and creation are handled directly by PROV from the UI, while operator detail retrieval, updates, and deletion are orchestrated via MDU
+    - session/access context, hierarchy/entity/venue wrappers, user-access orchestration, roles/policies orchestration, and operator-scoped subscriber listing only
+    - operator listing and creation are handled directly by PROV from the UI (bypassing MDU), while operator detail retrieval, updates, and deletion are orchestrated via MDU
 
     Explicit non-goal:
     - billing features are out-of-scope for Phase 1
@@ -34,7 +31,6 @@ tags:
   - name: Users
   - name: Management Roles
   - name: Management Policies
-  - name: Contacts
   - name: Subscribers
   - name: Operators
 
@@ -150,15 +146,10 @@ paths:
     get:
       tags: [Subscribers]
       summary: List subscribers for an operator
-      description: Retrieves the list of subscriber signup entries associated with this operator.
+      description: Returns subscriber signup entries associated with the target operator for Phase 1. Phase 1 does not guarantee advanced pagination/filter/sort semantics for this endpoint.
       operationId: listOperatorSubscribers
       parameters:
         - $ref: '#/components/parameters/OperatorIdPath'
-        - $ref: '#/components/parameters/LimitQuery'
-        - $ref: '#/components/parameters/OffsetQuery'
-        - $ref: '#/components/parameters/SortQuery'
-        - $ref: '#/components/parameters/FilterQuery'
-        - $ref: '#/components/parameters/CursorQuery'
       responses:
         '200':
           description: List of subscribers
@@ -763,7 +754,14 @@ paths:
     post:
       tags: [Users]
       summary: Assign a user to an entity or venue scope
-      description: Creates or resolves the scoped access binding for the target user.
+      description: |
+        Assigns the target user to the specified entity or venue scope with a given role.
+        
+        This endpoint implements an idempotent resolution flow when dealing with existing states:
+        1. **Create (201 Created)**: If no matching scoped role or assignment exists for the requested scope and role, MDU creates the assignment.
+        2. **Update/Resolve (201 Created)**: If a matching scoped role exists downstream for that scope and role, but the target user is not yet bound to it, MDU updates/resolves the role by adding the target user to its user list.
+        3. **No-Op/Idempotent Success (200 OK)**: If the target user is already assigned to the exact scope and role combination, the request resolves immediately with no state changes.
+        4. **Conflict (409 Conflict)**: Reserved only for true, unresolvable state conflicts (e.g. if the requested assignment cannot be safely resolved from downstream state or creates a logical contradiction).
       operationId: assignUserToScope
       parameters:
         - $ref: '#/components/parameters/UserIdPath'
@@ -774,14 +772,81 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateUserAssignmentRequest'
       responses:
-        '201':
-          description: Assignment created or resolved
+        '200':
+          description: Requested assignment already exists and is active (no-op/idempotent success).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserAssignment'
+              examples:
+                alreadyAssigned:
+                  summary: Already assigned (idempotent success)
+                  value:
+                    assignmentId: "523e4567-e89b-12d3-a456-426614174000"
+                    scopeType: "entity"
+                    scopeId: "223e4567-e89b-12d3-a456-426614174000"
+                    scopeName: "Regional Operations"
+                    role: "admin"
+                    path:
+                      - id: "223e4567-e89b-12d3-a456-426614174000"
+                        name: "Regional Operations"
+                        type: "entity"
+                    managementRoleId: "623e4567-e89b-12d3-a456-426614174000"
+                    managementPolicyId: "523e4567-e89b-12d3-a456-426614174000"
+                    createdAt: "2026-06-30T12:00:00Z"
+        '201':
+          description: Assignment newly created, or existing matching role updated to newly add the user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAssignment'
+              examples:
+                newAssignment:
+                  summary: New assignment created
+                  value:
+                    assignmentId: "523e4567-e89b-12d3-a456-426614174000"
+                    scopeType: "entity"
+                    scopeId: "223e4567-e89b-12d3-a456-426614174000"
+                    scopeName: "Regional Operations"
+                    role: "admin"
+                    path:
+                      - id: "223e4567-e89b-12d3-a456-426614174000"
+                        name: "Regional Operations"
+                        type: "entity"
+                    managementRoleId: "623e4567-e89b-12d3-a456-426614174000"
+                    managementPolicyId: "523e4567-e89b-12d3-a456-426614174000"
+                    createdAt: "2026-06-30T12:00:00Z"
+                existingRoleUpdated:
+                  summary: Existing matching role updated to add user
+                  value:
+                    assignmentId: "723e4567-e89b-12d3-a456-426614174000"
+                    scopeType: "venue"
+                    scopeId: "323e4567-e89b-12d3-a456-426614174000"
+                    scopeName: "East Wing Venue"
+                    role: "installer"
+                    path:
+                      - id: "223e4567-e89b-12d3-a456-426614174000"
+                        name: "Regional Operations"
+                        type: "entity"
+                      - id: "323e4567-e89b-12d3-a456-426614174000"
+                        name: "East Wing Venue"
+                        type: "venue"
+                    managementRoleId: "823e4567-e89b-12d3-a456-426614174000"
+                    managementPolicyId: "723e4567-e89b-12d3-a456-426614174000"
+                    createdAt: "2026-06-30T12:00:00Z"
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: Invalid request parameters or body (e.g. invalid scopeType or missing required fields).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              examples:
+                invalidScopeType:
+                  summary: Invalid scope type value
+                  value:
+                    ErrorCode: 400
+                    ErrorDetails: "The field 'scopeType' must be either 'entity' or 'venue'."
+                    ErrorDescription: "Bad Request"
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -789,7 +854,18 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
-          $ref: '#/components/responses/ConflictError'
+          description: Conflict (unresolvable state conflicts).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              examples:
+                unresolvedConflict:
+                  summary: True state conflict
+                  value:
+                    ErrorCode: 409
+                    ErrorDetails: "Cannot safely resolve requested assignment from existing downstream state."
+                    ErrorDescription: "Conflict"
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
@@ -837,7 +913,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserAccessPolicy'
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: Invalid query parameters (e.g. missing entityId, or venue scope missing venueId).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              examples:
+                missingEntityId:
+                  summary: Missing entityId parameter
+                  value:
+                    ErrorCode: 400
+                    ErrorDetails: "The required query parameter 'entityId' is missing."
+                    ErrorDescription: "Bad Request"
+                missingVenueId:
+                  summary: Venue scope missing venueId
+                  value:
+                    ErrorCode: 400
+                    ErrorDetails: "The query parameter 'venueId' is required when scope is set to 'venue'."
+                    ErrorDescription: "Bad Request"
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -867,13 +960,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserAccessPolicy'
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: Invalid payload combination (e.g. scope is entity but venueId is provided, or scope is venue but venueId is missing).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              examples:
+                invalidScopePayload:
+                  summary: Invalid scope payload
+                  value:
+                    ErrorCode: 400
+                    ErrorDetails: "venueId must not be provided when scope is 'entity'."
+                    ErrorDescription: "Bad Request"
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
-          $ref: '#/components/responses/NotFoundError'
+          description: Targeted user or scoped role/policy binding cannot be resolved downstream.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              examples:
+                bindingNotFound:
+                  summary: User or access policy bindings not found
+                  value:
+                    ErrorCode: 404
+                    ErrorDetails: "The access policy configuration for the target user at the specified scope does not exist."
+                    ErrorDescription: "Not Found"
         '409':
           $ref: '#/components/responses/ConflictError'
         '503':
@@ -1019,36 +1134,78 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
+          examples:
+            badRequestDefault:
+              summary: Validation error default
+              value:
+                ErrorCode: 400
+                ErrorDetails: "One or more request parameters are invalid."
+                ErrorDescription: "Bad Request"
     UnauthorizedError:
       description: Authentication failed
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
+          examples:
+            unauthorizedDefault:
+              summary: Unauthorized access error
+              value:
+                ErrorCode: 401
+                ErrorDetails: "Bearer token is missing, expired, or invalid."
+                ErrorDescription: "Unauthorized"
     ForbiddenError:
       description: Caller is not allowed to perform this action in the resolved scope
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
+          examples:
+            forbiddenDefault:
+              summary: Forbidden access error
+              value:
+                ErrorCode: 403
+                ErrorDetails: "You do not have permission to access resources in the resolved scope."
+                ErrorDescription: "Forbidden"
     NotFoundError:
       description: Resource not found
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
+          examples:
+            notFoundDefault:
+              summary: Resource not found error
+              value:
+                ErrorCode: 404
+                ErrorDetails: "The requested resource could not be found."
+                ErrorDescription: "Not Found"
     ConflictError:
       description: Current state conflicts with the requested operation
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
+          examples:
+            conflictDefault:
+              summary: Conflict error default
+              value:
+                ErrorCode: 409
+                ErrorDetails: "The operation conflicts with the current state of the resource."
+                ErrorDescription: "Conflict"
     BackendUnavailableError:
       description: One or more required downstream services are unavailable
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
+          examples:
+            backendUnavailableDefault:
+              summary: Backend service unavailable
+              value:
+                ErrorCode: 503
+                ErrorDetails: "A required downstream service (e.g. PROV or OWSEC) is currently unreachable or timed out."
+                ErrorDescription: "Service Unavailable"
 
   schemas:
     Id:
@@ -1090,19 +1247,21 @@ components:
 
     ApiError:
       type: object
-      required: [code, message]
+      required: [ErrorCode, ErrorDetails, ErrorDescription]
       properties:
-        code:
+        ErrorCode:
+          type: integer
+          description: Numeric error code (typically matching the HTTP status code or specific REST sub-code).
+        ErrorDetails:
           type: string
-          examples: [validation_error, no_permission, backend_unavailable, conflict]
-        message:
+          description: Detailed explanation or context of the error.
+        ErrorDescription:
           type: string
-        details:
-          type: object
-          additionalProperties: true
+          description: High-level classification of the error category.
       example:
-        code: "validation_error"
-        message: "The requested field 'email' is invalid."
+        ErrorCode: 400
+        ErrorDetails: "The requested field 'email' is invalid."
+        ErrorDescription: "Bad Request"
 
     ScopePathItem:
       type: object
@@ -1682,14 +1841,12 @@ components:
 
     SubscriberListResponse:
       type: object
-      required: [items, metadata]
+      required: [items]
       properties:
         items:
           type: array
           items:
             $ref: '#/components/schemas/SubscriberSignup'
-        metadata:
-          $ref: '#/components/schemas/ListMetadata'
 
     SubscriberSignup:
       type: object

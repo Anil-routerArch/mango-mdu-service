@@ -415,14 +415,14 @@ User identity, credentials, login, session token validation/issuance, and user a
 ### 2. User Roles & Access Policies Management (PROV via MDU)
 To retrieve, grant, modify, or revoke scoped resource-level access permissions for a user:
 * **MDU Northbound API Endpoints:**
-  * `GET /api/v1/users/{userId}/access-policy?entityId={entityId}&venueId={venueId}`
+  * `GET /api/v1/users/{userId}/access-policy?scope={scope}&entityId={entityId}&venueId={venueId}`
   * `PUT /api/v1/users/{userId}/access-policy`
 * **Downstream PROV API Endpoints:**
   * **Management Roles:** `GET /managementRole`, `POST /managementRole`, `PUT /managementRole/{id}`, `DELETE /managementRole/{id}`
   * **Management Policies:** `GET /managementPolicy`, `POST /managementPolicy`, `PUT /managementPolicy/{uuid}`, `DELETE /managementPolicy/{uuid}`
 * **Orchestration Flow:**
   * **Retrieve Access Policy (GET):**
-    1. The client calls `GET /api/v1/users/{userId}/access-policy` specifying `entityId` (always required) and `venueId` (required only for venue scope).
+    1. The client calls `GET /api/v1/users/{userId}/access-policy` specifying `scope` (always required), `entityId` (always required), and `venueId` (required only for venue scope).
     2. MDU validates the authorization token via OWSEC.
     3. MDU calls PROV `GET /managementRole` filtering by `entity` ID (and `venue` ID if requesting venue scope) to locate the role template associated with the user.
     4. MDU calls PROV `GET /managementPolicy/{uuid}` using the policy ID linked to the role to fetch its detailed permission entries.
@@ -445,9 +445,12 @@ To list, assign, or remove user bindings to entity and venue scopes:
   * **List Assignments:** MDU calls PROV `GET /managementRole`, retrieves all roles containing the target `userId`, and maps the associated `entity` or `venue` field to list entries.
   * **Assign User (POST):** 
     - The client sends a `CreateUserAssignmentRequest` containing `scopeType` (`entity` or `venue`), `scopeId`, and `role`.
-    - MDU calls PROV `GET /managementRole` to check if a role already exists for that scope.
-    - If a matching role exists, MDU updates it using `PUT /managementRole/{id}` to add the user's UUID to the `users` array.
-    - If no role exists, MDU creates one using `POST /managementRole` with the user's UUID in the `users` list.
+    - MDU calls PROV `GET /managementRole` to check if a matching role already exists for that scope.
+    - MDU resolves the target assignment using the following rules:
+      1. **Create (returns 201 Created)**: If no matching scoped role exists, MDU creates one using `POST /managementRole` with the user's UUID in the `users` list.
+      2. **Update/Resolve (returns 201 Created)**: If a matching scoped role exists but the target user is not yet bound to it, MDU updates it using `PUT /managementRole/{id}` to add the user's UUID to the `users` array.
+      3. **No-Op/Idempotent Success (returns 200 OK)**: If the target user's UUID is already present in the existing matching role's `users` array, MDU returns success immediately without performing any downstream modifications.
+      4. **Conflict (returns 409 Conflict)**: If the request conflicts with downstream state in a way that cannot be safely/deterministically resolved (e.g. unresolvable name/ID duplicates), MDU rejects the operation.
   * **Remove Assignment (DELETE):**
     - MDU retrieves the `ManagementRole` identified by `assignmentId` using `GET /managementRole/{id}`.
     - MDU removes the user's UUID from the `users` array and updates the role using `PUT /managementRole/{id}`.
@@ -498,8 +501,8 @@ To list subscriber accounts associated with a specific operator:
 * **Downstream PROV API Endpoints:**
   * `GET /subscriber`
 * **Orchestration Flow:**
-  * **List Subscribers:** MDU calls PROV `GET /subscriber?listOnly=true`, filters the resulting signup entries to only return those with `operatorId` matching the path param, and returns the list.
-  * *Note:* Subscriber invite/creation and device listings are deferred to a future phase and not executed in Phase 1.
+  * **List Subscribers (Constrained):** MDU calls PROV `GET /subscriber?listOnly=true` to retrieve all signup entries, filters the results to only include those matching the target `operatorId` parameter, and returns the filtered subset as a simple list.
+  * *Note:* Phase 1 subscriber listing is a constrained list-and-filter orchestration flow. It does not support or define advanced operator-scoped pagination, filtering, sorting, or cursor query parameters because downstream PROV does not natively expose operator-scoping or collection paging on `/subscriber`. Subscriber invite, registration, and subscriber device management are out of scope for Phase 1.
 
 
 
