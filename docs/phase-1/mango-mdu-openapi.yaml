@@ -95,7 +95,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OperatorDetail'
+              $ref: '#/components/schemas/CreateOperatorRequest'
       responses:
         '201':
           description: Operator created successfully
@@ -147,7 +147,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OperatorDetail'
+              $ref: '#/components/schemas/UpdateOperatorRequest'
       responses:
         '200':
           description: Operator updated successfully
@@ -511,7 +511,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ManagementPolicy'
+              $ref: '#/components/schemas/CreateManagementPolicyRequest'
       responses:
         '201':
           description: Policy created successfully
@@ -561,7 +561,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ManagementPolicy'
+              $ref: '#/components/schemas/UpdateManagementPolicyRequest'
       responses:
         '200':
           description: Policy updated successfully
@@ -624,7 +624,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ManagementRole'
+              $ref: '#/components/schemas/CreateManagementRoleRequest'
       responses:
         '201':
           description: Role created successfully
@@ -674,7 +674,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ManagementRole'
+              $ref: '#/components/schemas/UpdateManagementRoleRequest'
       responses:
         '200':
           description: Role updated successfully
@@ -797,7 +797,7 @@ paths:
       operationId: getUserAccessPolicy
       parameters:
         - $ref: '#/components/parameters/UserIdPath'
-        - $ref: '#/components/parameters/EntityIdQueryRequired'
+        - $ref: '#/components/parameters/EntityIdQuery'
         - $ref: '#/components/parameters/VenueIdQuery'
       responses:
         '200':
@@ -817,7 +817,7 @@ paths:
     put:
       tags: [Users]
       summary: Assign or update the access policy for a user
-      description: Sets or updates the management role, policies, and resource permissions for the target user at the specified entity scope.
+      description: Sets or updates the management role, policies, and resource permissions for the target user at the specified entity or venue scope.
       operationId: updateUserAccessPolicy
       parameters:
         - $ref: '#/components/parameters/UserIdPath'
@@ -906,10 +906,18 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Id'
+    EntityIdQuery:
+      name: entityId
+      in: query
+      required: false
+      description: Target entity scope. Either entityId or venueId must be specified.
+      schema:
+        $ref: '#/components/schemas/Id'
     VenueIdQuery:
       name: venueId
       in: query
       required: false
+      description: Target venue scope. Either entityId or venueId must be specified.
       schema:
         $ref: '#/components/schemas/Id'
     AssignmentIdPath:
@@ -1343,15 +1351,19 @@ components:
 
     UserAccessPolicy:
       type: object
-      required: [scope, entityId, roleTemplate, resourcePermissions]
+      required: [scope, roleTemplate, resourcePermissions]
       properties:
         scope:
           type: string
           enum: [entity, venue]
         entityId:
-          $ref: '#/components/schemas/Id'
+          allOf:
+            - $ref: '#/components/schemas/Id'
+          description: Target entity ID. Required if scope is entity.
         venueId:
-          $ref: '#/components/schemas/Id'
+          allOf:
+            - $ref: '#/components/schemas/Id'
+          description: Target venue ID. Required if scope is venue.
         roleTemplate:
           type: string
           description: Role template name (e.g. Admin, Installer, etc.)
@@ -1524,6 +1536,97 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ManagementRole'
+
+    CreateOperatorRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        registrationId:
+          type: string
+
+    UpdateOperatorRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        registrationId:
+          type: string
+
+    CreateManagementPolicyRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagementPolicyEntry'
+        entity:
+          $ref: '#/components/schemas/Id'
+        venue:
+          $ref: '#/components/schemas/Id'
+
+    UpdateManagementPolicyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagementPolicyEntry'
+        entity:
+          $ref: '#/components/schemas/Id'
+        venue:
+          $ref: '#/components/schemas/Id'
+
+    CreateManagementRoleRequest:
+      type: object
+      required: [name, managementPolicy]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        managementPolicy:
+          $ref: '#/components/schemas/Id'
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+        entity:
+          $ref: '#/components/schemas/Id'
+        venue:
+          $ref: '#/components/schemas/Id'
+
+    UpdateManagementRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        managementPolicy:
+          $ref: '#/components/schemas/Id'
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+        entity:
+          $ref: '#/components/schemas/Id'
+        venue:
+          $ref: '#/components/schemas/Id'
 
 
 

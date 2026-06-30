@@ -158,7 +158,7 @@ All Phase 1 MDU APIs listed below require validated bearer-token authentication.
 
 > [!NOTE]
 > **Operator Routing Strategy:**
-> The endpoints defined in the Phase 1 OpenAPI contract (e.g. `/api/v1/operators`, `/api/v1/operators/{operatorId}`, `/api/v1/operators/{operatorId}/subscribers`) are handled by PROV via MDU. Global actions or raw operator listings that are handled directly (such as `GET /operator` and `POST /operator` on PROV) can bypass MDU and hit PROV directly from the UI, as PROV implements the same authentication validation logic and receives the user context token via headers. This hybrid facade/passthrough model is approved and secure.
+> For standard MDU-integrated clients, the MDU-exposed endpoints (e.g. `/api/v1/operators`, `/api/v1/operators/{operatorId}`) are the authoritative, required interfaces. The option to bypass MDU and call PROV directly (e.g., `GET /operator` and `POST /operator` on PROV) is an alternative channel reserved for internal system tools or global administrator utilities. This ensures no ambiguity for standard client integrations: they must call the MDU endpoints.
 
 ### 1. Session / Access Context (`Session` Tag)
 - `GET /api/v1/session` — Retrieve active session and effective access context.
@@ -222,7 +222,7 @@ The operator, entity, venue, role, policy, and user access orchestration APIs ar
 - **OWSEC** is the authoritative source of truth for user identity, credentials, login, token validation, and user CRUD. User CRUD does not route through MDU.
 - **PROV** is the authoritative source of truth for operators (customers), entities, venues, roles, policies, and persisted RBAC structures. MDU forwards the caller's user context to PROV to validate authorization and retrieve/persist these records.
 - **Customer / Operator Equivalence:** While customer is the business and UI-facing terminology, the actual contract and downstream APIs use the term `operator` to align with PROV. Customer workflows map directly to `operator` APIs.
-- **Hybrid Routing:** Some raw or global operations on operators (such as global listings or operator creation) bypass MDU and call PROV directly from the UI. This is an intentional and approved design pattern.
+- **Hybrid Routing:** While the primary client interface routes all operator requests through MDU's `/api/v1/operators/*` endpoints, the architecture allows internal system tools or administrators to call PROV directly. For standard client integrations, the MDU facade endpoints are the exclusive, unambiguous target.
 
 ### Operator and User-Access Lifecycles
 

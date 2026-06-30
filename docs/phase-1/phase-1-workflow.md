@@ -466,11 +466,11 @@ To retrieve, list, create, or update operator profile details (Name, Description
     * `GET /api/v1/operators/{operatorId}` (Retrieve operator details)
     * `PUT /api/v1/operators/{operatorId}` (Update operator details)
     * `DELETE /api/v1/operators/{operatorId}` (Delete an operator)
-* **Direct UI-to-PROV API Endpoints:**
-  * `GET /operator` (List all operators)
-  * `POST /operator/{uuid}` (Create a new operator)
+* **Direct Backend/Internal API Endpoints (Bypassing MDU):**
+  * `GET /operator` (List all operators in PROV)
+  * `POST /operator/{uuid}` (Create a new operator in PROV)
 * **Orchestration Flow:**
-  * **Hybrid Routing Model:** To optimize global administrative workflows, the UI may call PROV operator listing and creation endpoints directly, bypassing the MDU facade. Operator detail retrieval and update (e.g., details, name, description, and registrationId edits) are routed through the MDU facade. Both lanes enforce identical bearer authentication and token checks.
+  * **Hybrid Routing Model:** For standard MDU client integrations, all operations must be called via MDU's `/api/v1/operators/*` endpoints. To optimize global backend administrative workflows or internal system integrations, administrative tools may call PROV's operator endpoints directly, bypassing the MDU facade. Standard MDU client applications use MDU endpoints exclusively.
 
 ### 4a. Management Policies & Roles (PROV via MDU)
 To retrieve, create, update, or delete management policies and roles:
