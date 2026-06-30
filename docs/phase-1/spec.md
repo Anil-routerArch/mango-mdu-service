@@ -466,7 +466,7 @@ After Phase 1, we will have:
 1. a real Mango-facing MDU API service
 2. authenticated APIs under `/api/v1/*`
 3. OWSEC-based token validation at the MDU boundary
-4. PROV-backed foundational operator, entity, venue, role, policy, and user APIs
+4. PROV-backed foundational operator, entity, venue, role, policy, and user-access orchestration APIs
 5. normalized Mango-facing contracts instead of raw downstream behavior
 6. consistent validation and error handling
 7. production-ready tracing, logging, metrics, and readiness behavior
