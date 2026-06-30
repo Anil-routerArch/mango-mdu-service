@@ -157,8 +157,7 @@ MDU does not become the RBAC authority in Phase 1, but it must still enforce the
 All Phase 1 MDU APIs listed below require validated bearer-token authentication. Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response.
 
 > [!NOTE]
-> **Operator Routing Strategy:**
-> For Phase 1, collection-level operator operations (specifically listing all operators and creating a new operator) are handled directly by hitting PROV endpoints (`GET /operator` and `POST /operator`). Only individual operator operations (`GET`, `PUT`, `DELETE` under `/api/v1/operators/{operatorId}`) are routed through MDU. This hybrid routing model is mandatory: standard clients must call PROV directly for list/create operations, and call MDU for detailed operator member operations.
+> For Phase 1, collection-level operator operations (specifically listing all operators and creating a new operator) are handled directly by hitting PROV endpoints (`GET /operator` and `POST /operator/{uuid}`). Only individual operator operations (`GET`, `PUT`, `DELETE` under `/api/v1/operators/{operatorId}`) are routed through MDU. This hybrid routing model is mandatory: standard clients must call PROV directly for list/create operations, and call MDU for detailed operator member operations.
 
 ### 1. Session / Access Context (`Session` Tag)
 - `GET /api/v1/session` — Retrieve active session and effective access context.
