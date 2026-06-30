@@ -70,7 +70,7 @@ OWSEC remains the system of record/authoritative owner for users. PROV remains t
 
 ---
 
-# 3. Normative Document Set
+# 3. Normative Document Set and Authority
 
 This master document is normative for service scope, ownership boundaries, trust lanes, and the phase roadmap.
 
@@ -78,7 +78,11 @@ This master document is normative for service scope, ownership boundaries, trust
 
 Repo-tracked phase documents are normative only for the phase they define.
 
-Repo-tracked OpenAPI, design, and implementation artifacts may provide supporting evidence, but no requirement in this master document depends on an external attachment or an uncommitted source.
+In accordance with the repository documentation authority:
+- `docs/phase-1/mango-mdu-openapi.yaml` is the authoritative contract for Phase 1.
+- `docs/openapi.yaml` is the master draft / multi-phase document.
+- Right now, the phase-specific OpenAPI spec takes priority for the code in that phase, and the master draft will be aligned once each phase implementation is completed.
+- Important APIs should include request/response examples, error examples, auth expectations, and scope notes where useful to maintain contract clarity. Outdated or conflicting documentation must be updated or removed to maintain internal consistency.
 
 ---
 
@@ -184,8 +188,7 @@ Billing Service is the current exception to the standard downstream forwarding r
 | Login and token issuance | OWSEC | Not owned by MDU |
 | Token validation | OWSEC | MDU consumes validation |
 | Users | OWSEC | Not owned by MDU (handled directly between UI and OWSEC) |
-| Customers / sub-operators | PROV | MDU exposes customer workflow APIs and forwards to PROV |
-| Operators | PROV | MDU exposes normalized operator workflows |
+| Customers / Operators | PROV | MDU exposes customer/operator workflow APIs and forwards to PROV |
 | Entities / hierarchy | PROV | MDU exposes normalized hierarchy APIs |
 | Venues | PROV | MDU exposes normalized venue APIs |
 | Roles and policies | PROV | MDU exposes access-management workflows only |
@@ -257,7 +260,7 @@ Current known OWSEC routes include:
 
 ## 8.2 PROV
 
-OWSEC is the authoritative owner for users. PROV owns customers, operators, entities, venues, roles, policies, RBAC, hierarchy, inventory ownership, and configuration ownership.
+OWSEC is the authoritative owner for users. PROV owns customers/operators, entities, venues, roles, policies, RBAC, hierarchy, inventory ownership, and configuration ownership.
 
 MDU shall call PROV using service authentication and forwarded user context:
 
@@ -472,6 +475,10 @@ Rules:
 3. Pure write APIs shall not return partial success unless the workflow is explicitly modeled to do so.
 4. Composed read APIs may return partial data only if the route contract explicitly allows it.
 5. Downstream authentication failures, invalid downstream responses, and dependency throttling shall not collapse into a generic internal error when a more precise normalized category applies.
+6. All protected UI-facing Phase 1 endpoints require validated bearer-token authentication through OWSEC.
+7. Protected endpoints must reject missing or invalid credentials (returning `401 Unauthorized` responses), not just unauthorized scopes (which return `403 Forbidden`).
+8. In alignment with the authoritative Phase 1 OpenAPI spec, all protected routes must explicitly document and support the return of `401`, `403`, `404`, `409` (conflict), and `503` (backend unavailable) errors in a stable `ApiError` envelope.
+
 
 ## 10.3 Retry, Timeout, and Failure-Isolation Rules
 
@@ -525,89 +532,143 @@ Establish the service foundation, auth boundary, downstream trust model, and cor
 
 Phase 1 includes:
 
-- service bootstrap and configuration
-- inbound OWSEC bearer-token validation
-- direct OWSEC login boundary
-- service-authenticated downstream calls
-- `x-authorization` forwarding to downstream services
-- token-backed session/bootstrap view APIs only; MDU does not own login or session issuance
-- PROV-backed operators, entities, venues, roles, policies, customers where needed for foundation
-- access-summary workflows where PROV provides the RBAC result
-- normalized errors and observability
-- removal of production placeholder routes
+- service bootstrap and configuration.
+- inbound OWSEC bearer-token validation.
+- direct OWSEC login boundary.
+- service-authenticated downstream calls.
+- `x-authorization` forwarding to downstream services.
+- token-backed session/bootstrap view APIs (where MDU acts as a northbound wrapper, not a login authority).
+- complete user and customer (operator) APIs as approved Phase 1 northbound wrapper contracts over downstream services (OWSEC and PROV).
+- complete resource management wrapper APIs (entities, venues, roles, policies) delegating state persistence to PROV.
+- user-scoped assignment APIs (for user roles and access scopes) and access-policy management.
+- subscriber list retrieval for customers (operators).
+- access-summary workflows where PROV provides the RBAC decision.
+- normalized errors (401, 403, 404, 409, 503) and observability.
+- removal of production placeholder routes.
+
+All user, customer (operator), entity, venue, role, and policy APIs in Phase 1 act as MDU-facing normalized wrapper contracts over downstream services (OWSEC and PROV), NOT as a transfer of domain ownership or persistent truth.
 
 ### Non-Goals
 
 Phase 1 does not require:
 
-- MDU-owned login/signup
-- local RBAC storage
-- local customer/user storage
-- billing workspace aggregation
-- live device aggregation
-- topology aggregation
-- analytics dashboards
-- async workflow persistence
+- MDU-owned login/signup or session issuance.
+- local RBAC or policy persistence (PROV is the source of truth).
+- local user or customer database storage (OWSEC/PROV are the sources of truth).
+- billing workspace aggregation or billing integrations (billing is out of scope for Phase 1).
+- live device aggregation or live device status.
+- topology aggregation.
+- analytics dashboards.
+- async workflow persistence.
 
-### Indicative API Families
+### Phase 1 API Inventory
 
-- `GET /api/v1/mdu/me` — OWSEC is the authoritative owner for user identity; MDU calls PROV to fetch the authenticated user's Mango bootstrap context (operator scope, customer scope, roles, hierarchy visibility) and composes the normalized `/me` response
-- `GET /api/v1/mdu/session`
-- `/api/v1/mdu/operators/*`
-- `/api/v1/mdu/entities/*`
-- `/api/v1/mdu/venues/*`
-- `/api/v1/mdu/policies/*`
-- `/api/v1/mdu/roles/*`
-- `/api/v1/mdu/customers/*`
+All Phase 1 MDU APIs listed below require validated bearer-token authentication. Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response.
+
+> [!NOTE]
+> **Operator Routing Strategy:**
+> The endpoints defined in the Phase 1 OpenAPI contract (e.g. `/mdu/operators`, `/mdu/operators/{operatorId}`, `/mdu/operators/{operatorId}/subscribers`) are handled by PROV via MDU. Global actions or raw operator listings that are handled directly (such as `GET /operator` and `POST /operator` on PROV) can bypass MDU and hit PROV directly from the UI, as PROV implements the same authentication validation logic and receives the user context token via headers. This hybrid facade/passthrough model is approved and secure.
+
+#### 1. Session / Access Context (`Session` Tag)
+- `GET /mdu/session` — Retrieve active session and effective access context.
+
+#### 2. Operators (`Operators` Tag)
+- `GET /mdu/operators` — List operators.
+- `POST /mdu/operators` — Create a new operator.
+- `GET /mdu/operators/{operatorId}` — Retrieve operator details.
+- `PUT /mdu/operators/{operatorId}` — Update operator details.
+- `DELETE /mdu/operators/{operatorId}` — Delete operator.
+
+#### 3. Subscribers (`Subscribers` Tag)
+- `GET /mdu/operators/{operatorId}/subscribers` — List subscribers for the given operator.
+
+#### 4. Contacts (`Contacts` Tag)
+- *Note:* Excluded from active routes in the Phase 1 OpenAPI spec (represented under `Contacts` tag definition only; no active paths are exposed).
+
+#### 5. Hierarchy (`Hierarchy` Tag)
+- `GET /mdu/hierarchy/tree` — Retrieve full or scoped resource hierarchy tree.
+
+#### 6. Entities (`Entities` Tag)
+- `GET /mdu/entities` — List entities.
+- `POST /mdu/entities` — Create a new entity.
+- `GET /mdu/entities/{entityId}` — Retrieve details of a specific entity.
+- `PUT /mdu/entities/{entityId}` — Update entity details.
+- `DELETE /mdu/entities/{entityId}` — Delete entity.
+- `GET /mdu/entities/{entityId}/venues` — List venues under an entity.
+- `POST /mdu/entities/{entityId}/venues` — Create a new venue under an entity.
+
+#### 7. Venues (`Venues` Tag)
+- `GET /mdu/venues/{venueId}` — Retrieve venue details.
+- `PUT /mdu/venues/{venueId}` — Update venue details.
+- `DELETE /mdu/venues/{venueId}` — Delete venue.
+
+#### 8. Management Policies (`Management Policies` Tag)
+- `GET /mdu/policies` — List management policies.
+- `POST /mdu/policies` — Create a new management policy.
+- `GET /mdu/policies/{policyId}` — Retrieve details of a specific policy.
+- `PUT /mdu/policies/{policyId}` — Update management policy details.
+- `DELETE /mdu/policies/{policyId}` — Delete management policy.
+
+#### 9. Management Roles (`Management Roles` Tag)
+- `GET /mdu/roles` — List management roles.
+- `POST /mdu/roles` — Create a new management role.
+- `GET /mdu/roles/{roleId}` — Retrieve details of a specific role.
+- `PUT /mdu/roles/{roleId}` — Update management role details.
+- `DELETE /mdu/roles/{roleId}` — Delete management role.
+
+#### 10. Users / Scoped Assignments & Access (`Users` Tag)
+- `GET /mdu/users/{userId}/assignments` — List resource assignments for a user.
+- `POST /mdu/users/{userId}/assignments` — Assign resource (entity/venue) scope to a user.
+- `DELETE /mdu/users/{userId}/assignments/{assignmentId}` — Remove a user scope assignment.
+- `GET /mdu/users/{userId}/access-policy` — Get user access policy.
+- `PUT /mdu/users/{userId}/access-policy` — Update user access policy.
 
 ### Completion Criteria
 
 Phase 1 is complete only when:
 
-1. protected business APIs validate OWSEC bearer tokens
-2. downstream private calls use service auth plus forwarded user context where required
-3. scaffold placeholder APIs are removed or isolated from production routes
-4. token-backed session/bootstrap view APIs and core PROV-backed access APIs are available
-5. normalized error handling and structured correlation are implemented
-6. source-of-truth ownership rules remain preserved
+1. protected business APIs validate OWSEC bearer tokens and reject unauthenticated requests with `401`.
+2. downstream private calls use service auth plus forwarded user context where required.
+3. scaffold placeholder APIs are removed or isolated from production routes.
+4. all listed Session, Operator, User, Hierarchy, Entity, Venue, Policy, and Role endpoints are available and match the methods defined in the Phase 1 OpenAPI spec.
+5. normalized error handling (401, 403, 404, 409, 503) and structured correlation are implemented.
+6. source-of-truth ownership rules remain preserved.
 
-## Phase 2: Customers, Hierarchy, and Billing Workspaces
+## Phase 2: Billing and Workspace Dashboard Integration
 
 ### Objective
 
-Make MDU useful for customer/sub-operator workspace workflows and hierarchy navigation while keeping PROV and Billing as systems of record.
+Make MDU useful for customer/sub-operator workspace tab integrations, billing administration, and hierarchy browsing/lazy-loading.
 
 ### Scope
 
 Phase 2 includes:
 
-- customer lifecycle APIs backed by PROV
-- customer bootstrap orchestration backed by PROV and OWSEC as applicable
-- hierarchy browsing and lazy child loading backed by PROV
-- workspace context APIs
-- billing account, plan visibility, subscription, invoice, billing-period, and usage integrations backed by Billing Service
-- customer workspace payloads for UI tabs
+- customer workspace overview and tab dashboard payload aggregation.
+- hierarchy browsing, lazy child node expansion, and deep tree searches.
+- billing account management, subscription creation, plan updates, billing period retrieval, invoices, usage reports, and invoice download proxies backed by Billing Service.
 
 ### Non-Goals
 
 Phase 2 does not require:
 
-- live device actions
-- topology graph APIs
-- analytics dashboards
-- durable workflow engine
-- broad async jobs
+- live device actions.
+- topology graph APIs.
+- analytics dashboards.
+- durable workflow engine.
+- broad async jobs.
 
 ### Indicative API Families
 
-- `/api/v1/mdu/customers/*`
-- `/api/v1/mdu/hierarchy/*`
+- `/api/v1/mdu/hierarchy/*` (lazy node expansion)
 - `/api/v1/mdu/workspaces/*`
 - `/api/v1/mdu/billing/plans/*`
 - `/api/v1/mdu/billing/accounts/*`
 - `/api/v1/mdu/billing/subscriptions/*`
 - `/api/v1/mdu/billing/invoices/*`
 - `/api/v1/mdu/bootstrap/*` where approved
+
+---
 
 ## Phase 3: Devices and Configurations
 

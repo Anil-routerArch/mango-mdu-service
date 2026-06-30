@@ -17,7 +17,7 @@ info:
     - hierarchy read/write for entity and venue resources
     - user scope assignment, scope lookup, and management of roles, policies, contacts, and subscribers
     - user CRUD is handled directly by OWSEC (identity management), while roles, policies, and operational details are handled by PROV
-    - operator/customer listing and creation are handled directly by PROV from the UI, while operator detail retrieval, updates, and deletion are orchestrated via MDU
+    - operator listing and creation are handled directly by PROV from the UI, while operator detail retrieval, updates, and deletion are orchestrated via MDU
 
     Explicit non-goal:
     - billing features are out-of-scope for Phase 1
@@ -37,33 +37,12 @@ tags:
   - name: Contacts
   - name: Subscribers
   - name: Operators
-  - name: Customers
 
 security:
   - bearerAuth: []
 
 paths:
-  /mdu/me:
-    get:
-      tags: [Session]
-      summary: Get active session and effective access context
-      description: |
-        Returns the authenticated caller and normalized effective access context.
-        Scope assignments are derived from downstream role and policy bindings.
-      operationId: getMe
-      responses:
-        '200':
-          description: Active session and normalized access context
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionContext'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '503':
-          $ref: '#/components/responses/BackendUnavailableError'
+
 
   /mdu/session:
     get:
@@ -80,6 +59,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionContext'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+
+  /mdu/operators:
+    get:
+      tags: [Operators]
+      summary: Retrieve a list of operators
+      description: Returns a list of operator profiles.
+      operationId: getOperators
+      responses:
+        '200':
+          description: A list of operators
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    post:
+      tags: [Operators]
+      summary: Create a new operator profile
+      description: Creates a new operator profile record.
+      operationId: createOperator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorDetail'
+      responses:
+        '201':
+          description: Operator created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorDetail'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -685,120 +710,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/customers:
-    get:
-      tags: [Customers]
-      summary: Retrieve a list of customers
-      description: Returns a list of customer profiles (backed by operator definitions).
-      operationId: getCustomers
-      responses:
-        '200':
-          description: A list of customers
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerListResponse'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '503':
-          $ref: '#/components/responses/BackendUnavailableError'
-    post:
-      tags: [Customers]
-      summary: Create a new customer profile
-      description: Creates a new operator/customer profile record.
-      operationId: createCustomer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CustomerDetail'
-      responses:
-        '201':
-          description: Customer created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerDetail'
-        '400':
-          $ref: '#/components/responses/BadRequestError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '503':
-          $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/customers/{customerId}:
-    get:
-      tags: [Customers]
-      summary: Retrieve a specific customer profile
-      operationId: getCustomer
-      parameters:
-        - $ref: '#/components/parameters/CustomerIdPath'
-      responses:
-        '200':
-          description: Customer details
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerDetail'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '503':
-          $ref: '#/components/responses/BackendUnavailableError'
-    put:
-      tags: [Customers]
-      summary: Update a customer profile
-      operationId: updateCustomer
-      parameters:
-        - $ref: '#/components/parameters/CustomerIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CustomerDetail'
-      responses:
-        '200':
-          description: Customer profile updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerDetail'
-        '400':
-          $ref: '#/components/responses/BadRequestError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '503':
-          $ref: '#/components/responses/BackendUnavailableError'
-    delete:
-      tags: [Customers]
-      summary: Delete a customer profile
-      operationId: deleteCustomer
-      parameters:
-        - $ref: '#/components/parameters/CustomerIdPath'
-      responses:
-        '204':
-          description: Customer deleted
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '503':
-          $ref: '#/components/responses/BackendUnavailableError'
 
   /mdu/users/{userId}/assignments:
     get:
@@ -1020,12 +932,7 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Id'
-    CustomerIdPath:
-      name: customerId
-      in: path
-      required: true
-      schema:
-        $ref: '#/components/schemas/Id'
+
 
   responses:
     BadRequestError:
@@ -1491,6 +1398,28 @@ components:
         updatedAt:
           $ref: '#/components/schemas/IsoDateTime'
 
+    OperatorSummary:
+      type: object
+      required: [name]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+        description:
+          type: string
+        registrationId:
+          type: string
+
+    OperatorListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperatorSummary'
+
     SubscriberSignup:
       type: object
       required: [email, registrationId, status]
@@ -1598,37 +1527,5 @@ components:
           items:
             $ref: '#/components/schemas/ManagementRole'
 
-    CustomerSummary:
-      type: object
-      required: [name]
-      properties:
-        id:
-          $ref: '#/components/schemas/Id'
-        name:
-          type: string
-        description:
-          type: string
-        registrationId:
-          type: string
 
-    CustomerDetail:
-      allOf:
-        - $ref: '#/components/schemas/CustomerSummary'
-        - type: object
-          properties:
-            entityId:
-              $ref: '#/components/schemas/Id'
-            createdAt:
-              $ref: '#/components/schemas/IsoDateTime'
-            updatedAt:
-              $ref: '#/components/schemas/IsoDateTime'
-
-    CustomerListResponse:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/CustomerSummary'
 
