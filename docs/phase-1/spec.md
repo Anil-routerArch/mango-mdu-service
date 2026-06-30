@@ -14,13 +14,13 @@ This document defines what Phase 1 must include, what it must not include, and w
 
 The goal of Phase 1 is to establish MDU Service as the service that:
 
-- accepts Mango-facing API requests under `/api/v1/mdu/*`
+- accepts Mango-facing API requests under `/api/v1/*`
 - validates OWSEC bearer tokens before protected operations
 - calls downstream services using service credentials
 - forwards user context to PROV where required
 - exposes normalized Mango-facing contracts
-- preserves OWSEC as the authoritative owner for users
-- preserves PROV as the source of truth for customers, hierarchy, roles, policies, and RBAC
+- preserves OWSEC as the authoritative owner for user identity and credentials
+- preserves PROV as the source of truth for operators (customers), hierarchy, roles, policies, and RBAC
 
 In simple terms, Phase 1 makes MDU the first real backend entry point for Mango operator workflows.
 
@@ -31,11 +31,11 @@ In simple terms, Phase 1 makes MDU the first real backend entry point for Mango 
 Phase 1 includes:
 
 - service bootstrap and production-ready runtime setup.
-- authenticated Mango-facing APIs under `/api/v1/mdu/*` requiring validated bearer-token authentication through OWSEC.
+- authenticated Mango-facing APIs under `/api/v1/*` requiring validated bearer-token authentication through OWSEC.
 - inbound bearer-token validation through OWSEC.
 - token-backed session/bootstrap view APIs:
-  - `GET /mdu/session`.
-- complete user and operator APIs as approved Phase 1 northbound wrapper contracts over downstream services.
+  - `GET /api/v1/session`.
+- operator APIs (the backend term for customer-facing workflows) and user-access orchestration APIs (assignments, access policies) as approved Phase 1 northbound wrapper contracts over downstream services.
 - complete resource management wrapper APIs (entities, venues, roles, policies) delegating state persistence to PROV.
 - user-scoped assignment APIs (for user roles and access scopes) and access-policy management.
 - subscriber list retrieval for operators.
@@ -47,7 +47,7 @@ Phase 1 includes:
 - request tracing, request ID, and correlation ID propagation.
 - a clean production route baseline without placeholder scaffold CRUD surfaces.
 
-All user, customer, operator, entity, venue, role, and policy APIs in Phase 1 act as MDU-facing normalized wrapper contracts over downstream services (OWSEC and PROV), NOT as a transfer of domain ownership or persistent truth.
+All operator, entity, venue, role, and policy APIs in Phase 1 act as MDU-facing normalized wrapper contracts, and user endpoints are limited to access orchestration (assignments, access policies) while user identity and CRUD remain directly with OWSEC.
 
 ---
 
@@ -158,69 +158,72 @@ All Phase 1 MDU APIs listed below require validated bearer-token authentication.
 
 > [!NOTE]
 > **Operator Routing Strategy:**
-> The endpoints defined in the Phase 1 OpenAPI contract (e.g. `/mdu/operators`, `/mdu/operators/{operatorId}`, `/mdu/operators/{operatorId}/subscribers`) are handled by PROV via MDU. Global actions or raw operator listings that are handled directly (such as `GET /operator` and `POST /operator` on PROV) can bypass MDU and hit PROV directly from the UI, as PROV implements the same authentication validation logic and receives the user context token via headers. This hybrid facade/passthrough model is approved and secure.
+> **Operator Routing Strategy:**
+> The endpoints defined in the Phase 1 OpenAPI contract (e.g. `/api/v1/operators`, `/api/v1/operators/{operatorId}`, `/api/v1/operators/{operatorId}/subscribers`) are handled by PROV via MDU. Global actions or raw operator listings that are handled directly (such as `GET /operator` and `POST /operator` on PROV) can bypass MDU and hit PROV directly from the UI, as PROV implements the same authentication validation logic and receives the user context token via headers. This hybrid facade/passthrough model is approved and secure.
 
 ### 1. Session / Access Context (`Session` Tag)
-- `GET /mdu/session` — Retrieve active session and effective access context.
+- `GET /api/v1/session` — Retrieve active session and effective access context.
 
 ### 2. Operators (`Operators` Tag)
-- `GET /mdu/operators` — List operators.
-- `POST /mdu/operators` — Create a new operator.
-- `GET /mdu/operators/{operatorId}` — Retrieve operator details.
-- `PUT /mdu/operators/{operatorId}` — Update operator details.
-- `DELETE /mdu/operators/{operatorId}` — Delete operator.
+- `GET /api/v1/operators` — List operators.
+- `POST /api/v1/operators` — Create a new operator.
+- `GET /api/v1/operators/{operatorId}` — Retrieve operator details.
+- `PUT /api/v1/operators/{operatorId}` — Update operator details.
+- `DELETE /api/v1/operators/{operatorId}` — Delete operator.
 
 ### 3. Subscribers (`Subscribers` Tag)
-- `GET /mdu/operators/{operatorId}/subscribers` — List subscribers for the given operator.
+- `GET /api/v1/operators/{operatorId}/subscribers` — List subscribers for the given operator.
 
 ### 4. Contacts (`Contacts` Tag)
 - *Note:* Excluded from active routes in the Phase 1 OpenAPI spec (represented under `Contacts` tag definition only; no active paths are exposed).
 
 ### 5. Hierarchy (`Hierarchy` Tag)
-- `GET /mdu/hierarchy/tree` — Retrieve full or scoped resource hierarchy tree.
+- `GET /api/v1/hierarchy/tree` — Retrieve full or scoped resource hierarchy tree.
 
 ### 6. Entities (`Entities` Tag)
-- `GET /mdu/entities` — List entities.
-- `POST /mdu/entities` — Create a new entity.
-- `GET /mdu/entities/{entityId}` — Retrieve details of a specific entity.
-- `PUT /mdu/entities/{entityId}` — Update entity details.
-- `DELETE /mdu/entities/{entityId}` — Delete entity.
-- `GET /mdu/entities/{entityId}/venues` — List venues under an entity.
-- `POST /mdu/entities/{entityId}/venues` — Create a new venue under an entity.
+- `GET /api/v1/entities` — List entities.
+- `POST /api/v1/entities` — Create a new entity.
+- `GET /api/v1/entities/{entityId}` — Retrieve details of a specific entity.
+- `PUT /api/v1/entities/{entityId}` — Update entity details.
+- `DELETE /api/v1/entities/{entityId}` — Delete entity.
+- `GET /api/v1/entities/{entityId}/venues` — List venues under an entity.
+- `POST /api/v1/entities/{entityId}/venues` — Create a new venue under an entity.
 
 ### 7. Venues (`Venues` Tag)
-- `GET /mdu/venues/{venueId}` — Retrieve venue details.
-- `PUT /mdu/venues/{venueId}` — Update venue details.
-- `DELETE /mdu/venues/{venueId}` — Delete venue.
+- `GET /api/v1/venues/{venueId}` — Retrieve venue details.
+- `PUT /api/v1/venues/{venueId}` — Update venue details.
+- `DELETE /api/v1/venues/{venueId}` — Delete venue.
 
 ### 8. Management Policies (`Management Policies` Tag)
-- `GET /mdu/policies` — List management policies.
-- `POST /mdu/policies` — Create a new management policy.
-- `GET /mdu/policies/{policyId}` — Retrieve details of a specific policy.
-- `PUT /mdu/policies/{policyId}` — Update management policy details.
-- `DELETE /mdu/policies/{policyId}` — Delete management policy.
+- `GET /api/v1/policies` — List management policies.
+- `POST /api/v1/policies` — Create a new management policy.
+- `GET /api/v1/policies/{policyId}` — Retrieve details of a specific policy.
+- `PUT /api/v1/policies/{policyId}` — Update management policy details.
+- `DELETE /api/v1/policies/{policyId}` — Delete management policy.
 
 ### 9. Management Roles (`Management Roles` Tag)
-- `GET /mdu/roles` — List management roles.
-- `POST /mdu/roles` — Create a new management role.
-- `GET /mdu/roles/{roleId}` — Retrieve details of a specific role.
-- `PUT /mdu/roles/{roleId}` — Update management role details.
-- `DELETE /mdu/roles/{roleId}` — Delete management role.
+- `GET /api/v1/roles` — List management roles.
+- `POST /api/v1/roles` — Create a new management role.
+- `GET /api/v1/roles/{roleId}` — Retrieve details of a specific role.
+- `PUT /api/v1/roles/{roleId}` — Update management role details.
+- `DELETE /api/v1/roles/{roleId}` — Delete management role.
 
 ### 10. Users / Scoped Assignments & Access (`Users` Tag)
-- `GET /mdu/users/{userId}/assignments` — List resource assignments for a user.
-- `POST /mdu/users/{userId}/assignments` — Assign resource (entity/venue) scope to a user.
-- `DELETE /mdu/users/{userId}/assignments/{assignmentId}` — Remove a user scope assignment.
-- `GET /mdu/users/{userId}/access-policy` — Get user access policy.
-- `PUT /mdu/users/{userId}/access-policy` — Update user access policy.
+- `GET /api/v1/users/{userId}/assignments` — List resource assignments for a user.
+- `POST /api/v1/users/{userId}/assignments` — Assign resource (entity/venue) scope to a user.
+- `DELETE /api/v1/users/{userId}/assignments/{assignmentId}` — Remove a user scope assignment.
+- `GET /api/v1/users/{userId}/access-policy` — Get user access policy.
+- `PUT /api/v1/users/{userId}/access-policy` — Update user access policy.
 
 ---
 
 ## MDU-facing Normalized Wrapper Contract and Source of Truth
 
-The user, operator, entity, venue, role, and policy APIs are MDU-facing normalized wrapper contracts over downstream services, NOT a transfer of domain ownership or persistent truth. MDU acts as a stateless facade/orchestrator:
-- **OWSEC** is the authoritative source of truth for identity, authentication, session validity, and user records.
-- **PROV** is the authoritative source of truth for operators, entities, venues, roles, policies, and persisted RBAC structures. MDU forwards the caller's user context to PROV to validate authorization and retrieve/persist these records.
+The operator, entity, venue, role, policy, and user access orchestration APIs are MDU-facing normalized wrapper contracts over downstream services, NOT a transfer of domain ownership or persistent truth. MDU acts as a stateless facade/orchestrator:
+- **OWSEC** is the authoritative source of truth for user identity, credentials, login, token validation, and user CRUD. User CRUD does not route through MDU.
+- **PROV** is the authoritative source of truth for operators (customers), entities, venues, roles, policies, and persisted RBAC structures. MDU forwards the caller's user context to PROV to validate authorization and retrieve/persist these records.
+- **Customer / Operator Equivalence:** While customer is the business and UI-facing terminology, the actual contract and downstream APIs use the term `operator` to align with PROV. Customer workflows map directly to `operator` APIs.
+- **Hybrid Routing:** Some raw or global operations on operators (such as global listings or operator creation) bypass MDU and call PROV directly from the UI. This is an intentional and approved design pattern.
 
 ### Operator and User Lifecycles
 
@@ -462,7 +465,7 @@ Phase 1 testing and CI must cover at minimum:
 After Phase 1, we will have:
 
 1. a real Mango-facing MDU API service
-2. authenticated APIs under `/mdu/*`
+2. authenticated APIs under `/api/v1/*`
 3. OWSEC-based token validation at the MDU boundary
 4. PROV-backed foundational operator, entity, venue, role, policy, and user APIs
 5. normalized Mango-facing contracts instead of raw downstream behavior
@@ -483,7 +486,7 @@ Phase 1 is complete only when:
 - protected APIs validate OWSEC bearer tokens and reject unauthenticated requests with `401`
 - downstream calls use service auth correctly
 - user context is forwarded to PROV where required
-- `GET /mdu/session` is working as the bootstrap API
+- `GET /api/v1/session` is working as the bootstrap API
 - all listed Session, Operator, User, Hierarchy, Entity, Venue, Policy, and Role endpoints are available and match the methods defined in the Phase 1 OpenAPI spec
 - no placeholder scaffold production routes remain in claimed scope
 - normalized validation and error handling are implemented, returning `401`, `403`, `404`, `409`, and `503` responses where appropriate

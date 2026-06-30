@@ -44,7 +44,7 @@ security:
 paths:
 
 
-  /mdu/session:
+  /session:
     get:
       tags: [Session]
       summary: Get active session and effective access context
@@ -66,7 +66,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/operators:
+  /operators:
     get:
       tags: [Operators]
       summary: Retrieve a list of operators
@@ -112,7 +112,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/operators/{operatorId}:
+  /operators/{operatorId}:
     get:
       tags: [Operators]
       summary: Retrieve operator details
@@ -184,7 +184,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/operators/{operatorId}/subscribers:
+  /operators/{operatorId}/subscribers:
     get:
       tags: [Subscribers]
       summary: List subscribers for an operator
@@ -209,7 +209,7 @@ paths:
           $ref: '#/components/responses/NotFoundError'
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
-  /mdu/hierarchy/tree:
+  /hierarchy/tree:
     get:
       tags: [Hierarchy]
       summary: Get visible hierarchy tree
@@ -233,7 +233,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/entities:
+  /entities:
     get:
       tags: [Entities]
       summary: List entities visible to the caller
@@ -283,7 +283,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/entities/{entityId}:
+  /entities/{entityId}:
     get:
       tags: [Entities]
       summary: Get entity detail
@@ -356,7 +356,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/entities/{entityId}/venues:
+  /entities/{entityId}/venues:
     get:
       tags: [Venues]
       summary: List venues under an entity
@@ -411,7 +411,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/venues/{venueId}:
+  /venues/{venueId}:
     get:
       tags: [Venues]
       summary: Get venue detail
@@ -484,7 +484,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/policies:
+  /policies:
     get:
       tags: [Management Policies]
       summary: Retrieve a list of management policies
@@ -528,7 +528,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/policies/{policyId}:
+  /policies/{policyId}:
     get:
       tags: [Management Policies]
       summary: Retrieve details of a management policy
@@ -597,7 +597,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/roles:
+  /roles:
     get:
       tags: [Management Roles]
       summary: Retrieve a list of management roles
@@ -641,7 +641,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/roles/{roleId}:
+  /roles/{roleId}:
     get:
       tags: [Management Roles]
       summary: Retrieve details of a management role
@@ -712,7 +712,7 @@ paths:
 
 
 
-  /mdu/users/{userId}/assignments:
+  /users/{userId}/assignments:
     get:
       tags: [Users]
       summary: Get effective scoped assignments for a user
@@ -768,7 +768,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /mdu/users/{userId}/assignments/{assignmentId}:
+  /users/{userId}/assignments/{assignmentId}:
     delete:
       tags: [Users]
       summary: Remove a user's scope assignment
@@ -791,7 +791,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
           
-  /mdu/users/{userId}/access-policy:
+  /users/{userId}/access-policy:
     get:
       tags: [Users]
       summary: Retrieve the access policy for a user at a given scope
