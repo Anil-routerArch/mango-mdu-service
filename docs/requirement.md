@@ -482,7 +482,7 @@ Rules:
 5. Downstream authentication failures, invalid downstream responses, and dependency throttling shall not collapse into a generic internal error when a more precise normalized category applies.
 6. All protected UI-facing Phase 1 endpoints require validated bearer-token authentication through OWSEC.
 7. Protected endpoints must reject missing or invalid credentials (returning `401 Unauthorized` responses), not just unauthorized scopes (which return `403 Forbidden`).
-8. In alignment with the authoritative Phase 1 OpenAPI spec, all protected routes must explicitly document and support the return of `401`, `403`, `404`, `409` (conflict), and `503` (backend unavailable) errors in a stable `ApiError` envelope.
+8. In alignment with the authoritative Phase 1 OpenAPI spec, protected routes must explicitly document and support the return of relevant error codes (such as `401`, `403`, `404`, `409`, and `503` where applicable) in a stable `ApiError` envelope.
 
 
 ## 10.3 Retry, Timeout, and Failure-Isolation Rules
