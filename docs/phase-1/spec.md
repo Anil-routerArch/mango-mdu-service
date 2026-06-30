@@ -158,7 +158,6 @@ All Phase 1 MDU APIs listed below require validated bearer-token authentication.
 
 > [!NOTE]
 > **Operator Routing Strategy:**
-> **Operator Routing Strategy:**
 > The endpoints defined in the Phase 1 OpenAPI contract (e.g. `/api/v1/operators`, `/api/v1/operators/{operatorId}`, `/api/v1/operators/{operatorId}/subscribers`) are handled by PROV via MDU. Global actions or raw operator listings that are handled directly (such as `GET /operator` and `POST /operator` on PROV) can bypass MDU and hit PROV directly from the UI, as PROV implements the same authentication validation logic and receives the user context token via headers. This hybrid facade/passthrough model is approved and secure.
 
 ### 1. Session / Access Context (`Session` Tag)
@@ -225,12 +224,12 @@ The operator, entity, venue, role, policy, and user access orchestration APIs ar
 - **Customer / Operator Equivalence:** While customer is the business and UI-facing terminology, the actual contract and downstream APIs use the term `operator` to align with PROV. Customer workflows map directly to `operator` APIs.
 - **Hybrid Routing:** Some raw or global operations on operators (such as global listings or operator creation) bypass MDU and call PROV directly from the UI. This is an intentional and approved design pattern.
 
-### Operator and User Lifecycles
+### Operator and User-Access Lifecycles
 
-Phase 1 provides full method and lifecycle coverage for Operator and User API operations as wrapper contracts:
+Phase 1 provides method and lifecycle coverage for Operator and User-Access API operations as wrapper and orchestration contracts:
 
 - **Operators:** Support listing (`GET`), creating (`POST`), details retrieval (`GET`), updating parameters (`PUT`), and deletion (`DELETE`).
-- **Users (Assignments & Access Policies):** Support retrieving user assignments (`GET`), scope assignment mutations (`POST` assignments with entity/venue resources), assignment deletion (`DELETE`), as well as access policy lookup (`GET`) and policy updates (`PUT`).
+- **User-Access Orchestration:** MDU does not expose full user CRUD. Instead, it supports user scope assignments (`GET` assignments, `POST` assignment additions, and `DELETE` assignment removals) and access policy lookup (`GET`) and policy updates (`PUT`). User account lifecycle and profile CRUD remain directly with OWSEC.
 - **Resource Management (Entities & Venues):** Support full CRUD operations (`GET`, `POST`, `PUT`, `DELETE`) representing MDU wrappers over PROV's hierarchy tree.
 - **Access Policies & Roles:** Support listing, creation, reading details, updating, and deleting policies and roles, backed entirely by PROV.
 

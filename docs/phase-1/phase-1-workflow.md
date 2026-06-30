@@ -37,17 +37,16 @@ So Phase 1 is already a real integration phase with **OWSEC + PROV**.
 
 Phase 1 includes the following Mango-facing API families:
 
-- `GET /api/v1/session` — OWSEC is the authoritative owner for user identity; MDU calls PROV to fetch the authenticated user's Mango bootstrap context (operator scope, roles, hierarchy visibility) and composes the normalized `/session` response
-- `/api/v1/operators/*`
-- `/api/v1/entities/*`
-- `/api/v1/venues/*`
-- `/api/v1/policies/*`
-- `/api/v1/roles/*`
-- `/api/v1/contacts/*`
-- `/api/v1/subscribers/*`
-- `/api/v1/subscriberDevices/*`
-- `/api/v1/users/*` (including `/api/v1/users/{userId}/access-policy` for user role and resource permission policy mapping)
+- `GET /api/v1/session` — OWSEC is the authoritative owner for user identity; MDU calls PROV to fetch the authenticated user's Mango bootstrap context (operator scope, roles, hierarchy visibility) and composes the normalized `/session` response.
+- `/api/v1/operators/*` — Standard APIs for managing operators (which represent customer scopes).
+- `/api/v1/entities/*` — APIs for entity hierarchy management wrapper.
+- `/api/v1/venues/*` — APIs for venue management wrapper.
+- `/api/v1/policies/*` — APIs for management policies wrapper.
+- `/api/v1/roles/*` — APIs for management roles wrapper.
+- `/api/v1/users/*` — User assignments and access-policy orchestration (e.g. `GET /api/v1/users/{userId}/assignments` and `GET /api/v1/users/{userId}/access-policy`).
 
+### Excluded APIs
+Contacts, subscriber management (invite/creation), and subscriber devices are not exposed as active MDU contract routes in Phase 1 (with the sole exception of `/api/v1/operators/{operatorId}/subscribers` for operator-scoped listing). They are managed downstream in PROV.
 
 These API families are indicative workflow groupings for Phase 1. They are not a strict one-to-one route inventory and do not require MDU to mirror downstream route structure exactly.
 
@@ -75,16 +74,9 @@ The master requirements identify the following current known PROV route families
 - `/managementPolicy/{uuid}`
 - `/managementRole`
 - `/managementRole/{id}`
-- `/contact`
-- `/contact/{uuid}`
-- `/operatorContact`
-- `/operatorContact/{uuid}`
-- `/subscriber`
-- `/subscriberDevice`
-- `/subscriberDevice/{uuid}`
-- PROV-owned operator routes as required by the implementation baseline
+- `/subscriber` (for operator-scoped subscriber lists)
 
-MDU uses these as downstream sources where the Phase 1 Mango-facing workflow requires them.
+Contacts and subscriber device APIs are not active in MDU and remain purely downstream/supporting context in PROV. MDU uses these as downstream sources where the Phase 1 Mango-facing workflow requires them.
 
 ---
 
@@ -392,22 +384,21 @@ MDU only shapes the summary.
 
 # 8. User, Operator, and Policy Management Workflow
 
-This section describes how northbound clients manage user access, roles, policies, contacts, and subscriber accounts.
+This section describes how northbound clients manage user access, roles, policies, and operator-scoped subscribers.
 
 ## Goal
-Manage user-related access context, roles, access-policies, and contact associations in Phase 1, using OWSEC as the source of truth for user accounts and identity, and PROV as the source of truth for operators, roles, policies, hierarchy, and subscribers.
+Manage user-related access context, roles, and access-policies in Phase 1, using OWSEC as the source of truth for user accounts and identity, and PROV as the source of truth for operators, roles, policies, hierarchy, and subscribers.
 
 ## Architectural Boundaries & Service Division
 In Phase 1, all user-related entities belong to one of two services:
 1. **OWSEC (User identity, credentials, token authority, and user CRUD):** 
    - Authoritative for basic user profiles (name, email, password, login status, MFA) and user CRUD operations.
    - Serves as the authentication and authorization token authority.
-2. **PROV (User roles, policies, contacts, and subscribers):**
+2. **PROV (User roles, policies, and operator data):**
    - **Management Roles & Policies:** Defines the specific permissions and resource scopes (entities, venues) linked to user UUIDs.
-   - **Contacts & Operator Contacts:** Associates physical user information (names, emails, phones, and roles) with operators, entities, or venues.
-   - **Subscribers & Subscriber Devices:** Manages subscriber signups, email registrations, and subscriber device links.
+   - **Operators (Customers):** Manages operator (customer) metadata and settings.
 
-No other external dependency or service is used for user management. MDU acts as the orchestration layer for access-policies and assignments.
+MDU acts as the orchestration layer for access-policies and assignments. Contacts, subscriber invite/registration, and subscriber devices are out of scope for Phase 1.
 
 ## Detailed Workflows
 
@@ -433,7 +424,7 @@ To retrieve, grant, modify, or revoke scoped resource-level access permissions f
   * **Retrieve Access Policy (GET):**
     1. The client calls `GET /api/v1/users/{userId}/access-policy` specifying `entityId` and optionally `venueId`.
     2. MDU validates the authorization token via OWSEC.
-    3. MDU calls PROV `GET /managementRole` filtering by `entity` ID (and `venue` ID if `venueId` query parameter is provided) to locate the role template associated with the user (where the `users` array contains the target `userId`).
+    3. MDU calls PROV `GET /managementRole` filtering by `entity` ID (and `venue` ID if `venueId` query parameter is provided) to locate the role template associated with the user.
     4. MDU calls PROV `GET /managementPolicy/{uuid}` using the policy ID linked to the role to fetch its detailed permission entries.
     5. MDU maps and merges this data into a unified `UserAccessPolicy` payload containing `scope` (entity/venue), `entityId`, optional `venueId`, role template, and resource permission lists, and returns it to the UI.
   * **Assign or Update Access Policy (PUT):**
@@ -450,28 +441,24 @@ To list, assign, or remove user bindings to entity and venue scopes:
   * `GET /api/v1/users/{userId}/assignments` (Get effective scope assignments)
   * `POST /api/v1/users/{userId}/assignments` (Assign user to entity or venue scope)
   * `DELETE /api/v1/users/{userId}/assignments/{assignmentId}` (Remove assignment by ID)
-* **Orchestration Flow (mapped to PROV `ManagementRole` C++ backend):**
-  * **List Assignments:** MDU calls PROV `GET /managementRole` (which runs the `RESTAPI_managementRole_list_handler` under the hood), retrieves all roles containing the target `userId` in their `users` vector, and maps the associated `entity` or `venue` field to list entries.
+* **Orchestration Flow:**
+  * **List Assignments:** MDU calls PROV `GET /managementRole`, retrieves all roles containing the target `userId`, and maps the associated `entity` or `venue` field to list entries.
   * **Assign User (POST):** 
     - The client sends a `CreateUserAssignmentRequest` containing `scopeType` (`entity` or `venue`), `scopeId`, and `role`.
     - MDU calls PROV `GET /managementRole` to check if a role already exists for that scope.
-    - If a matching role exists, MDU updates it using `PUT /managementRole/{id}` (handled by `RESTAPI_managementRole_handler::DoPut`) to add the user's UUID to the `users` array.
-    - If no role exists, MDU creates one using `POST /managementRole/{id}` (handled by `RESTAPI_managementRole_handler::DoPost`) with the user's UUID in the `users` list.
+    - If a matching role exists, MDU updates it using `PUT /managementRole/{id}` to add the user's UUID to the `users` array.
+    - If no role exists, MDU creates one using `POST /managementRole/{id}` with the user's UUID in the `users` list.
   * **Remove Assignment (DELETE):**
     - MDU retrieves the `ManagementRole` identified by `assignmentId` using `GET /managementRole/{id}`.
     - MDU removes the user's UUID from the `users` array and updates the role using `PUT /managementRole/{id}`.
-    - If the user was the only member in the role (and the role has no other active users), MDU can optionally delete the role entirely using `DELETE /managementRole/{id}` (handled by `RESTAPI_managementRole_handler::DoDelete`).
+    - If the user was the only member in the role, MDU may optionally delete the role entirely using `DELETE /managementRole/{id}`.
 
-### 3. User Contacts & Operator Contacts (PROV)
-To manage user contacts linked to hierarchy nodes:
-* **API Endpoints:**
-  * **Global Contacts:** `GET /contact`, `GET /contact/{uuid}`, `POST /contact/{uuid}`, `PUT /contact/{uuid}`, `DELETE /contact/{uuid}`
-  * **Operator Contacts:** `GET /operatorContact`, `GET /operatorContact/{uuid}`, `POST /operatorContact/{uuid}`, `PUT /operatorContact/{uuid}`, `DELETE /operatorContact/{uuid}`
-* **Request / Response Shape:** `Contact` / `OperatorContact` schemas (containing firstname, lastname, primaryEmail, phone list, linked entity/venue/operator UUID).
-* **Orchestration Flow:** MDU forwards requests to PROV contact endpoints. PROV creates or updates the contact record.
+### 3. Excluded Contact Workflows
+Contacts and Operator Contacts (backed by PROV `/contact` and `/operatorContact` routes) are out of scope for MDU in Phase 1 and are not exposed as active MDU endpoints.
 
 ### 4. Operator Management (PROV via MDU & Direct)
 To retrieve, list, create, or update operator profile details (Name, Description, Registration ID):
+* **Terminology Mapping:** The UI and business context uses the term "customer", which maps directly to the backend "operator" API model.
 * **MDU Northbound API Endpoints:**
   * **Operator Paths:**
     * `GET /api/v1/operators` (List operators)
@@ -483,8 +470,7 @@ To retrieve, list, create, or update operator profile details (Name, Description
   * `GET /operator` (List all operators)
   * `POST /operator/{uuid}` (Create a new operator)
 * **Orchestration Flow:**
-  * Operator listing and new operator creation are initiated through the MDU `/api/v1/operators` endpoint facade (which forwards to PROV `/operator`) or can bypass MDU and hit PROV directly.
-  * Operator detail retrieval and update (e.g. name, description, and registrationId edits from the Details view) are routed through the MDU facade. Device upgrade/RRM rules are not part of the Phase 1 surface.
+  * **Hybrid Routing Model:** To optimize global administrative workflows, the UI may call PROV operator listing and creation endpoints directly, bypassing the MDU facade. Operator detail retrieval and update (e.g., details, name, description, and registrationId edits) are routed through the MDU facade. Both lanes enforce identical bearer authentication and token checks.
 
 ### 4a. Management Policies & Roles (PROV via MDU)
 To retrieve, create, update, or delete management policies and roles:
