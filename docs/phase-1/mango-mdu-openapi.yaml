@@ -36,6 +36,8 @@ tags:
   - name: Management Policies
   - name: Contacts
   - name: Subscribers
+  - name: Operators
+  - name: Customers
 
 security:
   - bearerAuth: []
@@ -100,6 +102,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperatorDetail'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -128,6 +132,8 @@ paths:
                 $ref: '#/components/schemas/OperatorDetail'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -144,6 +150,8 @@ paths:
       responses:
         '204':
           description: Operator deleted
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -168,6 +176,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SubscriberSignup'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -191,6 +201,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HierarchyTreeResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
@@ -211,6 +223,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EntityListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
@@ -235,6 +249,8 @@ paths:
                 $ref: '#/components/schemas/EntityDetail'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '409':
@@ -256,6 +272,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EntityDetail'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -283,6 +301,8 @@ paths:
                 $ref: '#/components/schemas/EntityDetail'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -300,6 +320,8 @@ paths:
       responses:
         '204':
           description: Entity deleted
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -324,6 +346,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VenueListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -351,6 +375,8 @@ paths:
                 $ref: '#/components/schemas/VenueDetail'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -374,6 +400,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VenueDetail'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -401,6 +429,8 @@ paths:
                 $ref: '#/components/schemas/VenueDetail'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -418,6 +448,8 @@ paths:
       responses:
         '204':
           description: Venue deleted
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -429,7 +461,7 @@ paths:
 
   /mdu/policies:
     get:
-      tags: [Policies]
+      tags: [Management Policies]
       summary: Retrieve a list of management policies
       operationId: getPolicies
       responses:
@@ -439,12 +471,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManagementPolicyListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
     post:
-      tags: [Policies]
+      tags: [Management Policies]
       summary: Create a new management policy
       operationId: createPolicy
       requestBody:
@@ -462,6 +496,8 @@ paths:
                 $ref: '#/components/schemas/ManagementPolicy'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
@@ -469,7 +505,7 @@ paths:
 
   /mdu/policies/{policyId}:
     get:
-      tags: [Policies]
+      tags: [Management Policies]
       summary: Retrieve details of a management policy
       operationId: getPolicy
       parameters:
@@ -481,6 +517,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManagementPolicy'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -488,7 +526,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
     put:
-      tags: [Policies]
+      tags: [Management Policies]
       summary: Update a management policy
       operationId: updatePolicy
       parameters:
@@ -508,6 +546,8 @@ paths:
                 $ref: '#/components/schemas/ManagementPolicy'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -515,7 +555,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
     delete:
-      tags: [Policies]
+      tags: [Management Policies]
       summary: Delete a management policy
       operationId: deletePolicy
       parameters:
@@ -523,6 +563,8 @@ paths:
       responses:
         '204':
           description: Policy deleted successfully
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -532,7 +574,7 @@ paths:
 
   /mdu/roles:
     get:
-      tags: [Roles]
+      tags: [Management Roles]
       summary: Retrieve a list of management roles
       operationId: getRoles
       responses:
@@ -542,12 +584,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManagementRoleListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
     post:
-      tags: [Roles]
+      tags: [Management Roles]
       summary: Create a new management role
       operationId: createRole
       requestBody:
@@ -565,6 +609,8 @@ paths:
                 $ref: '#/components/schemas/ManagementRole'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
@@ -572,7 +618,7 @@ paths:
 
   /mdu/roles/{roleId}:
     get:
-      tags: [Roles]
+      tags: [Management Roles]
       summary: Retrieve details of a management role
       operationId: getRole
       parameters:
@@ -584,6 +630,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManagementRole'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -591,7 +639,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
     put:
-      tags: [Roles]
+      tags: [Management Roles]
       summary: Update a management role
       operationId: updateRole
       parameters:
@@ -611,6 +659,8 @@ paths:
                 $ref: '#/components/schemas/ManagementRole'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -618,7 +668,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
     delete:
-      tags: [Roles]
+      tags: [Management Roles]
       summary: Delete a management role
       operationId: deleteRole
       parameters:
@@ -626,6 +676,8 @@ paths:
       responses:
         '204':
           description: Role deleted successfully
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -646,6 +698,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
@@ -670,6 +724,8 @@ paths:
                 $ref: '#/components/schemas/CustomerDetail'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
@@ -689,6 +745,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerDetail'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -716,6 +774,8 @@ paths:
                 $ref: '#/components/schemas/CustomerDetail'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -731,6 +791,8 @@ paths:
       responses:
         '204':
           description: Customer deleted
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -753,6 +815,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserAssignmentsResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -781,6 +845,8 @@ paths:
                 $ref: '#/components/schemas/UserAssignment'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -802,6 +868,8 @@ paths:
       responses:
         '204':
           description: Assignment removed
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -810,6 +878,7 @@ paths:
           $ref: '#/components/responses/ConflictError'
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
+          
   /mdu/users/{userId}/access-policy:
     get:
       tags: [Users]
@@ -827,6 +896,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserAccessPolicy'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -855,6 +926,8 @@ paths:
                 $ref: '#/components/schemas/UserAccessPolicy'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
