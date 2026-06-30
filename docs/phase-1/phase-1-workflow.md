@@ -422,13 +422,13 @@ To retrieve, grant, modify, or revoke scoped resource-level access permissions f
   * **Management Policies:** `GET /managementPolicy`, `POST /managementPolicy`, `PUT /managementPolicy/{uuid}`, `DELETE /managementPolicy/{uuid}`
 * **Orchestration Flow:**
   * **Retrieve Access Policy (GET):**
-    1. The client calls `GET /api/v1/users/{userId}/access-policy` specifying `entityId` and optionally `venueId`.
+    1. The client calls `GET /api/v1/users/{userId}/access-policy` specifying `entityId` (always required) and `venueId` (required only for venue scope).
     2. MDU validates the authorization token via OWSEC.
-    3. MDU calls PROV `GET /managementRole` filtering by `entity` ID (and `venue` ID if `venueId` query parameter is provided) to locate the role template associated with the user.
+    3. MDU calls PROV `GET /managementRole` filtering by `entity` ID (and `venue` ID if requesting venue scope) to locate the role template associated with the user.
     4. MDU calls PROV `GET /managementPolicy/{uuid}` using the policy ID linked to the role to fetch its detailed permission entries.
-    5. MDU maps and merges this data into a unified `UserAccessPolicy` payload containing `scope` (entity/venue), `entityId`, optional `venueId`, role template, and resource permission lists, and returns it to the UI.
+    5. MDU maps and merges this data into a unified `UserAccessPolicy` payload: if scope is `entity`, only `entityId` is included; if scope is `venue`, both `entityId` and `venueId` are included.
   * **Assign or Update Access Policy (PUT):**
-    1. The client submits a `PUT /api/v1/users/{userId}/access-policy` payload detailing the scope (entity/venue), role template, target `entityId`, optional `venueId`, and resource permissions.
+    1. The client submits a `PUT /api/v1/users/{userId}/access-policy` payload detailing the scope (entity/venue), role template, target `entityId` (always required), `venueId` (required only if scope is `venue`), and resource permissions.
     2. MDU validates the request body and authorizes the caller.
     3. MDU interacts with PROV downstream:
        - Creates or updates a `ManagementPolicy` containing entries for the specified resource permissions (assigning resource UUIDs/patterns and access lists).
@@ -461,16 +461,14 @@ To retrieve, list, create, or update operator profile details (Name, Description
 * **Terminology Mapping:** The UI and business context uses the term "customer", which maps directly to the backend "operator" API model.
 * **MDU Northbound API Endpoints:**
   * **Operator Paths:**
-    * `GET /api/v1/operators` (List operators)
-    * `POST /api/v1/operators` (Create operator)
     * `GET /api/v1/operators/{operatorId}` (Retrieve operator details)
     * `PUT /api/v1/operators/{operatorId}` (Update operator details)
     * `DELETE /api/v1/operators/{operatorId}` (Delete an operator)
-* **Direct Backend/Internal API Endpoints (Bypassing MDU):**
+* **Direct UI/Client API Endpoints (Bypassing MDU):**
   * `GET /operator` (List all operators in PROV)
   * `POST /operator/{uuid}` (Create a new operator in PROV)
 * **Orchestration Flow:**
-  * **Hybrid Routing Model:** For standard MDU client integrations, all operations must be called via MDU's `/api/v1/operators/*` endpoints. To optimize global backend administrative workflows or internal system integrations, administrative tools may call PROV's operator endpoints directly, bypassing the MDU facade. Standard MDU client applications use MDU endpoints exclusively.
+  * **Hybrid Routing Model:** Standard client applications (e.g. the MDU UI) call PROV directly to list operators (`GET /operator`) and create a new operator (`POST /operator/{uuid}`). Detail-level operations such as retrieving details, updating name/description, or deleting an operator are routed through the MDU facade. both lanes enforce appropriate bearer authentication.
 
 ### 4a. Management Policies & Roles (PROV via MDU)
 To retrieve, create, update, or delete management policies and roles:

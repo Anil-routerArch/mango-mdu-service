@@ -50,7 +50,7 @@ The downstream trust model is:
 3. The downstream service, especially PROV, interprets that forwarded user context and enforces its own authorization and RBAC.
 4. MDU does not resolve PROV RBAC locally and does not persist RBAC truth.
 
-OWSEC remains the system of record/authoritative owner for user accounts. PROV remains the system of record for operators (customers), hierarchy, roles, policies, inventory ownership, and configuration ownership. Billing Service remains the system of record for billing. OWGW remains the system of record for live runtime operations. NW Topology Service remains the system of record for topology computation. OWANALYTICS remains the system of record for telemetry and historical analytics. MDU owns orchestration, shaping, composition, and approved workflow state only. For standard client integrations, MDU's northbound `/api/v1/operators/*` endpoints are the exclusive, unambiguous target. The option to bypass MDU and call PROV directly is reserved for internal system tools or global administrator utilities. This hybrid routing model is deliberate and approved.
+OWSEC remains the system of record/authoritative owner for user accounts. PROV remains the system of record for operators (customers), hierarchy, roles, policies, inventory ownership, and configuration ownership. Billing Service remains the system of record for billing. OWGW remains the system of record for live runtime operations. NW Topology Service remains the system of record for topology computation. OWANALYTICS remains the system of record for telemetry and historical analytics. MDU owns orchestration, shaping, composition, and approved workflow state only. Standard clients call PROV directly for operator list and create operations (bypassing MDU), while retrieving and updating detailed operator members are routed through the MDU facade `/api/v1/operators/{operatorId}`. This hybrid routing model is deliberate and approved.
 
 ---
 
@@ -571,14 +571,12 @@ Phase 1 does not require:
 All Phase 1 MDU APIs listed below require validated bearer-token authentication. Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response.
 
 > **Operator Routing Strategy:**
-> For standard MDU-integrated clients, the MDU-exposed endpoints (e.g. `/api/v1/operators`, `/api/v1/operators/{operatorId}`) are the authoritative, required interfaces. The option to bypass MDU and call PROV directly (e.g., `GET /operator` and `POST /operator` on PROV) is an alternative channel reserved for internal system tools or global administrator utilities. This ensures no ambiguity for standard client integrations: they must call the MDU endpoints.
+> For Phase 1, collection-level operator operations (specifically listing all operators and creating a new operator) are handled directly by hitting PROV endpoints (`GET /operator` and `POST /operator`). Only individual operator operations (`GET`, `PUT`, `DELETE` under `/api/v1/operators/{operatorId}`) are routed through MDU. This hybrid routing model is mandatory: standard clients must call PROV directly for list/create operations, and call MDU for detailed operator member operations.
 
 #### 1. Session / Access Context (`Session` Tag)
 - `GET /api/v1/session` — Retrieve active session and effective access context.
 
 #### 2. Operators (`Operators` Tag)
-- `GET /api/v1/operators` — List operators.
-- `POST /api/v1/operators` — Create a new operator.
 - `GET /api/v1/operators/{operatorId}` — Retrieve operator details.
 - `PUT /api/v1/operators/{operatorId}` — Update operator details.
 - `DELETE /api/v1/operators/{operatorId}` — Delete operator.

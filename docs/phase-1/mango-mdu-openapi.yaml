@@ -66,52 +66,6 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /operators:
-    get:
-      tags: [Operators]
-      summary: Retrieve a list of operators
-      description: Returns a list of operator profiles.
-      operationId: getOperators
-      responses:
-        '200':
-          description: A list of operators
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperatorListResponse'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '503':
-          $ref: '#/components/responses/BackendUnavailableError'
-    post:
-      tags: [Operators]
-      summary: Create a new operator profile
-      description: Creates a new operator profile record.
-      operationId: createOperator
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateOperatorRequest'
-      responses:
-        '201':
-          description: Operator created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperatorDetail'
-        '400':
-          $ref: '#/components/responses/BadRequestError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '503':
-          $ref: '#/components/responses/BackendUnavailableError'
-
   /operators/{operatorId}:
     get:
       tags: [Operators]
@@ -797,7 +751,7 @@ paths:
       operationId: getUserAccessPolicy
       parameters:
         - $ref: '#/components/parameters/UserIdPath'
-        - $ref: '#/components/parameters/EntityIdQuery'
+        - $ref: '#/components/parameters/EntityIdQueryRequired'
         - $ref: '#/components/parameters/VenueIdQuery'
       responses:
         '200':
@@ -904,20 +858,14 @@ components:
       name: entityId
       in: query
       required: true
-      schema:
-        $ref: '#/components/schemas/Id'
-    EntityIdQuery:
-      name: entityId
-      in: query
-      required: false
-      description: Target entity scope. Either entityId or venueId must be specified.
+      description: Target entity scope. Always required. If scope is venue, both entityId and venueId must be specified.
       schema:
         $ref: '#/components/schemas/Id'
     VenueIdQuery:
       name: venueId
       in: query
       required: false
-      description: Target venue scope. Either entityId or venueId must be specified.
+      description: Target venue scope. Required only when scope is venue (in which case both entityId and venueId must be specified).
       schema:
         $ref: '#/components/schemas/Id'
     AssignmentIdPath:
@@ -1351,7 +1299,7 @@ components:
 
     UserAccessPolicy:
       type: object
-      required: [scope, roleTemplate, resourcePermissions]
+      required: [scope, entityId, roleTemplate, resourcePermissions]
       properties:
         scope:
           type: string
@@ -1359,11 +1307,11 @@ components:
         entityId:
           allOf:
             - $ref: '#/components/schemas/Id'
-          description: Target entity ID. Required if scope is entity.
+          description: Target entity ID. Always required (for both entity and venue scopes).
         venueId:
           allOf:
             - $ref: '#/components/schemas/Id'
-          description: Target venue ID. Required if scope is venue.
+          description: Target venue ID. Required only when scope is venue (in which case both entityId and venueId must be specified).
         roleTemplate:
           type: string
           description: Role template name (e.g. Admin, Installer, etc.)

@@ -158,14 +158,12 @@ All Phase 1 MDU APIs listed below require validated bearer-token authentication.
 
 > [!NOTE]
 > **Operator Routing Strategy:**
-> For standard MDU-integrated clients, the MDU-exposed endpoints (e.g. `/api/v1/operators`, `/api/v1/operators/{operatorId}`) are the authoritative, required interfaces. The option to bypass MDU and call PROV directly (e.g., `GET /operator` and `POST /operator` on PROV) is an alternative channel reserved for internal system tools or global administrator utilities. This ensures no ambiguity for standard client integrations: they must call the MDU endpoints.
+> For Phase 1, collection-level operator operations (specifically listing all operators and creating a new operator) are handled directly by hitting PROV endpoints (`GET /operator` and `POST /operator`). Only individual operator operations (`GET`, `PUT`, `DELETE` under `/api/v1/operators/{operatorId}`) are routed through MDU. This hybrid routing model is mandatory: standard clients must call PROV directly for list/create operations, and call MDU for detailed operator member operations.
 
 ### 1. Session / Access Context (`Session` Tag)
 - `GET /api/v1/session` — Retrieve active session and effective access context.
 
 ### 2. Operators (`Operators` Tag)
-- `GET /api/v1/operators` — List operators.
-- `POST /api/v1/operators` — Create a new operator.
 - `GET /api/v1/operators/{operatorId}` — Retrieve operator details.
 - `PUT /api/v1/operators/{operatorId}` — Update operator details.
 - `DELETE /api/v1/operators/{operatorId}` — Delete operator.
@@ -222,7 +220,7 @@ The operator, entity, venue, role, policy, and user access orchestration APIs ar
 - **OWSEC** is the authoritative source of truth for user identity, credentials, login, token validation, and user CRUD. User CRUD does not route through MDU.
 - **PROV** is the authoritative source of truth for operators (customers), entities, venues, roles, policies, and persisted RBAC structures. MDU forwards the caller's user context to PROV to validate authorization and retrieve/persist these records.
 - **Customer / Operator Equivalence:** While customer is the business and UI-facing terminology, the actual contract and downstream APIs use the term `operator` to align with PROV. Customer workflows map directly to `operator` APIs.
-- **Hybrid Routing:** While the primary client interface routes all operator requests through MDU's `/api/v1/operators/*` endpoints, the architecture allows internal system tools or administrators to call PROV directly. For standard client integrations, the MDU facade endpoints are the exclusive, unambiguous target.
+- **Hybrid Routing:** Collection-level operator operations (listing and creating operators) bypass MDU and are called directly to PROV by standard clients. Individual operator member operations (retrieval, updates, deletion) are routed through the MDU facade.
 
 ### Operator and User-Access Lifecycles
 
