@@ -438,6 +438,9 @@ The MDU API contract distinguishes between two different types of roles:
     3. MDU interacts with PROV downstream:
        - Creates or updates a `ManagementPolicy` containing entries for the specified resource permissions (assigning resource UUIDs/patterns and access lists).
        - Creates or updates a `ManagementRole` for the target scope (entity or venue), linking it to the `ManagementPolicy`, and ensuring the target user's UUID is in the `users` list.
+       > [!NOTE]
+       > **ManagementPolicyEntry User Bindings:** For compatibility with the downstream PROV database schema, `ManagementPolicyEntry` exposes a `users` array. However, within the MDU Phase 1 orchestration workflow, user assignments are primarily bound and managed at the `ManagementRole` level.
+
     4. MDU returns the normalized `UserAccessPolicy` configuration back to the client.
 
 ### 2a. User Scope Assignments (PROV via MDU)

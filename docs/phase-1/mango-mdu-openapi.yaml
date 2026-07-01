@@ -33,12 +33,94 @@ tags:
   - name: Management Policies
   - name: Subscribers
   - name: Operators
+  - name: System
 
 security:
   - bearerAuth: []
 
 paths:
+  /livez:
+    servers:
+      - url: /
+        description: Base root path for health checks
+    get:
+      tags: [System]
+      summary: Liveness probe
+      description: Checks if the service is running and healthy. This route is unauthenticated and accessible on both the public and private ports.
+      security: []
+      responses:
+        '200':
+          description: Service is healthy and running
+        '500':
+          description: Service is unhealthy
 
+  /system:
+    get:
+      tags: [System]
+      summary: Retrieve system diagnostics and metrics
+      description: Returns system status info or resource usage based on the requested command.
+      security:
+        - bearerAuth: []
+        - PrivateInternalNameAuth: []
+          PrivateApiKeyAuth: []
+      parameters:
+        - name: command
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [info, resources]
+      responses:
+        '200':
+          description: Successful query execution
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
+    post:
+      tags: [System]
+      summary: Modify log levels or query diagnostics schema
+      description: Dynamically mutate runtime subsystem log levels or fetch subsystem metadata.
+      security:
+        - bearerAuth: []
+        - PrivateInternalNameAuth: []
+          PrivateApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [command]
+              properties:
+                command:
+                  type: string
+                  enum: [setloglevel, getloglevels, getloglevelnames, getsubsystemnames]
+                subsystems:
+                  type: array
+                  items:
+                    type: object
+                    required: [tag, value]
+                    properties:
+                      tag:
+                        type: string
+                      value:
+                        type: string
+      responses:
+        '200':
+          description: Successful action execution
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/BackendUnavailableError'
 
   /session:
     get:
@@ -1055,6 +1137,16 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    PrivateInternalNameAuth:
+      type: apiKey
+      in: header
+      name: X-INTERNAL-NAME
+      description: Internal identifier header required on the Private API interface.
+    PrivateApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-KEY
+      description: API Key authorization header required on the Private API interface.
 
   parameters:
     XRequestIdHeader:
@@ -1151,6 +1243,7 @@ components:
       schema:
         type: integer
         default: 20
+        minimum: 1
         maximum: 100
     OffsetQuery:
       name: offset
@@ -1160,6 +1253,7 @@ components:
       schema:
         type: integer
         default: 0
+        minimum: 0
     EntityQueryOptional:
       name: entityId
       in: query
