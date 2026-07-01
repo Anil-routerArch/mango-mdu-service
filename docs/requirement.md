@@ -4,7 +4,7 @@
 
 This document defines the master requirements for the full lifecycle of `mango-mdu-service`.
 
-`mango-mdu-service` is the MangoCloud operator-domain orchestration service for MDU workflows. It exposes versioned Mango-facing APIs under `/api/v1/*`, validates inbound access, shapes UI-facing business contracts, and coordinates calls to downstream systems that own authentication, operators (customers), hierarchy, RBAC, inventory, configuration, billing, live device operations, topology, and analytics.
+`mango-mdu-service` is the MangoCloud operator-domain orchestration service for MDU workflows. It exposes versioned Mango-facing APIs under `/api/v1/*`, validates inbound access, shapes UI-facing business contracts, and coordinates calls to downstream systems that own authentication, operators, hierarchy, RBAC, inventory, configuration, billing, live device operations, topology, and analytics.
 
 This document is the whole-service master specification and roadmap baseline. Phase-specific requirements documents shall inherit from this document and from `docs/common-requirement.md`.
 
@@ -41,7 +41,7 @@ MDU validates inbound requests, normalizes business-facing contracts, composes m
 
 OWSEC is the authoritative owner for user identity (user CRUD, login, token validation, and token issuance). MDU owns only user-access orchestration (assignments, access policies, and role/policy/scope mapping around users) in Phase 1; full user CRUD is handled directly between the UI and OWSEC. 
 
-Customer and operator represent the same operational and business concept: while the UI/business terminology uses "customer", the API contract and downstream services standardized on the term "operator" to match PROV.
+
 
 The downstream trust model is:
 
@@ -50,7 +50,7 @@ The downstream trust model is:
 3. The downstream service, especially PROV, interprets that forwarded user context and enforces its own authorization and RBAC.
 4. MDU does not resolve PROV RBAC locally and does not persist RBAC truth.
 
-OWSEC remains the system of record/authoritative owner for user accounts. PROV remains the system of record for operators (customers), hierarchy, roles, policies, inventory ownership, and configuration ownership. Billing Service remains the system of record for billing. OWGW remains the system of record for live runtime operations. NW Topology Service remains the system of record for topology computation. OWANALYTICS remains the system of record for telemetry and historical analytics. MDU owns orchestration, shaping, composition, and approved workflow state only. Standard clients call PROV directly for operator list and create operations (bypassing MDU), while retrieving and updating detailed operator members are routed through the MDU facade `/api/v1/operators/{operatorId}`. This hybrid routing model is deliberate and approved.
+OWSEC remains the system of record/authoritative owner for user accounts. PROV remains the system of record for operators, hierarchy, roles, policies, inventory ownership, and configuration ownership. Billing Service remains the system of record for billing. OWGW remains the system of record for live runtime operations. NW Topology Service remains the system of record for topology computation. OWANALYTICS remains the system of record for telemetry and historical analytics. MDU owns orchestration, shaping, composition, and approved workflow state only. Standard clients call PROV directly for operator list and create operations (bypassing MDU), while retrieving and updating detailed operator members are routed through the MDU facade `/api/v1/operators/{operatorId}`. This hybrid routing model is deliberate and approved.
 
 ---
 
@@ -62,7 +62,7 @@ OWSEC remains the system of record/authoritative owner for user accounts. PROV r
 4. MDU shall validate the inbound bearer token using OWSEC-owned validation mechanisms before executing protected business APIs.
 5. MDU shall call downstream private APIs using trusted service credentials such as `x-api` or equivalent.
 6. MDU shall forward the inbound user token to downstream private APIs using `x-authorization` when the downstream service needs user context.
-7. PROV shall resolve user, operator (customer), scope, role, policy, and RBAC decisions using its own source-of-truth data.
+7. PROV shall resolve user, operator, scope, role, policy, and RBAC decisions using its own source-of-truth data.
 8. MDU shall not become a separate RBAC, hierarchy, operator, user, inventory, configuration, billing, topology, or analytics source of truth.
 9. MDU shall normalize downstream responses and errors into versioned UI-facing contracts.
 10. MDU shall hide downstream route quirks and compatibility paths from the UI.
@@ -96,13 +96,12 @@ MDU shall use the following business-facing terms unless a phase-specific contra
 
 | Term | Meaning | Ownership |
 |---|---|---|
-| operator | top-level Mango tenant or operator scope exposed to the MDU product | PROV |
-| customer | customer or sub-operator business scope visible in Mango workflows | PROV |
+| operator | top-level Mango tenant or operator scope | PROV |
 | entity | hierarchy object used for ownership and tree structure | PROV |
 | venue | location or venue object within the hierarchy | PROV |
 | workspace | Mango UI-facing composed context for a selected node or tenant | MDU composed view |
 | hierarchy node | normalized tree node exposed by MDU | PROV truth, MDU shape |
-| user | operator or customer-facing account represented through PROV and secured by OWSEC | PROV / OWSEC |
+| user | operator-facing account represented through PROV and secured by OWSEC | PROV / OWSEC |
 | access summary | composed view of effective access visible to UI | PROV truth, MDU shape |
 | device | managed inventory device | PROV truth, OWGW runtime |
 | configuration | assignable or viewable config object | PROV |
@@ -153,7 +152,7 @@ x-request-id: <request-id>
 x-correlation-id: <correlation-id>
 ```
 
-The downstream service decides how to use `x-authorization`. For PROV, RBAC, scope, user, and customer checks are resolved inside PROV.
+The downstream service decides how to use `x-authorization`. For PROV, RBAC, scope, user, and operator checks are resolved inside PROV.
 
 ## 5.4 MDU-to-Billing Private Lane
 
@@ -193,7 +192,7 @@ Billing Service is the current exception to the standard downstream forwarding r
 | Token validation | OWSEC | MDU consumes validation |
 | Users / Identity / CRUD | OWSEC | Not owned by MDU (handled directly between UI and OWSEC) |
 | User access orchestration | MDU / PROV | MDU orchestrates user assignments and access-policies |
-| Customers / Operators | PROV | MDU exposes operator-backed workflow APIs (exposing the operator contract for UI customer workflows) |
+| Operators | PROV | MDU exposes operator-backed workflow APIs |
 | Entities / hierarchy | PROV | MDU exposes normalized hierarchy APIs |
 | Venues | PROV | MDU exposes normalized venue APIs |
 | Roles and policies | PROV | MDU exposes access-management role/policy orchestration |
@@ -213,7 +212,7 @@ Rules:
 2. MDU does not own persistent truth for downstream-owned domains.
 3. MDU may maintain minimal operational state only where explicitly approved by phase scope.
 4. Approved local operational state may include request correlation metadata, async operation state, idempotency records, audit support data, reconciliation markers, and bounded caches.
-5. MDU shall not persist authoritative business truth for users, operators (customers), hierarchy, policies, roles, inventory, configuration, billing, topology, or analytics.
+5. MDU shall not persist authoritative business truth for users, operators, hierarchy, policies, roles, inventory, configuration, billing, topology, or analytics.
 
 ---
 
@@ -265,7 +264,7 @@ Current known OWSEC routes include:
 
 ## 8.2 PROV
 
-OWSEC is the authoritative owner for user identity, login, token validation, token issuance, and user CRUD. PROV owns operators (customers), entities, venues, roles, policies, RBAC, hierarchy, inventory ownership, and configuration ownership.
+OWSEC is the authoritative owner for user identity, login, token validation, token issuance, and user CRUD. PROV owns operators, entities, venues, roles, policies, RBAC, hierarchy, inventory ownership, and configuration ownership.
 
 MDU shall call PROV using service authentication and forwarded user context:
 
@@ -274,7 +273,7 @@ x-api: <mdu-service-api-key>
 x-authorization: Bearer <owsec-token>
 ```
 
-PROV is responsible for resolving RBAC, scope, customer, and user permissions.
+PROV is responsible for resolving RBAC, scope, operator, and user permissions.
 
 Current known PROV route families include:
 
@@ -289,7 +288,7 @@ Current known PROV route families include:
 - `/managementPolicy/{uuid}`
 - `/managementRole`
 - `/managementRole/{id}`
-- PROV-owned customer routes as required by the implementation baseline
+- PROV-owned operator routes as required by the implementation baseline
 
 
 ## 8.3 Billing Service
@@ -300,7 +299,7 @@ For user-facing billing workflows, the normal sequence is:
 
 1. UI calls MDU with `Authorization: Bearer <owsec-token>`.
 2. MDU validates the token with OWSEC.
-3. MDU calls PROV with service auth plus `x-authorization` to resolve RBAC and scope for the target operator (customer), entity, or billing workflow.
+3. MDU calls PROV with service auth plus `x-authorization` to resolve RBAC and scope for the target operator, entity, or billing workflow.
 4. If PROV authorizes the action, MDU calls Billing Service with `X-Internal-API-Key` plus actor, tenant, and trace headers.
 5. Billing Service returns Billing-owned data; MDU shapes the final Mango-facing response.
 
@@ -451,7 +450,7 @@ MDU shall propagate:
 4. Unsupported enum values shall return a validation error.
 5. MDU shall validate allow-listed action names for OWGW-backed action routes.
 6. MDU shall not accept write requests that implicitly create local truth for downstream-owned domains.
-7. For list APIs such as customers, entities, venues, and devices, MDU shall normalize pagination, filtering, and sorting behavior even when downstream implementations differ.
+7. For list APIs such as entities, venues, management policies, and management roles, MDU shall support standard offset-based pagination query parameters (limit and offset) and resource-specific filtering parameters matching the capabilities of the downstream service.
 
 ## 10.2 Error Rules
 
@@ -543,10 +542,10 @@ Phase 1 includes:
 - service-authenticated downstream calls.
 - `x-authorization` forwarding to downstream services.
 - token-backed session/bootstrap view APIs (where MDU acts as a northbound wrapper, not a login authority).
-- operator wrapper APIs (the contract-level equivalent of customer workflows) and user-access orchestration APIs (assignments, access policies) as approved Phase 1 northbound wrapper contracts over downstream services.
+- operator wrapper APIs and user-access orchestration APIs (assignments, access policies) as approved Phase 1 northbound wrapper contracts over downstream services.
 - complete resource management wrapper APIs (entities, venues, roles, policies) delegating state persistence to PROV.
 - user-scoped assignment APIs (for user roles and access scopes) and access-policy management.
-- subscriber list retrieval for operators (customers).
+- subscriber list retrieval for operators.
 - access-summary workflows where PROV provides the RBAC decision.
 - normalized errors (401, 403, 404, 409, 503) and observability.
 - removal of production placeholder routes.
@@ -637,13 +636,13 @@ Phase 1 is complete only when:
 
 ### Objective
 
-Make MDU useful for customer/sub-operator workspace tab integrations, billing administration, and hierarchy browsing/lazy-loading.
+Make MDU useful for operator workspace tab integrations, billing administration, and hierarchy browsing/lazy-loading.
 
 ### Scope
 
 Phase 2 includes:
 
-- customer workspace overview and tab dashboard payload aggregation.
+- operator workspace overview and tab dashboard payload aggregation.
 - hierarchy browsing, lazy child node expansion, and deep tree searches.
 - billing account management, subscription creation, plan updates, billing period retrieval, invoices, usage reports, and invoice download proxies backed by Billing Service.
 
@@ -765,7 +764,7 @@ Phase 5 includes:
 5. MDU validates the inbound token before protected business workflows.
 6. MDU calls downstream services with service authentication such as `x-api`.
 7. MDU forwards user context to downstream services using `x-authorization` where required.
-8. OWSEC is the authoritative owner for user identity, login, token validation, token issuance, and user CRUD. PROV owns operators (customers), hierarchy, policies, roles, RBAC, inventory ownership, and configuration ownership.
+8. OWSEC is the authoritative owner for user identity, login, token validation, token issuance, and user CRUD. PROV owns operators, hierarchy, policies, roles, RBAC, inventory ownership, and configuration ownership.
 9. Billing Service owns billing truth, while MDU owns the Mango-facing billing API contracts and orchestration path.
 10. OWGW owns live device runtime and command execution.
 11. NW Topology Service owns topology graph computation.

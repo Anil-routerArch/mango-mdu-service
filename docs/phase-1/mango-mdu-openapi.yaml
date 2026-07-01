@@ -69,7 +69,7 @@ paths:
     get:
       tags: [Operators]
       summary: Retrieve operator details
-      description: Fetches the profile details for the target operator/customer.
+      description: Fetches the profile details for the target operator.
       operationId: getOperator
       parameters:
         - $ref: '#/components/parameters/XRequestIdHeader'
@@ -129,7 +129,7 @@ paths:
     delete:
       tags: [Operators]
       summary: Delete an operator
-      description: Deletes the target operator/customer from the system.
+      description: Deletes the target operator from the system.
       operationId: deleteOperator
       parameters:
         - $ref: '#/components/parameters/XRequestIdHeader'
@@ -155,7 +155,7 @@ paths:
     get:
       tags: [Subscribers]
       summary: List subscribers for an operator
-      description: Returns a simple, unpaginated list of subscriber signup entries associated with the target operator for Phase 1. This endpoint is a constrained listing flow and does not support advanced query parameters for pagination, sorting, or filtering.
+      description: Returns a simple, unpaginated list of subscriber signup entries associated with the target operator for Phase 1.
       operationId: listOperatorSubscribers
       parameters:
         - $ref: '#/components/parameters/XRequestIdHeader'
@@ -215,12 +215,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/XRequestIdHeader'
         - $ref: '#/components/parameters/XCorrelationIdHeader'
-        - $ref: '#/components/parameters/ParentEntityId'
         - $ref: '#/components/parameters/LimitQuery'
         - $ref: '#/components/parameters/OffsetQuery'
-        - $ref: '#/components/parameters/SortQuery'
-        - $ref: '#/components/parameters/FilterQuery'
-        - $ref: '#/components/parameters/CursorQuery'
       responses:
         '200':
           description: Entity list
@@ -360,12 +356,8 @@ paths:
         - $ref: '#/components/parameters/XRequestIdHeader'
         - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/EntityIdPath'
-        - $ref: '#/components/parameters/ParentVenueId'
         - $ref: '#/components/parameters/LimitQuery'
         - $ref: '#/components/parameters/OffsetQuery'
-        - $ref: '#/components/parameters/SortQuery'
-        - $ref: '#/components/parameters/FilterQuery'
-        - $ref: '#/components/parameters/CursorQuery'
       responses:
         '200':
           description: Venue list
@@ -510,9 +502,8 @@ paths:
         - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/LimitQuery'
         - $ref: '#/components/parameters/OffsetQuery'
-        - $ref: '#/components/parameters/SortQuery'
-        - $ref: '#/components/parameters/FilterQuery'
-        - $ref: '#/components/parameters/CursorQuery'
+        - $ref: '#/components/parameters/EntityQueryOptional'
+        - $ref: '#/components/parameters/VenueQueryOptional'
       responses:
         '200':
           description: A list of management policies
@@ -652,9 +643,7 @@ paths:
         - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/LimitQuery'
         - $ref: '#/components/parameters/OffsetQuery'
-        - $ref: '#/components/parameters/SortQuery'
-        - $ref: '#/components/parameters/FilterQuery'
-        - $ref: '#/components/parameters/CursorQuery'
+        - $ref: '#/components/parameters/EntityQueryOptional'
       responses:
         '200':
           description: A list of management roles
@@ -1113,20 +1102,7 @@ components:
       description: Optional entity scope anchor for tree shaping
       schema:
         $ref: '#/components/schemas/Id'
-    ParentEntityId:
-      name: parentEntityId
-      in: query
-      required: false
-      description: Optional parent entity filter
-      schema:
-        $ref: '#/components/schemas/Id'
-    ParentVenueId:
-      name: parentVenueId
-      in: query
-      required: false
-      description: Optional parent venue filter
-      schema:
-        $ref: '#/components/schemas/Id'
+
     EntityIdQueryRequired:
       name: entityId
       in: query
@@ -1180,31 +1156,24 @@ components:
       name: offset
       in: query
       required: false
-      description: Number of items to skip. If 'cursor' is supplied, 'offset' is ignored.
+      description: Number of items to skip.
       schema:
         type: integer
         default: 0
-    SortQuery:
-      name: sort
+    EntityQueryOptional:
+      name: entity
       in: query
       required: false
-      description: Sorting criteria (e.g., name:asc, createdAt:desc).
+      description: Optional entity ID filter.
       schema:
-        type: string
-    FilterQuery:
-      name: filter
+        $ref: '#/components/schemas/Id'
+    VenueQueryOptional:
+      name: venue
       in: query
       required: false
-      description: Filter query string to refine results.
+      description: Optional venue ID filter.
       schema:
-        type: string
-    CursorQuery:
-      name: cursor
-      in: query
-      required: false
-      description: Pagination cursor for cursor-based paging. When supplied, cursor-based paging takes precedence and 'offset' is ignored.
-      schema:
-        type: string
+        $ref: '#/components/schemas/Id'
 
 
   responses:
@@ -1309,9 +1278,6 @@ components:
         offset:
           type: integer
           description: Offset of the returned items.
-        nextCursor:
-          type: string
-          description: Cursor for the next page of results (if applicable).
 
     HierarchyNodeType:
       type: string

@@ -20,7 +20,7 @@ The goal of Phase 1 is to establish MDU Service as the service that:
 - forwards user context to PROV where required
 - exposes normalized Mango-facing contracts
 - preserves OWSEC as the authoritative owner for user identity and credentials
-- preserves PROV as the source of truth for operators (customers), hierarchy, roles, policies, and RBAC
+- preserves PROV as the source of truth for operators, hierarchy, roles, policies, and RBAC
 
 In simple terms, Phase 1 makes MDU the first real backend entry point for Mango operator workflows.
 
@@ -35,7 +35,7 @@ Phase 1 includes:
 - inbound bearer-token validation through OWSEC.
 - token-backed session/bootstrap view APIs:
   - `GET /api/v1/session`.
-- operator APIs (the backend term for customer-facing workflows) and user-access orchestration APIs (assignments, access policies) as approved Phase 1 northbound wrapper contracts over downstream services.
+- operator APIs and user-access orchestration APIs (assignments, access policies) as approved Phase 1 northbound wrapper contracts over downstream services.
 - complete resource management wrapper APIs (entities, venues, roles, policies) delegating state persistence to PROV.
 - user-scoped assignment APIs (for user roles and access scopes) and access-policy management.
 - subscriber list retrieval for operators.
@@ -57,7 +57,7 @@ Phase 1 does not include:
 
 - MDU-owned login or session issuance.
 - local RBAC or policy persistence (PROV is the source of truth).
-- local user or customer database storage (OWSEC/PROV are the sources of truth).
+- local user or operator database storage (OWSEC/PROV are the sources of truth).
 - billing integrations (billing is out of scope for Phase 1).
 - live device runtime integration.
 - topology integration.
@@ -217,8 +217,7 @@ All Phase 1 MDU APIs listed below require validated bearer-token authentication 
 
 The operator, entity, venue, role, policy, and user access orchestration APIs are MDU-facing normalized wrapper contracts over downstream services, NOT a transfer of domain ownership or persistent truth. MDU acts as a stateless facade/orchestrator:
 - **OWSEC** is the authoritative source of truth for user identity, credentials, login, token validation, and user CRUD. User CRUD does not route through MDU.
-- **PROV** is the authoritative source of truth for operators (customers), entities, venues, roles, policies, and persisted RBAC structures. MDU forwards the caller's user context to PROV to validate authorization and retrieve/persist these records.
-- **Customer / Operator Equivalence:** While customer is the business and UI-facing terminology, the actual contract and downstream APIs use the term `operator` to align with PROV. Customer workflows map directly to `operator` APIs.
+- **PROV** is the authoritative source of truth for operators, entities, venues, roles, policies, and persisted RBAC structures. MDU forwards the caller's user context to PROV to validate authorization and retrieve/persist these records.
 - **Hybrid Routing:** Collection-level operator operations (listing and creating operators) bypass MDU and are called directly to PROV by standard clients. Individual operator member operations (retrieval, updates, deletion) are routed through the MDU facade.
 
 ### Operator and User-Access Lifecycles
@@ -247,7 +246,7 @@ The master requirements identify the following current known PROV route families
 - `/managementPolicy/{uuid}`
 - `/managementRole`
 - `/managementRole/{id}`
-- PROV-owned customer routes as required by the implementation baseline
+- PROV-owned operator routes as required by the implementation baseline
 
 These are downstream route families MDU is expected to use for Phase 1 foundation work where applicable.
 
@@ -268,7 +267,7 @@ This means:
 
 - MDU authenticates to PROV as a trusted internal service
 - MDU forwards the caller bearer token where PROV needs user context
-- PROV resolves RBAC, scope, customer, and user permissions
+- PROV resolves RBAC, scope, operator, and user permissions
 - MDU shapes the final Mango-facing response
 
 Phase 1 must not bypass PROV authorization by trying to replace it with local logic.

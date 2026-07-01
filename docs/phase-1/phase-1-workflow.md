@@ -7,7 +7,7 @@ This document describes how Phase 1 of `mango-mdu-service` works at the workflow
 It is based on the Phase 1 scope from the MDU master requirements and Phase 1 specification:
 
 - MDU is the Mango-facing authenticated orchestration layer
-- MDU does not own login, session issuance, or users (OWSEC is the authoritative owner for identity and user CRUD); operators (customers), hierarchy, roles, policies, and RBAC truth remain with PROV, while MDU orchestrates user-access assignments and access-policies.
+- MDU does not own login, session issuance, or users (OWSEC is the authoritative owner for identity and user CRUD); operators, hierarchy, roles, policies, and RBAC truth remain with PROV, while MDU orchestrates user-access assignments and access-policies.
 - MDU normalizes Mango-facing contracts and hides downstream quirks
 
 This workflow document explains the intended runtime flow of Phase 1 business APIs and how MDU interacts with OWSEC and PROV.
@@ -38,7 +38,7 @@ So Phase 1 is already a real integration phase with **OWSEC + PROV**.
 Phase 1 includes the following Mango-facing API families:
 
 - `GET /api/v1/session` — OWSEC is the authoritative owner for user identity; MDU calls PROV to fetch the authenticated user's Mango bootstrap context (operator scope, roles, hierarchy visibility) and composes the normalized `/session` response.
-- `/api/v1/operators/*` — Standard APIs for managing operators (which represent customer scopes).
+- `/api/v1/operators/*` — Standard APIs for managing operators.
 - `/api/v1/entities/*` — APIs for entity hierarchy management wrapper.
 - `/api/v1/venues/*` — APIs for venue management wrapper.
 - `/api/v1/policies/*` — APIs for management policies wrapper.
@@ -396,7 +396,7 @@ In Phase 1, all user-related entities belong to one of two services:
    - Serves as the authentication and authorization token authority.
 2. **PROV (User roles, policies, and operator data):**
    - **Management Roles & Policies:** Defines the specific permissions and resource scopes (entities, venues) linked to user UUIDs.
-   - **Operators (Customers):** Manages operator (customer) metadata and settings.
+   - **Operators:** Manages operator metadata and settings.
 
 MDU acts as the orchestration layer for access-policies and assignments. Contacts, subscriber invite/registration, and subscriber devices are out of scope for Phase 1.
 
@@ -461,7 +461,6 @@ Contacts and Operator Contacts (backed by PROV `/contact` and `/operatorContact`
 
 ### 4. Operator Management (PROV via MDU & Direct)
 To manage operator profile details (retrieval, updates, and deletion through the MDU facade, or list and create operations directly to PROV):
-* **Terminology Mapping:** The UI and business context uses the term "customer", which maps directly to the backend "operator" API model.
 * **MDU Northbound API Endpoints:**
   * **Operator Paths:**
     * `GET /api/v1/operators/{operatorId}` (Retrieve operator details)
@@ -502,10 +501,6 @@ To list subscriber accounts associated with a specific operator:
   * `GET /subscriber`
 * **Orchestration Flow:**
   * **List Subscribers (Constrained):** MDU calls PROV `GET /subscriber?listOnly=true` to retrieve all signup entries, filters the results to only include those matching the target `operatorId` parameter, and returns the filtered subset as a simple, unpaginated list.
-  * *Note:* Phase 1 subscriber listing is a constrained list-and-filter orchestration flow. It does not support or define advanced operator-scoped pagination, filtering, sorting, or cursor query parameters because downstream PROV does not natively expose operator-scoping or collection paging on `/subscriber`. Subscriber invite, registration, and subscriber device management are out of scope for Phase 1.
-
-
-
 ---
 
 # 9. Timeout and Retry Behavior
