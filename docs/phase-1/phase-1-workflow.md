@@ -488,7 +488,7 @@ To retrieve, create, update, or delete management policies and roles:
     * `PUT /api/v1/roles/{roleId}` (Update role)
     * `DELETE /api/v1/roles/{roleId}` (Delete role)
 * **Downstream PROV API Endpoints:**
-  * `GET /managementPolicy`, `POST /managementPolicy`, `PUT /managementPolicy/{id}`, `DELETE /managementPolicy/{id}`
+  * `GET /managementPolicy`, `POST /managementPolicy`, `PUT /managementPolicy/{uuid}`, `DELETE /managementPolicy/{uuid}`
   * `GET /managementRole`, `POST /managementRole`, `PUT /managementRole/{id}`, `DELETE /managementRole/{id}`
 * **Orchestration Flow:**
   * **Façade Pattern:** MDU acts as a stateless pass-through for policies and roles, forwarding the requests directly to the downstream PROV endpoints, translating schemas where necessary.
