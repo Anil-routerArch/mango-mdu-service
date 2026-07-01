@@ -621,6 +621,11 @@ All Phase 1 MDU APIs listed below require validated bearer-token authentication 
 - `GET /api/v1/users/{userId}/access-policy` — Get user access policy (requires `scope`, `entityId`, and optional `venueId` query parameters).
 - `PUT /api/v1/users/{userId}/access-policy` — Update user access policy.
 
+#### 10. Operational Support & Diagnostics (Support Routes)
+- `GET /livez` — Liveness/health probe check (unauthenticated; public port `16010` is part of the authoritative Phase 1 OpenAPI contract).
+- `GET /api/v1/system` — Retrieve system diagnostics (public port requires `bearerAuth` and is part of the Phase 1 OpenAPI contract).
+- `POST /api/v1/system` — Modify diagnostics log levels (public port requires `bearerAuth` and is part of the Phase 1 OpenAPI contract).
+
 ### Completion Criteria
 
 Phase 1 is complete only when:

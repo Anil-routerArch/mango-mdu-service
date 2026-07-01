@@ -48,17 +48,10 @@ paths:
             default: localhost
           publicPort:
             default: "16010"
-      - url: "http://{host}:{privatePort}"
-        description: Private/Internal HTTP Port Health Check
-        variables:
-          host:
-            default: localhost
-          privatePort:
-            default: "17010"
     get:
       tags: [System]
       summary: Liveness probe
-      description: Checks if the service is running and healthy. This route is unauthenticated and accessible on both the public and private ports.
+      description: Checks if the service is running and healthy. This route is unauthenticated and accessible on the public port.
       security: []
       responses:
         '200':
@@ -73,30 +66,14 @@ paths:
             default: localhost
           publicPort:
             default: "16010"
-      - url: "http://{host}:{privatePort}/api/v1"
-        description: Private/Internal HTTP API Interface (Authentication via X-INTERNAL-NAME & X-API-KEY)
-        variables:
-          host:
-            default: localhost
-          privatePort:
-            default: "17010"
     get:
       tags: [System]
       summary: Retrieve system diagnostics and metrics
       description: |
         Returns system status info or resource usage based on the requested command.
-        
-        **Port-Specific Authentication:**
-        * **Public Port (default: 16010)**: Authenticated using `bearerAuth` (JWT bearer token).
-        * **Private Port (default: 17010)**: Authenticated using both `PrivateInternalNameAuth` (`X-INTERNAL-NAME`) and `PrivateApiKeyAuth` (`X-API-KEY`) headers.
-        
-        Bearer tokens are not accepted on the private port, and internal headers are not accepted on the public port.
-        
-        *Note: OpenAPI cannot fully encode per-server/per-port security exclusivity. The security configurations listed below indicate all schemes allowed in general, but they are strictly enforced by port at runtime.*
+        Accessible on the public port using Bearer token authentication.
       security:
         - bearerAuth: []
-        - PrivateInternalNameAuth: []
-          PrivateApiKeyAuth: []
       parameters:
         - name: command
           in: query
@@ -120,18 +97,9 @@ paths:
       summary: Modify log levels or query diagnostics schema
       description: |
         Dynamically mutate runtime subsystem log levels or fetch subsystem metadata.
-        
-        **Port-Specific Authentication:**
-        * **Public Port (default: 16010)**: Authenticated using `bearerAuth` (JWT bearer token).
-        * **Private Port (default: 17010)**: Authenticated using both `PrivateInternalNameAuth` (`X-INTERNAL-NAME`) and `PrivateApiKeyAuth` (`X-API-KEY`) headers.
-        
-        Bearer tokens are not accepted on the private port, and internal headers are not accepted on the public port.
-        
-        *Note: OpenAPI cannot fully encode per-server/per-port security exclusivity. The security configurations listed below indicate all schemes allowed in general, but they are strictly enforced by port at runtime.*
+        Accessible on the public port using Bearer token authentication.
       security:
         - bearerAuth: []
-        - PrivateInternalNameAuth: []
-          PrivateApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -1180,16 +1148,6 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-    PrivateInternalNameAuth:
-      type: apiKey
-      in: header
-      name: X-INTERNAL-NAME
-      description: Internal identifier header required on the Private API interface.
-    PrivateApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-KEY
-      description: API Key authorization header required on the Private API interface.
 
   parameters:
     XRequestIdHeader:

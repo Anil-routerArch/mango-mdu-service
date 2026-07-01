@@ -94,13 +94,13 @@ Admin/debug/support APIs are out of the normal Phase 1 business scope except min
 
 For the current runtime baseline, the operational support surface is:
 
-- `GET /livez` on both public and private ports without authentication
-- `/api/v1/system` on both public and private ports through the shared subsystem/system-routes module
+- `GET /livez` on both public and private ports without authentication (only the public interface on port `16010` is documented in the Phase 1 OpenAPI spec for simplicity).
+- `/api/v1/system` on both public and private ports through the shared subsystem/system-routes module.
 
 `/api/v1/system` is not a Mango-facing Phase 1 business API. It is an operational support API with an explicitly documented **multi-mode auth rule**:
 
-- on the public port it uses validated bearer-token auth
-- on the private port it uses the approved internal authentication model
+- on the public port (port `16010`) it uses validated bearer-token auth, which is documented in the Phase 1 OpenAPI contract.
+- on the private port (port `17010`) it uses the approved internal authentication model (via `X-INTERNAL-NAME` and `X-API-KEY` headers), which is kept internal and omitted from the client-facing OpenAPI spec.
 
 This multi-mode rule is intentional and must remain explicit in repo-tracked API contract and requirements documents so the security posture is not ambiguous.
 
@@ -210,6 +210,11 @@ All Phase 1 MDU APIs listed below require validated bearer-token authentication 
 - `DELETE /api/v1/users/{userId}/assignments/{assignmentId}` — Remove a user scope assignment.
 - `GET /api/v1/users/{userId}/access-policy` — Get user access policy (requires `scope`, `entityId`, and optional `venueId` query parameters).
 - `PUT /api/v1/users/{userId}/access-policy` — Update user access policy.
+
+### 10. Operational Support & Diagnostics (Support Routes)
+- `GET /livez` — Liveness/health probe check (unauthenticated; public port `16010` is part of the authoritative Phase 1 OpenAPI contract).
+- `GET /api/v1/system` — Retrieve system diagnostics (public port requires `bearerAuth` and is part of the Phase 1 OpenAPI contract).
+- `POST /api/v1/system` — Modify diagnostics log levels (public port requires `bearerAuth` and is part of the Phase 1 OpenAPI contract).
 
 ---
 
