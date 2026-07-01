@@ -1837,7 +1837,7 @@ components:
 
     OperatorDetail:
       type: object
-      required: [name]
+      required: [id, name]
       properties:
         id:
           $ref: '#/components/schemas/Id'
@@ -1930,7 +1930,7 @@ components:
 
     ManagementPolicy:
       type: object
-      required: [name]
+      required: [id, name]
       properties:
         id:
           $ref: '#/components/schemas/Id'
@@ -1991,7 +1991,7 @@ components:
 
     ManagementRole:
       type: object
-      required: [name, managementPolicy]
+      required: [id, name, managementPolicy]
       properties:
         id:
           $ref: '#/components/schemas/Id'

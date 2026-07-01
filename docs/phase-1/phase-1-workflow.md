@@ -414,6 +414,11 @@ User identity, credentials, login, session token validation/issuance, and user a
 
 ### 2. User Roles & Access Policies Management (PROV via MDU)
 To retrieve, grant, modify, or revoke scoped resource-level access permissions for a user:
+
+#### Role Distinction note
+The MDU API contract distinguishes between two different types of roles:
+*   **Global Identity Roles (`RoleKey` enum):** These represent the static, system-wide account types defined and enforced by the identity provider (OWSEC) (such as `root`, `admin`, `csr`). These are immutable system classes.
+*   **Dynamic Management Roles (`ManagementRole` resource):** These are dynamic, custom role-templates created within Provisioning (PROV) to bind policies, users, and hierarchy nodes together. Because operators can define and name their own resource templates (e.g. "Custom Venue Admin Template"), this resource uses a free-form string for its descriptive name, while the assigned user's base identity role remains bound to the fixed `RoleKey` classification.
 * **MDU Northbound API Endpoints:**
   * `GET /api/v1/users/{userId}/access-policy?scope={scope}&entityId={entityId}&venueId={venueId}`
   * `PUT /api/v1/users/{userId}/access-policy`
