@@ -235,6 +235,10 @@ The MDU architecture and API contract distinguish between two different types of
 *   **Global Identity Roles (`RoleKey` enum):** These represent the static, system-wide account types defined and enforced by the identity provider (OWSEC) (such as `root`, `admin`, `csr`). These are immutable system classes.
 *   **Dynamic Management Roles (`ManagementRole` resource):** These are dynamic, custom role-templates created within Provisioning (PROV) to bind policies, users, and hierarchy nodes together. Because operators can define and name their own resource templates (e.g. "Custom Venue Admin Template"), this resource uses a free-form string for its descriptive name, while the assigned user's base identity role remains bound to the fixed `RoleKey` classification.
 
+**Design Alignment Decisions:**
+*   **Assignment and Session Role Modeling:** Although user scope assignments map to dynamic `ManagementRole` templates downstream, the northbound `CreateUserAssignmentRequest`, `UserAssignment`, and `SessionAssignment` schemas model the `role` property using the fixed `RoleKey` enum. This enforces system-wide identity classifications and ensures alignment with OWSEC's security constraints.
+*   **Management Policy Entry User Bindings Parity:** To maintain strict 1:1 parity with the downstream PROV database schema, the northbound `ManagementPolicyEntry` schema retains the `users` array, even though in the standard Phase 1 MDU orchestration workflow, user bindings are primarily managed and assigned via the `ManagementRole` resource.
+
 
 ---
 
