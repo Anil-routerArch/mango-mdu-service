@@ -41,8 +41,20 @@ security:
 paths:
   /livez:
     servers:
-      - url: /
-        description: Base root path for health checks
+      - url: "http://{host}:{publicPort}"
+        description: Public HTTP Port Health Check
+        variables:
+          host:
+            default: localhost
+          publicPort:
+            default: "16010"
+      - url: "http://{host}:{privatePort}"
+        description: Private/Internal HTTP Port Health Check
+        variables:
+          host:
+            default: localhost
+          privatePort:
+            default: "17010"
     get:
       tags: [System]
       summary: Liveness probe
@@ -55,10 +67,32 @@ paths:
           description: Service is unhealthy
 
   /system:
+    servers:
+      - url: "http://{host}:{publicPort}/api/v1"
+        description: Public HTTP API Interface (Authentication via bearerAuth)
+        variables:
+          host:
+            default: localhost
+          publicPort:
+            default: "16010"
+      - url: "http://{host}:{privatePort}/api/v1"
+        description: Private/Internal HTTP API Interface (Authentication via X-INTERNAL-NAME & X-API-KEY)
+        variables:
+          host:
+            default: localhost
+          privatePort:
+            default: "17010"
     get:
       tags: [System]
       summary: Retrieve system diagnostics and metrics
-      description: Returns system status info or resource usage based on the requested command.
+      description: |
+        Returns system status info or resource usage based on the requested command.
+        
+        **Port-Specific Authentication:**
+        * **Public Port (default: 16010)**: Authenticated using `bearerAuth` (JWT bearer token).
+        * **Private Port (default: 17010)**: Authenticated using both `PrivateInternalNameAuth` (`X-INTERNAL-NAME`) and `PrivateApiKeyAuth` (`X-API-KEY`) headers.
+        
+        Bearer tokens are not accepted on the private port, and internal headers are not accepted on the public port.
       security:
         - bearerAuth: []
         - PrivateInternalNameAuth: []
@@ -84,7 +118,14 @@ paths:
     post:
       tags: [System]
       summary: Modify log levels or query diagnostics schema
-      description: Dynamically mutate runtime subsystem log levels or fetch subsystem metadata.
+      description: |
+        Dynamically mutate runtime subsystem log levels or fetch subsystem metadata.
+        
+        **Port-Specific Authentication:**
+        * **Public Port (default: 16010)**: Authenticated using `bearerAuth` (JWT bearer token).
+        * **Private Port (default: 17010)**: Authenticated using both `PrivateInternalNameAuth` (`X-INTERNAL-NAME`) and `PrivateApiKeyAuth` (`X-API-KEY`) headers.
+        
+        Bearer tokens are not accepted on the private port, and internal headers are not accepted on the public port.
       security:
         - bearerAuth: []
         - PrivateInternalNameAuth: []
