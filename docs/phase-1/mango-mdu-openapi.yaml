@@ -41,7 +41,7 @@ security:
 paths:
   /livez:
     servers:
-      - url: "http://{host}:{publicPort}"
+      - url: "https://{host}:{publicPort}"
         description: Public HTTP Port Health Check
         variables:
           host:
@@ -59,7 +59,7 @@ paths:
 
   /system:
     servers:
-      - url: "http://{host}:{publicPort}/api/v1"
+      - url: "https://{host}:{publicPort}/api/v1"
         description: Public HTTP API Interface (Authentication via bearerAuth)
         variables:
           host:
@@ -75,6 +75,8 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - name: command
           in: query
           required: true
@@ -100,6 +102,9 @@ paths:
         Accessible on the public port using Bearer token authentication.
       security:
         - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
       requestBody:
         required: true
         content:

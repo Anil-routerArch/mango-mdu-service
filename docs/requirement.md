@@ -567,7 +567,7 @@ Phase 1 does not require:
 
 ### Phase 1 API Inventory
 
-All Phase 1 MDU APIs listed below require validated bearer-token authentication (via the `Authorization: Bearer <token>` header). Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response. Additionally, all routes accept the optional `X-Request-Id` and `X-Correlation-Id` tracking headers to enable tracing across distributed system components.
+All Phase 1 MDU business APIs listed below require validated bearer-token authentication (via the `Authorization: Bearer <token>` header). Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response. Support routes may have different authentication posture (specifically, `/livez` is unauthenticated). Additionally, all routes (with the exception of `/livez`) accept the optional `X-Request-Id` and `X-Correlation-Id` tracking headers to enable tracing across distributed system components.
 
 > **Operator Routing Strategy:**
 > For Phase 1, collection-level operator operations (specifically listing all operators and creating a new operator) are handled directly by hitting PROV endpoints (`GET /operator` and `POST /operator/{uuid}`). Only individual operator operations (`GET`, `PUT`, `DELETE` under `/api/v1/operators/{operatorId}`) are routed through MDU. This hybrid routing model is mandatory: standard clients must call PROV directly for list/create operations, and call MDU for detailed operator member operations.

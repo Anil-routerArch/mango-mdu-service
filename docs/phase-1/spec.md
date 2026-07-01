@@ -100,7 +100,7 @@ For the current runtime baseline, the operational support surface is:
 `/api/v1/system` is not a Mango-facing Phase 1 business API. It is an operational support API with an explicitly documented **multi-mode auth rule**:
 
 - on the public port (port `16010`) it uses validated bearer-token auth, which is documented in the Phase 1 OpenAPI contract.
-- on the private port (port `17010`) it uses the approved internal authentication model (via `X-INTERNAL-NAME` and `X-API-KEY` headers), which is kept internal and omitted from the client-facing OpenAPI spec.
+- on the private port (port `17010`) it uses the approved internal authentication model (handled by the private interface `AuthHandler` middleware), which is kept internal and omitted from the client-facing OpenAPI spec.
 
 This multi-mode rule is intentional and must remain explicit in repo-tracked API contract and requirements documents so the security posture is not ambiguous.
 
@@ -157,7 +157,7 @@ MDU does not become the RBAC authority in Phase 1, but it must still enforce the
 
 ## Phase 1 API Inventory
 
-All Phase 1 MDU APIs listed below require validated bearer-token authentication (via the `Authorization: Bearer <token>` header). Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response. Additionally, all routes accept the optional `X-Request-Id` and `X-Correlation-Id` tracking headers to enable tracing across distributed system components.
+All Phase 1 MDU business APIs listed below require validated bearer-token authentication (via the `Authorization: Bearer <token>` header). Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response. Support routes may have different authentication posture (specifically, `/livez` is unauthenticated). Additionally, all routes (with the exception of `/livez`) accept the optional `X-Request-Id` and `X-Correlation-Id` tracking headers to enable tracing across distributed system components.
 
 > [!NOTE]
 > For Phase 1, collection-level operator operations (specifically listing all operators and creating a new operator) are handled directly by hitting PROV endpoints (`GET /operator` and `POST /operator/{uuid}`). Only individual operator operations (`GET`, `PUT`, `DELETE` under `/api/v1/operators/{operatorId}`) are routed through MDU. This hybrid routing model is mandatory: standard clients must call PROV directly for list/create operations, and call MDU for detailed operator member operations.
