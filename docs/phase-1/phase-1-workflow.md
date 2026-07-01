@@ -84,7 +84,7 @@ Contacts and subscriber device APIs are not active in MDU and remain purely down
 
 ### Inbound to MDU
 
-Protected Phase 1 APIs receive:
+All protected Phase 1 API operations formally define and accept the following headers as part of their request contract:
 
 ```http
 Authorization: Bearer <owsec-token>
@@ -92,7 +92,7 @@ X-Request-Id: <request-id>         optional
 X-Correlation-Id: <correlation-id> optional
 ```
 
-If request or correlation IDs are missing, MDU generates them.
+If request or correlation IDs are missing, MDU generates them and preserves them across the entire request life-cycle.
 
 ### Outbound from MDU to PROV
 
@@ -152,7 +152,7 @@ Once the token is valid, MDU determines which Phase 1 workflow is being executed
 - hierarchy/entity view
 - venue view
 - role/policy view
-- operator list/create/details workflow
+- operator details/update/delete workflow
 - access-summary style view
 
 ## Step 5 — MDU calls PROV where domain truth is required
@@ -460,7 +460,7 @@ To list, assign, or remove user bindings to entity and venue scopes:
 Contacts and Operator Contacts (backed by PROV `/contact` and `/operatorContact` routes) are out of scope for MDU in Phase 1 and are not exposed as active MDU endpoints.
 
 ### 4. Operator Management (PROV via MDU & Direct)
-To retrieve, list, create, or update operator profile details (Name, Description, Registration ID):
+To manage operator profile details (retrieval, updates, and deletion through the MDU facade, or list and create operations directly to PROV):
 * **Terminology Mapping:** The UI and business context uses the term "customer", which maps directly to the backend "operator" API model.
 * **MDU Northbound API Endpoints:**
   * **Operator Paths:**

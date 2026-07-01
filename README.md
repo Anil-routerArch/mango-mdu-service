@@ -50,7 +50,7 @@ A repo-ready foundation for the Mango Cloud MDU backend service in the OpenWiFi 
 
 ## OpenAPI Contract Versioning
 
-Because the MDU service is implemented phase-wise, each phase maintains its own dedicated and authoritative OpenAPI specification under `docs/phase-<N>/`. 
+Because the MDU service is implemented phase-wise, each phase maintains its own dedicated and authoritative OpenAPI specification under `docs/phase-<N>/`. **Reviewers and implementers should refer to the phase-specific active contract (e.g., `docs/phase-1/mango-mdu-openapi.yaml`) as the source of truth for active development before referencing the top-level master draft `docs/openapi.yaml`.**
 
 * **Phase 1 Active Contract:** `docs/phase-1/mango-mdu-openapi.yaml` is the authoritative contract for Phase 1 development, testing, and reviews.
 * **Master Draft Contract:** The top-level `docs/openapi.yaml` acts as a master draft encompassing multi-phase proposals.

@@ -48,6 +48,9 @@ paths:
         Returns the authenticated caller and normalized effective access context.
         Scope assignments are derived from downstream role and policy bindings.
       operationId: getSession
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
       responses:
         '200':
           description: Active session and normalized access context
@@ -69,6 +72,8 @@ paths:
       description: Fetches the profile details for the target operator/customer.
       operationId: getOperator
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/OperatorIdPath'
       responses:
         '200':
@@ -93,6 +98,8 @@ paths:
       description: Updates the target operator name, description, or registration ID.
       operationId: updateOperator
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/OperatorIdPath'
       requestBody:
         required: true
@@ -125,6 +132,8 @@ paths:
       description: Deletes the target operator/customer from the system.
       operationId: deleteOperator
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/OperatorIdPath'
       responses:
         '204':
@@ -149,6 +158,8 @@ paths:
       description: Returns subscriber signup entries associated with the target operator for Phase 1. Phase 1 does not guarantee advanced pagination/filter/sort semantics for this endpoint.
       operationId: listOperatorSubscribers
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/OperatorIdPath'
       responses:
         '200':
@@ -176,6 +187,8 @@ paths:
         Phase 1 normalizes entity and venue resources into a single northbound tree.
       operationId: getHierarchyTree
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/ScopeEntityId'
       responses:
         '200':
@@ -200,6 +213,8 @@ paths:
       description: Returns normalized entity resources filtered to the caller's effective scope.
       operationId: listEntities
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/ParentEntityId'
         - $ref: '#/components/parameters/LimitQuery'
         - $ref: '#/components/parameters/OffsetQuery'
@@ -232,6 +247,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateEntityRequest'
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
       responses:
         '201':
           description: Entity created
@@ -256,6 +274,8 @@ paths:
       summary: Get entity detail
       operationId: getEntity
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/EntityIdPath'
       responses:
         '200':
@@ -279,6 +299,8 @@ paths:
       summary: Update an entity
       operationId: updateEntity
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/EntityIdPath'
       requestBody:
         required: true
@@ -310,6 +332,8 @@ paths:
       summary: Delete an entity
       operationId: deleteEntity
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/EntityIdPath'
       responses:
         '204':
@@ -333,6 +357,8 @@ paths:
       summary: List venues under an entity
       operationId: listEntityVenues
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/EntityIdPath'
         - $ref: '#/components/parameters/ParentVenueId'
         - $ref: '#/components/parameters/LimitQuery'
@@ -362,6 +388,8 @@ paths:
       summary: Create venue under an entity
       operationId: createVenue
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/EntityIdPath'
       requestBody:
         required: true
@@ -395,6 +423,8 @@ paths:
       summary: Get venue detail
       operationId: getVenue
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/VenueIdPath'
       responses:
         '200':
@@ -418,6 +448,8 @@ paths:
       summary: Update a venue
       operationId: updateVenue
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/VenueIdPath'
       requestBody:
         required: true
@@ -449,6 +481,8 @@ paths:
       summary: Delete a venue
       operationId: deleteVenue
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/VenueIdPath'
       responses:
         '204':
@@ -472,6 +506,8 @@ paths:
       summary: Retrieve a list of management policies
       operationId: getPolicies
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/LimitQuery'
         - $ref: '#/components/parameters/OffsetQuery'
         - $ref: '#/components/parameters/SortQuery'
@@ -502,6 +538,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateManagementPolicyRequest'
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
       responses:
         '201':
           description: Policy created successfully
@@ -526,6 +565,8 @@ paths:
       summary: Retrieve details of a management policy
       operationId: getPolicy
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/PolicyIdPath'
       responses:
         '200':
@@ -549,6 +590,8 @@ paths:
       summary: Update a management policy
       operationId: updatePolicy
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/PolicyIdPath'
       requestBody:
         required: true
@@ -580,6 +623,8 @@ paths:
       summary: Delete a management policy
       operationId: deletePolicy
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/PolicyIdPath'
       responses:
         '204':
@@ -603,6 +648,8 @@ paths:
       summary: Retrieve a list of management roles
       operationId: getRoles
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/LimitQuery'
         - $ref: '#/components/parameters/OffsetQuery'
         - $ref: '#/components/parameters/SortQuery'
@@ -633,6 +680,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateManagementRoleRequest'
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
       responses:
         '201':
           description: Role created successfully
@@ -655,6 +705,8 @@ paths:
       summary: Retrieve details of a management role
       operationId: getRole
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/RoleIdPath'
       responses:
         '200':
@@ -678,6 +730,8 @@ paths:
       summary: Update a management role
       operationId: updateRole
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/RoleIdPath'
       requestBody:
         required: true
@@ -709,6 +763,8 @@ paths:
       summary: Delete a management role
       operationId: deleteRole
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/RoleIdPath'
       responses:
         '204':
@@ -733,6 +789,8 @@ paths:
       description: Returns the target user's effective scoped assignments as normalized MDU resources.
       operationId: getUserAssignments
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/UserIdPath'
       responses:
         '200':
@@ -764,6 +822,8 @@ paths:
         4. **Conflict (409 Conflict)**: Reserved only for true, unresolvable state conflicts (e.g. if the requested assignment cannot be safely resolved from downstream state or creates a logical contradiction).
       operationId: assignUserToScope
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/UserIdPath'
       requestBody:
         required: true
@@ -876,6 +936,8 @@ paths:
       description: Removes the scoped access binding for the target user by assignment ID.
       operationId: deleteUserAssignment
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/UserIdPath'
         - $ref: '#/components/parameters/AssignmentIdPath'
       responses:
@@ -901,6 +963,8 @@ paths:
       description: Fetches the configured management policy and template role for the target user at the specified entity or venue scope.
       operationId: getUserAccessPolicy
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/UserIdPath'
         - $ref: '#/components/parameters/ScopeQueryRequired'
         - $ref: '#/components/parameters/EntityIdQueryRequired'
@@ -945,6 +1009,8 @@ paths:
       description: Sets or updates the management role, policies, and resource permissions for the target user at the specified entity or venue scope.
       operationId: updateUserAccessPolicy
       parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/XCorrelationIdHeader'
         - $ref: '#/components/parameters/UserIdPath'
       requestBody:
         required: true
@@ -1002,6 +1068,20 @@ components:
       bearerFormat: JWT
 
   parameters:
+    XRequestIdHeader:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Correlation tracking identifier for the specific API request. If not supplied, the service will generate one.
+      schema:
+        type: string
+    XCorrelationIdHeader:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: Correlation tracking identifier linking requests across distributed system components. If not supplied, the service will reuse X-Request-Id or generate one.
+      schema:
+        type: string
     EntityIdPath:
       name: entityId
       in: path
@@ -1100,7 +1180,7 @@ components:
       name: offset
       in: query
       required: false
-      description: Number of items to skip.
+      description: Number of items to skip. If 'cursor' is supplied, 'offset' is ignored.
       schema:
         type: integer
         default: 0
@@ -1122,7 +1202,7 @@ components:
       name: cursor
       in: query
       required: false
-      description: Pagination cursor for cursor-based paging.
+      description: Pagination cursor for cursor-based paging. When supplied, cursor-based paging takes precedence and 'offset' is ignored.
       schema:
         type: string
 

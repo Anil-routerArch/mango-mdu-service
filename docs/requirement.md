@@ -568,7 +568,7 @@ Phase 1 does not require:
 
 ### Phase 1 API Inventory
 
-All Phase 1 MDU APIs listed below require validated bearer-token authentication. Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response.
+All Phase 1 MDU APIs listed below require validated bearer-token authentication (via the `Authorization: Bearer <token>` header). Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response. Additionally, all routes accept the optional `X-Request-Id` and `X-Correlation-Id` tracking headers to enable tracing across distributed system components.
 
 > **Operator Routing Strategy:**
 > For Phase 1, collection-level operator operations (specifically listing all operators and creating a new operator) are handled directly by hitting PROV endpoints (`GET /operator` and `POST /operator/{uuid}`). Only individual operator operations (`GET`, `PUT`, `DELETE` under `/api/v1/operators/{operatorId}`) are routed through MDU. This hybrid routing model is mandatory: standard clients must call PROV directly for list/create operations, and call MDU for detailed operator member operations.
@@ -584,13 +584,10 @@ All Phase 1 MDU APIs listed below require validated bearer-token authentication.
 #### 3. Subscribers (`Subscribers` Tag)
 - `GET /api/v1/operators/{operatorId}/subscribers` — Retrieve a simple, unpaginated list of subscriber signup entries filtered by operator ID (constrained listing flow).
 
-#### 4. Contacts (`Contacts` Tag)
-- *Note:* Excluded from active routes in the Phase 1 OpenAPI spec (represented under `Contacts` tag definition only; no active paths are exposed).
-
-#### 5. Hierarchy (`Hierarchy` Tag)
+#### 4. Hierarchy (`Hierarchy` Tag)
 - `GET /api/v1/hierarchy/tree` — Retrieve full or scoped resource hierarchy tree.
 
-#### 6. Entities (`Entities` Tag)
+#### 5. Entities (`Entities` Tag)
 - `GET /api/v1/entities` — List entities.
 - `POST /api/v1/entities` — Create a new entity.
 - `GET /api/v1/entities/{entityId}` — Retrieve details of a specific entity.
@@ -599,26 +596,26 @@ All Phase 1 MDU APIs listed below require validated bearer-token authentication.
 - `GET /api/v1/entities/{entityId}/venues` — List venues under an entity.
 - `POST /api/v1/entities/{entityId}/venues` — Create a new venue under an entity.
 
-#### 7. Venues (`Venues` Tag)
+#### 6. Venues (`Venues` Tag)
 - `GET /api/v1/venues/{venueId}` — Retrieve venue details.
 - `PUT /api/v1/venues/{venueId}` — Update venue details.
 - `DELETE /api/v1/venues/{venueId}` — Delete venue.
 
-#### 8. Management Policies (`Management Policies` Tag)
+#### 7. Management Policies (`Management Policies` Tag)
 - `GET /api/v1/policies` — List management policies.
 - `POST /api/v1/policies` — Create a new management policy.
 - `GET /api/v1/policies/{policyId}` — Retrieve details of a specific policy.
 - `PUT /api/v1/policies/{policyId}` — Update management policy details.
 - `DELETE /api/v1/policies/{policyId}` — Delete management policy.
 
-#### 9. Management Roles (`Management Roles` Tag)
+#### 8. Management Roles (`Management Roles` Tag)
 - `GET /api/v1/roles` — List management roles.
 - `POST /api/v1/roles` — Create a new management role.
 - `GET /api/v1/roles/{roleId}` — Retrieve details of a specific role.
 - `PUT /api/v1/roles/{roleId}` — Update management role details.
 - `DELETE /api/v1/roles/{roleId}` — Delete management role.
 
-#### 10. Users / Scoped Assignments & Access (`Users` Tag)
+#### 9. Users / Scoped Assignments & Access (`Users` Tag)
 - `GET /api/v1/users/{userId}/assignments` — List resource assignments for a user.
 - `POST /api/v1/users/{userId}/assignments` — Assign resource (entity/venue) scope to a user (handles creation, updating/resolving existing roles, or no-op/idempotent success).
 - `DELETE /api/v1/users/{userId}/assignments/{assignmentId}` — Remove a user scope assignment.
