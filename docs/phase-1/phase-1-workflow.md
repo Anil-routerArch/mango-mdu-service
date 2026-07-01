@@ -50,10 +50,10 @@ Contacts, subscriber management (invite/creation), and subscriber devices are no
 
 These API families are indicative workflow groupings for Phase 1. They are not a strict one-to-one route inventory and do not require MDU to mirror downstream route structure exactly.
 
-In the current runtime baseline, the checked-in support routes are still limited to:
+In the current runtime baseline, the checked-in support routes are exposed on both public and private port interfaces:
 
-- `GET /livez`
-- `/api/v1/system`
+- **`GET /livez` (Liveness Check):** Registered on both public and private ports without authentication (only the public version on port `16010` is documented in the Phase 1 OpenAPI spec for simplicity).
+- **`/api/v1/system` (Diagnostics):** Registered on both public and private ports with a multi-mode authentication rule (token auth for public port `16010`, and approved internal authentication model handled by the private interface `AuthHandler` middleware for private port `17010`).
 
 Those support routes are outside the Mango-facing business workflow families described in this document. The `/api/v1/*` sections below describe the intended Phase 1 business workflow model to be implemented.
 
