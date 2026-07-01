@@ -1072,14 +1072,14 @@ components:
       name: X-Request-Id
       in: header
       required: false
-      description: Correlation tracking identifier for the specific API request. If not supplied, the service will generate one.
+      description: Unique tracking identifier for this specific HTTP request. If not supplied, the service will generate one.
       schema:
         type: string
     XCorrelationIdHeader:
       name: X-Correlation-Id
       in: header
       required: false
-      description: Correlation tracking identifier linking requests across distributed system components. If not supplied, the service will reuse X-Request-Id or generate one.
+      description: Distributed transaction identifier linking requests across multiple microservices. If not supplied, the service will fall back to using X-Request-Id (or generate one) to preserve trace context.
       schema:
         type: string
     EntityIdPath:
