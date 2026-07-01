@@ -101,7 +101,7 @@ MDU shall use the following business-facing terms unless a phase-specific contra
 | venue | location or venue object within the hierarchy | PROV |
 | workspace | Mango UI-facing composed context for a selected node or tenant | MDU composed view |
 | hierarchy node | normalized tree node exposed by MDU | PROV truth, MDU shape |
-| user | operator-facing account represented through PROV and secured by OWSEC | PROV / OWSEC |
+| user | operator-facing account represented through PROV and secured by OWSEC | OWSEC (identity/account CRUD), PROV (access/rbac bindings only) |
 | access summary | composed view of effective access visible to UI | PROV truth, MDU shape |
 | device | managed inventory device | PROV truth, OWGW runtime |
 | configuration | assignable or viewable config object | PROV |
