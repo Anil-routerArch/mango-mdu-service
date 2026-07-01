@@ -1161,14 +1161,14 @@ components:
         type: integer
         default: 0
     EntityQueryOptional:
-      name: entity
+      name: entityId
       in: query
       required: false
       description: Optional entity ID filter.
       schema:
         $ref: '#/components/schemas/Id'
     VenueQueryOptional:
-      name: venue
+      name: venueId
       in: query
       required: false
       description: Optional venue ID filter.
