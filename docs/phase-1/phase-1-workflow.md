@@ -84,7 +84,7 @@ Contacts and subscriber device APIs are not active in MDU and remain purely down
 
 ### Inbound to MDU
 
-All protected Phase 1 API operations formally define and accept the following headers as part of their request contract:
+All protected Phase 1 API operations accept optional tracing headers as part of their request contract:
 
 ```http
 Authorization: Bearer <owsec-token>
@@ -105,7 +105,7 @@ x-request-id: <request-id>
 x-correlation-id: <correlation-id>
 ```
 
-This is the standard Phase 1 downstream trust flow.
+This is the standard Phase 1 downstream trust flow. MDU propagates tracing headers downstream where applicable. If downstream services do not accept them explicitly, MDU still uses them for internal observability/log correlation.
 
 ---
 
@@ -471,7 +471,7 @@ To manage operator profile details (retrieval, updates, and deletion through the
   * `GET /operator` (List all operators in PROV)
   * `POST /operator/{uuid}` (Create a new operator in PROV)
 * **Orchestration Flow:**
-  * **Hybrid Routing Model:** Standard client applications (e.g. the MDU UI) call PROV directly to list operators (`GET /operator`) and create a new operator (`POST /operator/{uuid}`). Detail-level operations such as retrieving details, updating name/description, or deleting an operator are routed through the MDU facade. both lanes enforce appropriate bearer authentication.
+  * **Hybrid Routing Model:** Standard client applications (e.g. the MDU UI) call PROV directly to list operators (`GET /operator`) and create a new operator (`POST /operator/{uuid}`). Detail-level operations such as retrieving details, updating name/description, or deleting an operator are routed through the MDU facade. The MDU facade routes enforce OWSEC bearer authentication, while direct PROV list/create operations follow their own approved authentication paths.
 
 ### 4a. Management Policies & Roles (PROV via MDU)
 To retrieve, create, update, or delete management policies and roles:
@@ -501,7 +501,7 @@ To list subscriber accounts associated with a specific operator:
 * **Downstream PROV API Endpoints:**
   * `GET /subscriber`
 * **Orchestration Flow:**
-  * **List Subscribers (Constrained):** MDU calls PROV `GET /subscriber?listOnly=true` to retrieve all signup entries, filters the results to only include those matching the target `operatorId` parameter, and returns the filtered subset as a simple list.
+  * **List Subscribers (Constrained):** MDU calls PROV `GET /subscriber?listOnly=true` to retrieve all signup entries, filters the results to only include those matching the target `operatorId` parameter, and returns the filtered subset as a simple, unpaginated list.
   * *Note:* Phase 1 subscriber listing is a constrained list-and-filter orchestration flow. It does not support or define advanced operator-scoped pagination, filtering, sorting, or cursor query parameters because downstream PROV does not natively expose operator-scoping or collection paging on `/subscriber`. Subscriber invite, registration, and subscriber device management are out of scope for Phase 1.
 
 

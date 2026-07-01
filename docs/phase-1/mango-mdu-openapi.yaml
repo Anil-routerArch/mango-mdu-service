@@ -155,7 +155,7 @@ paths:
     get:
       tags: [Subscribers]
       summary: List subscribers for an operator
-      description: Returns subscriber signup entries associated with the target operator for Phase 1. Phase 1 does not guarantee advanced pagination/filter/sort semantics for this endpoint.
+      description: Returns a simple, unpaginated list of subscriber signup entries associated with the target operator for Phase 1. This endpoint is a constrained listing flow and does not support advanced query parameters for pagination, sorting, or filtering.
       operationId: listOperatorSubscribers
       parameters:
         - $ref: '#/components/parameters/XRequestIdHeader'

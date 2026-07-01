@@ -133,7 +133,7 @@ Phase 1 must follow these rules:
   - `X-Correlation-Id`: a tracking identifier linking requests across distributed system components, set to `X-Request-Id` or generated if absent.
 - MDU validates the token before protected business logic
 - MDU calls downstreams using service credentials such as `x-api`
-- MDU forwards the user token to PROV using `x-authorization` where PROV needs user context along with `x-request-id` and `x-correlation-id` to preserve trace consistency
+- MDU forwards the user token to PROV using `x-authorization` where PROV needs user context. MDU propagates tracing headers downstream where applicable; if downstream services do not accept them explicitly, MDU still uses them for internal observability/log correlation.
 - PROV remains responsible for RBAC and scope decisions
 - MDU must not create a second source of truth for access control
 
