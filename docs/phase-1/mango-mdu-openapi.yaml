@@ -63,8 +63,6 @@ paths:
       responses:
         '200':
           description: Service is healthy and running
-        '500':
-          description: Service is unhealthy
 
   /system:
     servers:
@@ -93,6 +91,8 @@ paths:
         * **Private Port (default: 17010)**: Authenticated using both `PrivateInternalNameAuth` (`X-INTERNAL-NAME`) and `PrivateApiKeyAuth` (`X-API-KEY`) headers.
         
         Bearer tokens are not accepted on the private port, and internal headers are not accepted on the public port.
+        
+        *Note: OpenAPI cannot fully encode per-server/per-port security exclusivity. The security configurations listed below indicate all schemes allowed in general, but they are strictly enforced by port at runtime.*
       security:
         - bearerAuth: []
         - PrivateInternalNameAuth: []
@@ -126,6 +126,8 @@ paths:
         * **Private Port (default: 17010)**: Authenticated using both `PrivateInternalNameAuth` (`X-INTERNAL-NAME`) and `PrivateApiKeyAuth` (`X-API-KEY`) headers.
         
         Bearer tokens are not accepted on the private port, and internal headers are not accepted on the public port.
+        
+        *Note: OpenAPI cannot fully encode per-server/per-port security exclusivity. The security configurations listed below indicate all schemes allowed in general, but they are strictly enforced by port at runtime.*
       security:
         - bearerAuth: []
         - PrivateInternalNameAuth: []
