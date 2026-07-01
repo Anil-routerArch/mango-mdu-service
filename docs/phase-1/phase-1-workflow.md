@@ -418,7 +418,7 @@ To retrieve, grant, modify, or revoke scoped resource-level access permissions f
 #### Role Distinction note
 The MDU API contract distinguishes between two different types of roles:
 *   **Global Identity Roles (`RoleKey` enum):** These represent the static, system-wide account types defined and enforced by the identity provider (OWSEC) (such as `root`, `admin`, `csr`). These are immutable system classes.
-*   **Dynamic Management Roles (`ManagementRole` resource):** These are dynamic, custom role-templates created within Provisioning (PROV) to bind policies, users, and hierarchy nodes together. Because operators can define and name their own resource templates (e.g. "Custom Venue Admin Template"), this resource uses a free-form string for its descriptive name, while the assigned user's base identity role remains bound to the fixed `RoleKey` classification.
+*   **Dynamic Management Roles (`ManagementRole` resource):** These are dynamic, custom role-templates created within Provisioning (PROV) to bind policies, users, and hierarchy nodes together. Because operators can define and name their own resource templates (e.g. "Custom Venue Admin Template"), this resource uses a free-form string for its descriptive name. However, northbound user scope assignments (`CreateUserAssignmentRequest`, `UserAssignment`, and `SessionAssignment` schemas) only support the fixed `RoleKey` allowlist of global identity roles, meaning custom PROV templates themselves are out of scope for these assignment endpoints.
 * **MDU Northbound API Endpoints:**
   * `GET /api/v1/users/{userId}/access-policy?scope={scope}&entityId={entityId}&venueId={venueId}`
   * `PUT /api/v1/users/{userId}/access-policy`
@@ -439,7 +439,7 @@ The MDU API contract distinguishes between two different types of roles:
        - Creates or updates a `ManagementPolicy` containing entries for the specified resource permissions (assigning resource UUIDs/patterns and access lists).
        - Creates or updates a `ManagementRole` for the target scope (entity or venue), linking it to the `ManagementPolicy`, and ensuring the target user's UUID is in the `users` list.
        > [!NOTE]
-       > **ManagementPolicyEntry User Bindings:** For compatibility with the downstream PROV database schema, `ManagementPolicyEntry` exposes a `users` array. However, within the MDU Phase 1 orchestration workflow, user assignments are primarily bound and managed at the `ManagementRole` level.
+       > **ManagementPolicyEntry User Bindings Behavior:** For compatibility with the downstream PROV database schema, `ManagementPolicyEntry` exposes a `users` array. MDU does not persist this array locally; instead, it acts as a stateless facade and forwards it directly to downstream PROV as-is during policy creation and updates, where PROV persists it in the system of record. Although not ignored or rejected, standard Mango-facing client applications should primarily manage user bindings via the `ManagementRole` and assignments endpoints rather than modifying the policy `users` array directly.
 
     4. MDU returns the normalized `UserAccessPolicy` configuration back to the client.
 
@@ -476,9 +476,9 @@ To manage operator profile details (retrieval, updates, and deletion through the
     * `DELETE /api/v1/operators/{operatorId}` (Delete an operator)
 * **Direct UI/Client API Endpoints (Bypassing MDU):**
   * `GET /operator` (List all operators in PROV)
-  * `POST /operator/{uuid}` (Create a new operator in PROV)
+  * `POST /operator/{uuid}` (Create a new operator in PROV; `{uuid}` must be set to `00000000-0000-0000-0000-000000000000` or `0` for new creation)
 * **Orchestration Flow:**
-  * **Hybrid Routing Model:** Standard client applications (e.g. the MDU UI) call PROV directly to list operators (`GET /operator`) and create a new operator (`POST /operator/{uuid}`). Detail-level operations such as retrieving details, updating name/description, or deleting an operator are routed through the MDU facade. The MDU facade routes enforce OWSEC bearer authentication, while direct PROV list/create operations follow their own approved authentication paths.
+  * **Hybrid Routing Model:** Standard client applications (e.g. the MDU UI) call PROV directly to list operators (`GET /operator`) and create a new operator (`POST /operator/{uuid}` where `{uuid}` is set to the nil/zero UUID `00000000-0000-0000-0000-000000000000` or `0`). Detail-level operations such as retrieving details, updating name/description, or deleting an operator are routed through the MDU facade. The MDU facade routes enforce OWSEC bearer authentication, while direct PROV list/create operations follow their own approved authentication paths.
 
 ### 4a. Management Policies & Roles (PROV via MDU)
 To retrieve, create, update, or delete management policies and roles:

@@ -2067,6 +2067,8 @@ components:
       properties:
         users:
           type: array
+          description: |
+            List of user UUIDs bound to this policy entry. MDU acts as a stateless facade and forwards this array directly to the downstream PROV service as-is, where PROV persists it in the system of record. It is not ignored, rejected, or modified by MDU. Note: northbound clients should primarily manage user bindings using the User Assignment endpoints rather than modifying this array directly.
           items:
             type: string
         resources:
