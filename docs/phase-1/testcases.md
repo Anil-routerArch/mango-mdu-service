@@ -338,11 +338,10 @@ Important assertions:
 | ID | Name | Expected Result |
 |---|---|---|
 | TC-GET-OPERATOR-001 | Get operator detail succeeds | `200 OK`; field-level `OperatorDetail` assertions pass |
-| TC-GET-OPERATOR-002 | Invalid path parameter returns bad request | `400 Bad Request`; `ApiError` envelope |
-| TC-GET-OPERATOR-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-GET-OPERATOR-004 | Caller lacks scope to read operator returns forbidden | `403 Forbidden` |
-| TC-GET-OPERATOR-005 | Unknown operator returns not found | `404 Not Found`; exact `ApiError` envelope |
-| TC-GET-OPERATOR-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-GET-OPERATOR-002 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-GET-OPERATOR-003 | Caller lacks scope to read operator returns forbidden | `403 Forbidden` |
+| TC-GET-OPERATOR-004 | Unknown operator returns not found | `404 Not Found`; exact `ApiError` envelope |
+| TC-GET-OPERATOR-005 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 
 ---
 
@@ -446,12 +445,11 @@ Success response:
 | ID | Name | Expected Result |
 |---|---|---|
 | TC-DELETE-OPERATOR-001 | Delete operator succeeds | `204 No Content`; no JSON body |
-| TC-DELETE-OPERATOR-002 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-DELETE-OPERATOR-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-DELETE-OPERATOR-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-DELETE-OPERATOR-005 | Unknown operator returns not found | `404 Not Found` |
-| TC-DELETE-OPERATOR-006 | Conflict prevents delete | `409 Conflict`; exact shared conflict envelope |
-| TC-DELETE-OPERATOR-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-DELETE-OPERATOR-002 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-DELETE-OPERATOR-003 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-DELETE-OPERATOR-004 | Unknown operator returns not found | `404 Not Found` |
+| TC-DELETE-OPERATOR-005 | Conflict prevents delete | `409 Conflict`; exact shared conflict envelope |
+| TC-DELETE-OPERATOR-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 
 ---
 
@@ -508,11 +506,10 @@ Important assertions:
 |---|---|---|
 | TC-SUBSCRIBERS-001 | List subscribers succeeds | `200 OK`; field-level wrapper and item assertions pass |
 | TC-SUBSCRIBERS-002 | Empty subscriber list succeeds | `200 OK`; `items = []` |
-| TC-SUBSCRIBERS-003 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-SUBSCRIBERS-004 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-SUBSCRIBERS-005 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-SUBSCRIBERS-006 | Unknown operator returns not found | `404 Not Found` |
-| TC-SUBSCRIBERS-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-SUBSCRIBERS-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-SUBSCRIBERS-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-SUBSCRIBERS-005 | Unknown operator returns not found | `404 Not Found` |
+| TC-SUBSCRIBERS-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 
 ---
 
@@ -828,11 +825,10 @@ Important assertions:
 |---|---|---|
 | TC-GET-ENTITY-001 | Get entity detail succeeds | `200 OK`; field-level `EntityDetail` assertions pass |
 | TC-GET-ENTITY-002 | Entity detail with `parentId = null` succeeds | `200 OK`; nullable `parentId` accepted |
-| TC-GET-ENTITY-003 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-GET-ENTITY-004 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-GET-ENTITY-005 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-GET-ENTITY-006 | Unknown entity returns not found | `404 Not Found` |
-| TC-GET-ENTITY-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-GET-ENTITY-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-GET-ENTITY-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-GET-ENTITY-005 | Unknown entity returns not found | `404 Not Found` |
+| TC-GET-ENTITY-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-PUT-ENTITY-001 | Update entity succeeds | `200 OK`; field-level `EntityDetail` assertions pass |
 | TC-PUT-ENTITY-002 | Wrong field type returns validation error | `400 Bad Request` |
 | TC-PUT-ENTITY-003 | Empty or malformed body is rejected | `400 Bad Request` or implementation-equivalent parse failure |
@@ -842,12 +838,11 @@ Important assertions:
 | TC-PUT-ENTITY-007 | State conflict returns conflict | `409 Conflict` |
 | TC-PUT-ENTITY-008 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-DELETE-ENTITY-001 | Delete entity succeeds | `204 No Content`; no JSON body |
-| TC-DELETE-ENTITY-002 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-DELETE-ENTITY-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-DELETE-ENTITY-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-DELETE-ENTITY-005 | Unknown entity returns not found | `404 Not Found` |
-| TC-DELETE-ENTITY-006 | Conflict prevents delete | `409 Conflict` |
-| TC-DELETE-ENTITY-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-DELETE-ENTITY-002 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-DELETE-ENTITY-003 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-DELETE-ENTITY-004 | Unknown entity returns not found | `404 Not Found` |
+| TC-DELETE-ENTITY-005 | Conflict prevents delete | `409 Conflict` |
+| TC-DELETE-ENTITY-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 
 ---
 
@@ -1041,11 +1036,10 @@ Important assertions:
 |---|---|---|
 | TC-GET-VENUE-001 | Get venue succeeds | `200 OK`; field-level `VenueDetail` assertions pass |
 | TC-GET-VENUE-002 | Nullable `parentVenueId` is accepted | `200 OK` |
-| TC-GET-VENUE-003 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-GET-VENUE-004 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-GET-VENUE-005 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-GET-VENUE-006 | Unknown venue returns not found | `404 Not Found` |
-| TC-GET-VENUE-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-GET-VENUE-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-GET-VENUE-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-GET-VENUE-005 | Unknown venue returns not found | `404 Not Found` |
+| TC-GET-VENUE-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-PUT-VENUE-001 | Update venue succeeds | `200 OK`; field-level `VenueDetail` assertions pass |
 | TC-PUT-VENUE-002 | Wrong field type returns validation error | `400 Bad Request` |
 | TC-PUT-VENUE-003 | Empty or malformed body is rejected | `400 Bad Request` or implementation-equivalent parse failure |
@@ -1055,12 +1049,11 @@ Important assertions:
 | TC-PUT-VENUE-007 | Conflict returns conflict | `409 Conflict` |
 | TC-PUT-VENUE-008 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-DELETE-VENUE-001 | Delete venue succeeds | `204 No Content`; no JSON body |
-| TC-DELETE-VENUE-002 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-DELETE-VENUE-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-DELETE-VENUE-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-DELETE-VENUE-005 | Unknown venue returns not found | `404 Not Found` |
-| TC-DELETE-VENUE-006 | Conflict returns conflict | `409 Conflict` |
-| TC-DELETE-VENUE-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-DELETE-VENUE-002 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-DELETE-VENUE-003 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-DELETE-VENUE-004 | Unknown venue returns not found | `404 Not Found` |
+| TC-DELETE-VENUE-005 | Conflict returns conflict | `409 Conflict` |
+| TC-DELETE-VENUE-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 
 ---
 
@@ -1093,6 +1086,9 @@ Create request body example:
   "description": "Read/Write configuration policy for installers",
   "entries": [
     {
+      "users": [
+        "123e4567-e89b-12d3-a456-426614174000"
+      ],
       "resources": [
         "configuration",
         "inventory"
@@ -1116,6 +1112,9 @@ Success response body example for create/get/update:
   "description": "Read/Write configuration policy for installers",
   "entries": [
     {
+      "users": [
+        "123e4567-e89b-12d3-a456-426614174000"
+      ],
       "resources": [
         "configuration",
         "inventory"
@@ -1141,7 +1140,19 @@ Success response body shape for list:
       "id": "<Id>",
       "name": "<string>",
       "description": "<string>",
-      "entries": [],
+      "entries": [
+        {
+          "users": [
+            "<Id>"
+          ],
+          "resources": [
+            "<string>"
+          ],
+          "access": [
+            "<PolicyAccessKey>"
+          ]
+        }
+      ],
       "entity": "<Id>",
       "venue": "<Id>",
       "createdAt": "<IsoDateTime>",
@@ -1162,6 +1173,7 @@ Important assertions:
 - Item/detail response matches `ManagementPolicy`.
 - `name` is required on create.
 - Nested `entries[*]` must contain required `resources` and `access`.
+- Nested `entries[*].users`, when present, must be accepted as an array of IDs and preserved in returned `ManagementPolicy` payloads.
 - Nested enum values in `access` must exactly match `PolicyAccessKey`.
 - Exact pagination behavior is validated on list route.
 
@@ -1175,39 +1187,41 @@ Important assertions:
 | TC-LIST-POLICIES-004 | Invalid pagination params return bad request | `400 Bad Request` |
 | TC-LIST-POLICIES-005 | Filter by `entityId` succeeds | `200 OK`; returned policies satisfy filter |
 | TC-LIST-POLICIES-006 | Filter by `venueId` succeeds | `200 OK`; returned policies satisfy filter |
-| TC-LIST-POLICIES-007 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-LIST-POLICIES-008 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-LIST-POLICIES-009 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-LIST-POLICIES-007 | List policies preserves `entries[*].users` when present | `200 OK`; returned items include the same `users` arrays |
+| TC-LIST-POLICIES-008 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-LIST-POLICIES-009 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-LIST-POLICIES-010 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-CREATE-POLICY-001 | Create policy succeeds | `201 Created`; field-level `ManagementPolicy` assertions pass |
-| TC-CREATE-POLICY-002 | Missing `name` returns validation error | `400 Bad Request` |
-| TC-CREATE-POLICY-003 | Invalid nested `entries` shape returns validation error | `400 Bad Request` |
-| TC-CREATE-POLICY-004 | Invalid `access` enum returns validation error | `400 Bad Request` |
-| TC-CREATE-POLICY-005 | Wrong field type returns validation error | `400 Bad Request` |
-| TC-CREATE-POLICY-006 | Malformed JSON or empty body is rejected | `400 Bad Request` |
-| TC-CREATE-POLICY-007 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-CREATE-POLICY-008 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-CREATE-POLICY-009 | Conflict returns conflict | `409 Conflict` |
-| TC-CREATE-POLICY-010 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-CREATE-POLICY-002 | Create policy preserves `entries[*].users` when provided | `201 Created`; returned `ManagementPolicy.entries[*].users` matches request |
+| TC-CREATE-POLICY-003 | Missing `name` returns validation error | `400 Bad Request` |
+| TC-CREATE-POLICY-004 | Invalid nested `entries` shape returns validation error | `400 Bad Request` |
+| TC-CREATE-POLICY-005 | Invalid `access` enum returns validation error | `400 Bad Request` |
+| TC-CREATE-POLICY-006 | Wrong field type returns validation error | `400 Bad Request` |
+| TC-CREATE-POLICY-007 | Malformed JSON or empty body is rejected | `400 Bad Request` |
+| TC-CREATE-POLICY-008 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-CREATE-POLICY-009 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-CREATE-POLICY-010 | Conflict returns conflict | `409 Conflict` |
+| TC-CREATE-POLICY-011 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-GET-POLICY-001 | Get policy detail succeeds | `200 OK`; field-level `ManagementPolicy` assertions pass |
-| TC-GET-POLICY-002 | Invalid path parameter returns bad request | `400 Bad Request` |
+| TC-GET-POLICY-002 | Get policy detail preserves `entries[*].users` when present | `200 OK`; returned `ManagementPolicy.entries[*].users` matches persisted data |
 | TC-GET-POLICY-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
 | TC-GET-POLICY-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
 | TC-GET-POLICY-005 | Unknown policy returns not found | `404 Not Found` |
 | TC-GET-POLICY-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-PUT-POLICY-001 | Update policy succeeds | `200 OK`; field-level `ManagementPolicy` assertions pass |
-| TC-PUT-POLICY-002 | Invalid nested payload returns validation error | `400 Bad Request` |
-| TC-PUT-POLICY-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-PUT-POLICY-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-PUT-POLICY-005 | Unknown policy returns not found | `404 Not Found` |
-| TC-PUT-POLICY-006 | Conflict returns conflict | `409 Conflict` |
-| TC-PUT-POLICY-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-PUT-POLICY-002 | Update policy preserves `entries[*].users` when provided | `200 OK`; returned `ManagementPolicy.entries[*].users` matches request |
+| TC-PUT-POLICY-003 | Invalid nested payload returns validation error | `400 Bad Request` |
+| TC-PUT-POLICY-004 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-PUT-POLICY-005 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-PUT-POLICY-006 | Unknown policy returns not found | `404 Not Found` |
+| TC-PUT-POLICY-007 | Conflict returns conflict | `409 Conflict` |
+| TC-PUT-POLICY-008 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-DELETE-POLICY-001 | Delete policy succeeds | `204 No Content`; no JSON body |
-| TC-DELETE-POLICY-002 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-DELETE-POLICY-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-DELETE-POLICY-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-DELETE-POLICY-005 | Unknown policy returns not found | `404 Not Found` |
-| TC-DELETE-POLICY-006 | Conflict returns conflict | `409 Conflict` |
-| TC-DELETE-POLICY-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-DELETE-POLICY-002 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-DELETE-POLICY-003 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-DELETE-POLICY-004 | Unknown policy returns not found | `404 Not Found` |
+| TC-DELETE-POLICY-005 | Conflict returns conflict | `409 Conflict` |
+| TC-DELETE-POLICY-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 
 ---
 
@@ -1319,11 +1333,10 @@ Important assertions:
 | TC-CREATE-ROLE-008 | Caller lacks permission returns forbidden | `403 Forbidden` |
 | TC-CREATE-ROLE-009 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-GET-ROLE-001 | Get role detail succeeds | `200 OK`; field-level `ManagementRole` assertions pass |
-| TC-GET-ROLE-002 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-GET-ROLE-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-GET-ROLE-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-GET-ROLE-005 | Unknown role returns not found | `404 Not Found` |
-| TC-GET-ROLE-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-GET-ROLE-002 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-GET-ROLE-003 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-GET-ROLE-004 | Unknown role returns not found | `404 Not Found` |
+| TC-GET-ROLE-005 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-PUT-ROLE-001 | Update role succeeds | `200 OK`; field-level `ManagementRole` assertions pass |
 | TC-PUT-ROLE-002 | Wrong field type returns validation error | `400 Bad Request` |
 | TC-PUT-ROLE-003 | Empty or malformed body is rejected | `400 Bad Request` or implementation-equivalent parse failure |
@@ -1333,12 +1346,11 @@ Important assertions:
 | TC-PUT-ROLE-007 | Conflict returns conflict | `409 Conflict` |
 | TC-PUT-ROLE-008 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-DELETE-ROLE-001 | Delete role succeeds | `204 No Content`; no JSON body |
-| TC-DELETE-ROLE-002 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-DELETE-ROLE-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-DELETE-ROLE-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-DELETE-ROLE-005 | Unknown role returns not found | `404 Not Found` |
-| TC-DELETE-ROLE-006 | Conflict returns conflict | `409 Conflict` |
-| TC-DELETE-ROLE-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-DELETE-ROLE-002 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-DELETE-ROLE-003 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-DELETE-ROLE-004 | Unknown role returns not found | `404 Not Found` |
+| TC-DELETE-ROLE-005 | Conflict returns conflict | `409 Conflict` |
+| TC-DELETE-ROLE-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 
 ---
 
@@ -1403,11 +1415,10 @@ Important assertions:
 |---|---|---|
 | TC-GET-ASSIGNMENTS-001 | Get user assignments succeeds | `200 OK`; field-level wrapper and item assertions pass |
 | TC-GET-ASSIGNMENTS-002 | Empty assignment list succeeds | `200 OK`; `items = []` |
-| TC-GET-ASSIGNMENTS-003 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-GET-ASSIGNMENTS-004 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-GET-ASSIGNMENTS-005 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-GET-ASSIGNMENTS-006 | Unknown user returns not found | `404 Not Found` |
-| TC-GET-ASSIGNMENTS-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-GET-ASSIGNMENTS-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-GET-ASSIGNMENTS-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-GET-ASSIGNMENTS-005 | Unknown user returns not found | `404 Not Found` |
+| TC-GET-ASSIGNMENTS-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 
 ---
 
@@ -1544,12 +1555,11 @@ Important assertions:
 | TC-CREATE-ASSIGNMENT-011 | Unresolvable downstream state returns endpoint-specific conflict | `409 Conflict`; exact endpoint-specific `ApiError` example |
 | TC-CREATE-ASSIGNMENT-012 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-DELETE-ASSIGNMENT-001 | Delete assignment succeeds | `204 No Content`; no JSON body |
-| TC-DELETE-ASSIGNMENT-002 | Invalid path parameter returns bad request | `400 Bad Request` |
-| TC-DELETE-ASSIGNMENT-003 | Missing bearer token returns unauthorized | `401 Unauthorized` |
-| TC-DELETE-ASSIGNMENT-004 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-DELETE-ASSIGNMENT-005 | Unknown assignment returns not found | `404 Not Found` |
-| TC-DELETE-ASSIGNMENT-006 | Conflict returns conflict | `409 Conflict` |
-| TC-DELETE-ASSIGNMENT-007 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
+| TC-DELETE-ASSIGNMENT-002 | Missing bearer token returns unauthorized | `401 Unauthorized` |
+| TC-DELETE-ASSIGNMENT-003 | Caller lacks permission returns forbidden | `403 Forbidden` |
+| TC-DELETE-ASSIGNMENT-004 | Unknown assignment returns not found | `404 Not Found` |
+| TC-DELETE-ASSIGNMENT-005 | Conflict returns conflict | `409 Conflict` |
+| TC-DELETE-ASSIGNMENT-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 
 ---
 
@@ -1650,14 +1660,6 @@ Endpoint-specific `400` examples:
 }
 ```
 
-```json
-{
-  "ErrorCode": 400,
-  "ErrorDetails": "venueId must not be provided when scope is 'entity'.",
-  "ErrorDescription": "Bad Request"
-}
-```
-
 Endpoint-specific `404` example:
 
 ```json
@@ -1685,6 +1687,7 @@ Important assertions:
   - `roleTemplate`
   - `resourcePermissions`
 - `resourcePermissions[*].resource` and `policies[*]` must match declared enums exactly.
+- GET negative coverage is limited to the documented query-parameter errors for missing `entityId` and missing venue-scope `venueId`.
 - Update request must conform to exactly one `oneOf` branch.
 - Entity payload must not include `venueId`.
 - Venue payload must include `venueId`.
