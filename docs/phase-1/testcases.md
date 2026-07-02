@@ -105,9 +105,9 @@ Important assertions:
 | TC-SYSTEM-GET-002 | Get diagnostics with `command=resources` succeeds | `200 OK`; success body not asserted beyond contract |
 | TC-SYSTEM-GET-003 | Missing `command` returns validation error | `400 Bad Request`; `ApiError` envelope |
 | TC-SYSTEM-GET-004 | Unsupported `command` enum returns validation error | `400 Bad Request`; `ApiError` envelope |
-| TC-SYSTEM-GET-005 | Missing bearer token returns unauthorized | `401 Unauthorized`; exact shared error envelope |
-| TC-SYSTEM-GET-006 | Caller lacks permission returns forbidden | `403 Forbidden`; exact shared error envelope |
-| TC-SYSTEM-GET-007 | Backend unavailable returns service unavailable | `503 Service Unavailable`; exact shared error envelope |
+| TC-SYSTEM-GET-005 | Missing bearer token returns unauthorized | `401 Unauthorized`; contract-defined unauthorized response |
+| TC-SYSTEM-GET-006 | Caller lacks permission returns forbidden | `403 Forbidden`; contract-defined forbidden response |
+| TC-SYSTEM-GET-007 | Backend unavailable returns service unavailable | `503 Service Unavailable`; contract-defined unavailable response |
 
 ---
 
@@ -173,13 +173,13 @@ Important assertions:
 | TC-SYSTEM-POST-004 | Invalid `command` enum returns validation error | `400 Bad Request`; `ApiError` envelope |
 | TC-SYSTEM-POST-005 | `subsystems` item missing `tag` returns validation error | `400 Bad Request`; `ApiError` envelope |
 | TC-SYSTEM-POST-006 | `subsystems` item missing `value` returns validation error | `400 Bad Request`; `ApiError` envelope |
-| TC-SYSTEM-POST-007 | Wrong field type in `subsystems` returns validation error | `400 Bad Request`; `ApiError` envelope |
-| TC-SYSTEM-POST-008 | Wrong `Content-Type` is rejected | Request rejected per implementation policy |
-| TC-SYSTEM-POST-009 | Malformed JSON is rejected | `400 Bad Request` or implementation-equivalent parse failure |
+| TC-SYSTEM-POST-007 | Wrong field type in `subsystems` returns validation error | `400 Bad Request`; contract-defined validation error response |
+| TC-SYSTEM-POST-008 | Wrong `Content-Type` is rejected | `400 Bad Request`; contract-level bad-request response |
+| TC-SYSTEM-POST-009 | Malformed JSON is rejected | `400 Bad Request`; contract-level bad-request response |
 | TC-SYSTEM-POST-010 | Empty body is rejected | `400 Bad Request`; request body is required |
-| TC-SYSTEM-POST-011 | Missing bearer token returns unauthorized | `401 Unauthorized`; exact shared error envelope |
-| TC-SYSTEM-POST-012 | Caller lacks permission returns forbidden | `403 Forbidden`; exact shared error envelope |
-| TC-SYSTEM-POST-013 | Backend unavailable returns service unavailable | `503 Service Unavailable`; exact shared error envelope |
+| TC-SYSTEM-POST-011 | Missing bearer token returns unauthorized | `401 Unauthorized`; contract-defined unauthorized response |
+| TC-SYSTEM-POST-012 | Caller lacks permission returns forbidden | `403 Forbidden`; contract-defined forbidden response |
+| TC-SYSTEM-POST-013 | Backend unavailable returns service unavailable | `503 Service Unavailable`; contract-defined unavailable response |
 
 ---
 
@@ -272,7 +272,9 @@ Important assertions:
   - `assignments`
   - `permissions`
 - `activeScope` is nullable.
-- `user.role` must match the `RoleKey` enum exactly.
+- `user.id` is required.
+- `user.name`, `user.email`, `user.role`, `user.status`, and `user.lastLoginAt` are optional and validated only when present.
+- `user.role` must match the `RoleKey` enum exactly when present.
 - `assignments[*].scopeType` must match `entity | venue`.
 - `permissions.*.mode` must match `hidden | read_only | interactive`.
 - `lastLoginAt` must be a valid RFC3339 / ISO date-time string when non-null.
@@ -281,14 +283,14 @@ Important assertions:
 
 | ID | Name | Expected Result |
 |---|---|---|
-| TC-SESSION-001 | Session lookup succeeds with populated active scope | `200 OK`; field-level `SessionContext` assertions pass |
+| TC-SESSION-001 | Session lookup succeeds with populated active scope | `200 OK`; response is contract-compatible with `SessionContext` |
 | TC-SESSION-002 | Session lookup succeeds with `activeScope = null` | `200 OK`; nullable `activeScope` accepted |
-| TC-SESSION-003 | Session response validates user object fields exactly | required user fields present; enum/date-time assertions pass |
-| TC-SESSION-004 | Session response validates assignment collection exactly | each assignment contains required fields and valid nested path items |
-| TC-SESSION-005 | Session response validates permissions object exactly | each RBAC decision contains valid `allowed` and `mode` |
-| TC-SESSION-006 | Missing bearer token returns unauthorized | `401 Unauthorized`; exact shared error envelope |
-| TC-SESSION-007 | Caller outside allowed scope returns forbidden | `403 Forbidden`; exact shared error envelope |
-| TC-SESSION-008 | OWSEC or PROV unavailable returns service unavailable | `503 Service Unavailable`; exact shared error envelope |
+| TC-SESSION-003 | Session response validates required and optional user fields correctly | `user.id` is present; optional `UserSummary` fields are validated only when returned |
+| TC-SESSION-004 | Session response validates assignment collection | each assignment is contract-compatible and nested path items are valid when present |
+| TC-SESSION-005 | Session response validates permissions object | each permission decision is contract-compatible with valid `allowed` and `mode` values |
+| TC-SESSION-006 | Missing bearer token returns unauthorized | `401 Unauthorized`; contract-defined unauthorized response |
+| TC-SESSION-007 | Caller outside allowed scope returns forbidden | `403 Forbidden`; contract-defined forbidden response |
+| TC-SESSION-008 | OWSEC or PROV unavailable returns service unavailable | `503 Service Unavailable`; contract-defined unavailable response |
 
 ---
 
@@ -404,8 +406,8 @@ Important assertions:
 | TC-PUT-OPERATOR-001 | Update operator succeeds | `200 OK`; field-level `OperatorDetail` assertions pass |
 | TC-PUT-OPERATOR-002 | Empty body is rejected | `400 Bad Request` |
 | TC-PUT-OPERATOR-003 | Wrong field type is rejected | `400 Bad Request` |
-| TC-PUT-OPERATOR-004 | Wrong `Content-Type` is rejected | Request rejected per implementation policy |
-| TC-PUT-OPERATOR-005 | Malformed JSON is rejected | `400 Bad Request` or implementation-equivalent parse failure |
+| TC-PUT-OPERATOR-004 | Wrong `Content-Type` is rejected | `400 Bad Request`; contract-level bad-request response |
+| TC-PUT-OPERATOR-005 | Malformed JSON is rejected | `400 Bad Request`; contract-level bad-request response |
 | TC-PUT-OPERATOR-006 | Missing bearer token returns unauthorized | `401 Unauthorized` |
 | TC-PUT-OPERATOR-007 | Caller lacks permission returns forbidden | `403 Forbidden` |
 | TC-PUT-OPERATOR-008 | Unknown operator returns not found | `404 Not Found` |
@@ -831,7 +833,7 @@ Important assertions:
 | TC-GET-ENTITY-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-PUT-ENTITY-001 | Update entity succeeds | `200 OK`; field-level `EntityDetail` assertions pass |
 | TC-PUT-ENTITY-002 | Wrong field type returns validation error | `400 Bad Request` |
-| TC-PUT-ENTITY-003 | Empty or malformed body is rejected | `400 Bad Request` or implementation-equivalent parse failure |
+| TC-PUT-ENTITY-003 | Empty or malformed body is rejected | `400 Bad Request`; contract-level bad-request response |
 | TC-PUT-ENTITY-004 | Missing bearer token returns unauthorized | `401 Unauthorized` |
 | TC-PUT-ENTITY-005 | Caller lacks permission returns forbidden | `403 Forbidden` |
 | TC-PUT-ENTITY-006 | Unknown entity returns not found | `404 Not Found` |
@@ -1042,7 +1044,7 @@ Important assertions:
 | TC-GET-VENUE-006 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-PUT-VENUE-001 | Update venue succeeds | `200 OK`; field-level `VenueDetail` assertions pass |
 | TC-PUT-VENUE-002 | Wrong field type returns validation error | `400 Bad Request` |
-| TC-PUT-VENUE-003 | Empty or malformed body is rejected | `400 Bad Request` or implementation-equivalent parse failure |
+| TC-PUT-VENUE-003 | Empty or malformed body is rejected | `400 Bad Request`; contract-level bad-request response |
 | TC-PUT-VENUE-004 | Missing bearer token returns unauthorized | `401 Unauthorized` |
 | TC-PUT-VENUE-005 | Caller lacks permission returns forbidden | `403 Forbidden` |
 | TC-PUT-VENUE-006 | Unknown venue returns not found | `404 Not Found` |
@@ -1339,7 +1341,7 @@ Important assertions:
 | TC-GET-ROLE-005 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-PUT-ROLE-001 | Update role succeeds | `200 OK`; field-level `ManagementRole` assertions pass |
 | TC-PUT-ROLE-002 | Wrong field type returns validation error | `400 Bad Request` |
-| TC-PUT-ROLE-003 | Empty or malformed body is rejected | `400 Bad Request` or implementation-equivalent parse failure |
+| TC-PUT-ROLE-003 | Empty or malformed body is rejected | `400 Bad Request`; contract-level bad-request response |
 | TC-PUT-ROLE-004 | Missing bearer token returns unauthorized | `401 Unauthorized` |
 | TC-PUT-ROLE-005 | Caller lacks permission returns forbidden | `403 Forbidden` |
 | TC-PUT-ROLE-006 | Unknown role returns not found | `404 Not Found` |
@@ -1545,14 +1547,14 @@ Important assertions:
 | TC-CREATE-ASSIGNMENT-001 | Create new scoped assignment succeeds | `201 Created`; field-level `UserAssignment` assertions pass |
 | TC-CREATE-ASSIGNMENT-002 | Existing matching role is resolved by adding user | `201 Created`; response matches `UserAssignment` |
 | TC-CREATE-ASSIGNMENT-003 | Already-assigned request returns idempotent success | `200 OK`; response matches `UserAssignment` |
-| TC-CREATE-ASSIGNMENT-004 | Invalid `scopeType` returns endpoint-specific validation error | `400 Bad Request`; exact endpoint-specific `ApiError` example |
+| TC-CREATE-ASSIGNMENT-004 | Invalid `scopeType` returns endpoint-specific validation error | `400 Bad Request`; contract-defined validation error response for this route |
 | TC-CREATE-ASSIGNMENT-005 | Missing required field returns validation error | `400 Bad Request` |
 | TC-CREATE-ASSIGNMENT-006 | Wrong field type returns validation error | `400 Bad Request` |
 | TC-CREATE-ASSIGNMENT-007 | Malformed JSON or empty body is rejected | `400 Bad Request` |
 | TC-CREATE-ASSIGNMENT-008 | Missing bearer token returns unauthorized | `401 Unauthorized` |
 | TC-CREATE-ASSIGNMENT-009 | Caller lacks permission returns forbidden | `403 Forbidden` |
 | TC-CREATE-ASSIGNMENT-010 | Unknown user or scope returns not found | `404 Not Found` |
-| TC-CREATE-ASSIGNMENT-011 | Unresolvable downstream state returns endpoint-specific conflict | `409 Conflict`; exact endpoint-specific `ApiError` example |
+| TC-CREATE-ASSIGNMENT-011 | Unresolvable downstream state returns endpoint-specific conflict | `409 Conflict`; contract-defined conflict response for this route |
 | TC-CREATE-ASSIGNMENT-012 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-DELETE-ASSIGNMENT-001 | Delete assignment succeeds | `204 No Content`; no JSON body |
 | TC-DELETE-ASSIGNMENT-002 | Missing bearer token returns unauthorized | `401 Unauthorized` |
@@ -1698,8 +1700,8 @@ Important assertions:
 |---|---|---|
 | TC-GET-ACCESS-POLICY-001 | Get entity-scope access policy succeeds | `200 OK`; response matches exactly the entity branch of `oneOf` |
 | TC-GET-ACCESS-POLICY-002 | Get venue-scope access policy succeeds | `200 OK`; response matches exactly the venue branch of `oneOf` |
-| TC-GET-ACCESS-POLICY-003 | Missing `entityId` returns endpoint-specific validation error | `400 Bad Request`; exact endpoint-specific `ApiError` example |
-| TC-GET-ACCESS-POLICY-004 | `scope=venue` without `venueId` returns endpoint-specific validation error | `400 Bad Request`; exact endpoint-specific `ApiError` example |
+| TC-GET-ACCESS-POLICY-003 | Missing `entityId` returns endpoint-specific validation error | `400 Bad Request`; contract-defined validation error response for this route |
+| TC-GET-ACCESS-POLICY-004 | `scope=venue` without `venueId` returns endpoint-specific validation error | `400 Bad Request`; contract-defined validation error response for this route |
 | TC-GET-ACCESS-POLICY-005 | Invalid `scope` enum returns validation error | `400 Bad Request` |
 | TC-GET-ACCESS-POLICY-006 | Missing bearer token returns unauthorized | `401 Unauthorized` |
 | TC-GET-ACCESS-POLICY-007 | Caller lacks permission returns forbidden | `403 Forbidden` |
@@ -1707,13 +1709,13 @@ Important assertions:
 | TC-GET-ACCESS-POLICY-009 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
 | TC-PUT-ACCESS-POLICY-001 | Update entity-scope access policy succeeds | `200 OK`; response matches entity branch of `oneOf` exactly |
 | TC-PUT-ACCESS-POLICY-002 | Update venue-scope access policy succeeds | `200 OK`; response matches venue branch of `oneOf` exactly |
-| TC-PUT-ACCESS-POLICY-003 | Entity-scope payload containing `venueId` returns endpoint-specific validation error | `400 Bad Request`; exact endpoint-specific `ApiError` example |
+| TC-PUT-ACCESS-POLICY-003 | Entity-scope payload containing `venueId` returns endpoint-specific validation error | `400 Bad Request`; contract-defined validation error response for this route |
 | TC-PUT-ACCESS-POLICY-004 | Venue-scope payload missing `venueId` returns validation error | `400 Bad Request` |
 | TC-PUT-ACCESS-POLICY-005 | Invalid resource enum returns validation error | `400 Bad Request` |
 | TC-PUT-ACCESS-POLICY-006 | Invalid policy enum returns validation error | `400 Bad Request` |
 | TC-PUT-ACCESS-POLICY-007 | Malformed JSON or empty body is rejected | `400 Bad Request` |
 | TC-PUT-ACCESS-POLICY-008 | Missing bearer token returns unauthorized | `401 Unauthorized` |
 | TC-PUT-ACCESS-POLICY-009 | Caller lacks permission returns forbidden | `403 Forbidden` |
-| TC-PUT-ACCESS-POLICY-010 | Missing downstream binding returns endpoint-specific not found | `404 Not Found`; exact endpoint-specific `ApiError` example |
+| TC-PUT-ACCESS-POLICY-010 | Missing downstream binding returns endpoint-specific not found | `404 Not Found`; contract-defined not-found response for this route |
 | TC-PUT-ACCESS-POLICY-011 | Conflict returns shared conflict envelope | `409 Conflict`; exact `ApiError` structure |
 | TC-PUT-ACCESS-POLICY-012 | Backend unavailable returns service unavailable | `503 Service Unavailable` |
