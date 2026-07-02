@@ -8,7 +8,7 @@ It is based on the Phase 1 scope from the MDU master requirements and Phase 1 sp
 
 - MDU is the Mango-facing authenticated orchestration layer
 - MDU does not own login, session issuance, or users (OWSEC is the authoritative owner for identity and user CRUD); operators, hierarchy, roles, policies, and RBAC truth remain with PROV, while MDU orchestrates user-access assignments and access-policies.
-- MDU normalizes Mango-facing contracts and hides downstream quirks
+- MDU normalizes Mango-facing contracts and hides downstream quirks (except where direct hybrid routing is explicitly approved)
 
 This workflow document explains the intended runtime flow of Phase 1 business APIs and how MDU interacts with OWSEC and PROV.
 
@@ -182,7 +182,7 @@ MDU maps the downstream response into a Mango-facing contract.
 This is where MDU adds value:
 
 - normalizes field shape
-- hides downstream quirks
+- hides downstream quirks (except for approved exceptions such as operator list/create)
 - maps errors into stable MDU categories
 - returns a clean MDU response model
 

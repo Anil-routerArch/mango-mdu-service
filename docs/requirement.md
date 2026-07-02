@@ -23,7 +23,7 @@ This document is intentionally a commit-ready service requirements baseline, not
 | Primary Language | Go |
 | Runtime | Dockerized Go service |
 | Status | Master baseline |
-| Last Updated | 2026-06-19 |
+| Last Updated | 2026-07-02 |
 | Primary Consumers | Mango Operator UI and approved internal callers |
 | Primary Downstream Services | OWSEC, PROV, Billing Service, OWGW, NW Topology Service, OWANALYTICS |
 | Base API Namespace | `/api/v1/*` |
@@ -37,7 +37,7 @@ MDU Service shall be the Mango-facing orchestration layer for the MDU product do
 
 The browser/UI authenticates directly with OWSEC. OWSEC owns login, session issuance, browser bearer tokens, and token validation primitives. After login, the UI calls MDU business APIs using the OWSEC-issued bearer token.
 
-MDU validates inbound requests, normalizes business-facing contracts, composes multi-service payloads, forwards approved user context to downstream private APIs, hides downstream route quirks, and returns versioned UI-facing responses. MDU shall not become a second source of truth for domains already owned by downstream services.
+MDU validates inbound requests, normalizes business-facing contracts, composes multi-service payloads, forwards approved user context to downstream private APIs, hides downstream route quirks (except where direct hybrid routing is explicitly approved), and returns versioned UI-facing responses. MDU shall not become a second source of truth for domains already owned by downstream services.
 
 OWSEC is the authoritative owner for user identity (user CRUD, login, token validation, and token issuance). MDU owns only user-access orchestration (assignments, access policies, and role/policy/scope mapping around users) in Phase 1; full user CRUD is handled directly between the UI and OWSEC. 
 
@@ -65,7 +65,7 @@ OWSEC remains the system of record/authoritative owner for user accounts. PROV r
 7. PROV shall resolve user, operator, scope, role, policy, and RBAC decisions using its own source-of-truth data.
 8. MDU shall not become a separate RBAC, hierarchy, operator, user, inventory, configuration, billing, topology, or analytics source of truth.
 9. MDU shall normalize downstream responses and errors into versioned UI-facing contracts.
-10. MDU shall hide downstream route quirks and compatibility paths from the UI.
+10. MDU shall hide downstream route quirks and compatibility paths from the UI (except for approved documented hybrid routing exceptions, such as operator list/create).
 11. Local persistence in MDU shall be minimal and limited to MDU-owned operational concerns.
 12. MDU shall remain an orchestration service, not a replacement for downstream domain services.
 13. Stability within `/api/v1/*` shall be additive by default; breaking contract changes require an approved versioning or migration plan.
