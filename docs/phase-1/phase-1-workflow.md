@@ -53,7 +53,7 @@ These API families are indicative workflow groupings for Phase 1. They are not a
 In the current runtime baseline, the checked-in support routes are exposed on both public and private port interfaces:
 
 - **`GET /livez` (Liveness Check):** Registered on both public and private ports without authentication (only the public version on port `16010` is documented in the Phase 1 OpenAPI spec for simplicity).
-- **`/api/v1/system` (Diagnostics):** Registered on both public and private ports with a multi-mode authentication rule (token auth for public port `16010`, and approved internal authentication model handled by the private interface `AuthHandler` middleware for private port `17010`).
+- **`/api/v1/system` (Diagnostics):** Registered on both public and private ports with a multi-mode authentication rule (token auth for public port `16010` when enabled via `AUTH_ENABLED=true`, and approved internal authentication model handled by the private interface `AuthHandler` middleware for private port `17010`).
 
 Those support routes are outside the Mango-facing business workflow families described in this document. The `/api/v1/*` sections below describe the intended Phase 1 business workflow model to be implemented.
 
@@ -132,7 +132,7 @@ If the request is malformed, MDU returns a normalized validation error without c
 
 ## Step 3 — MDU validates bearer token through OWSEC
 
-Before protected business execution, MDU validates the bearer token using OWSEC-owned validation behavior.
+Before protected business execution, MDU validates the bearer token using OWSEC-owned validation behavior (when token authentication is enabled via the `AUTH_ENABLED` configuration parameter).
 
 Validation confirms at minimum:
 
@@ -207,7 +207,7 @@ Return the normalized Mango-facing caller context for the authenticated user, co
 ## Workflow
 
 1. UI calls `GET /api/v1/session`
-2. MDU validates the bearer token through OWSEC — this confirms user identity
+2. MDU validates the bearer token through OWSEC (when enabled via `AUTH_ENABLED=true`) — this confirms user identity
 3. MDU calls PROV with service auth plus forwarded user token to fetch the caller's Mango operational context (operator scope, roles, policies, hierarchy visibility)
 4. MDU composes the normalized `/session` response from the confirmed OWSEC identity and the PROV-returned context
 5. MDU returns the Mango-facing result

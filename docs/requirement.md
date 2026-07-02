@@ -567,7 +567,7 @@ Phase 1 does not require:
 
 ### Phase 1 API Inventory
 
-All Phase 1 MDU business APIs listed below require validated bearer-token authentication (via the `Authorization: Bearer <token>` header). Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response. Support routes may have different authentication posture (specifically, `/livez` is unauthenticated). Additionally, all routes (with the exception of `/livez`) accept the optional `X-Request-Id` and `X-Correlation-Id` tracking headers to enable tracing across distributed system components.
+All Phase 1 MDU business APIs listed below require validated bearer-token authentication (via the `Authorization: Bearer <token>` header, when enabled via the `AUTH_ENABLED` configuration). Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response when token validation is enabled. Support routes may have different authentication posture (specifically, `/livez` is unauthenticated). Additionally, all routes (with the exception of `/livez`) accept the optional `X-Request-Id` and `X-Correlation-Id` tracking headers to enable tracing across distributed system components.
 
 > **Operator Routing Strategy:**
 > For Phase 1, collection-level operator operations (specifically listing all operators and creating a new operator) are handled directly by hitting PROV endpoints (`GET /operator` and `POST /operator/{uuid}`). Due to PROV's downstream schema, the operator creation path is member-style: clients issue a `POST /operator/{uuid}` where `{uuid}` is set to the nil/zero UUID (`00000000-0000-0000-0000-000000000000` or `0`). Only individual operator operations (`GET`, `PUT`, `DELETE` under `/api/v1/operators/{operatorId}`) are routed through MDU. This hybrid routing model is mandatory: standard clients must call PROV directly for list/create operations, and call MDU for detailed operator member operations.
@@ -626,14 +626,14 @@ The MDU operational support surface is registered and exposed on both public and
 
 *   **`GET /livez` (Liveness Check):** Registered on both public and private ports without authentication. (Only the public version on port `16010` is documented in the Phase 1 OpenAPI contract for simplicity).
 *   **`/api/v1/system` (Diagnostics):** Registered on both public and private ports with a multi-mode authentication rule:
-    *   On the public port (port `16010`), it uses validated bearer-token auth (`bearerAuth`), which is formally documented in the Phase 1 OpenAPI contract.
+    *   On the public port (port `16010`), it uses validated bearer-token auth (`bearerAuth`, when enabled via the `AUTH_ENABLED` configuration), which is formally documented in the Phase 1 OpenAPI contract.
     *   On the private port (port `17010`), it uses the approved internal authentication model (handled by the private interface `AuthHandler` middleware), which is kept internal and omitted from the client-facing OpenAPI spec.
 
 ### Completion Criteria
 
 Phase 1 is complete only when:
 
-1. protected business APIs validate OWSEC bearer tokens and reject unauthenticated requests with `401`.
+1. protected business APIs validate OWSEC bearer tokens and reject unauthenticated requests with `401` (when authentication is enabled via `AUTH_ENABLED=true`).
 2. downstream private calls use service auth plus forwarded user context where required.
 3. scaffold placeholder APIs are removed or isolated from production routes.
 4. all listed Session, Operator, User, Hierarchy, Entity, Venue, Policy, and Role endpoints are available and match the methods defined in the Phase 1 OpenAPI spec.

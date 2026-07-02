@@ -60,7 +60,7 @@ paths:
   /system:
     servers:
       - url: "https://{host}:{publicPort}/api/v1"
-        description: Public HTTP API Interface (Authentication via bearerAuth)
+        description: Public HTTP API Interface (Authentication via bearerAuth, conditionally enabled/disabled via AUTH_ENABLED)
         variables:
           host:
             default: localhost
@@ -1153,6 +1153,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: OWSEC-issued user bearer token authentication. Note that token validation is conditionally enforced on the public interface and can be bypassed for local development and testing by setting the environment variable AUTH_ENABLED=false.
 
   parameters:
     XRequestIdHeader:
