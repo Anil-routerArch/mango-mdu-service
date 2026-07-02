@@ -7,10 +7,8 @@ This document describes how Phase 1 of `mango-mdu-service` works at the workflow
 It is based on the Phase 1 scope from the MDU master requirements and Phase 1 specification:
 
 - MDU is the Mango-facing authenticated orchestration layer
-- OWSEC is used for token validation and identity/session checks
-- PROV is used for foundational operator-domain workflows
-- MDU does not own login, session issuance, or users (OWSEC is the authoritative owner); customers, hierarchy, roles, policies, and RBAC truth remain with PROV
-- MDU normalizes Mango-facing contracts and hides downstream quirks
+- MDU does not own login, session issuance, or users (OWSEC is the authoritative owner for identity and user CRUD); operators, hierarchy, roles, policies, and RBAC truth remain with PROV, while MDU orchestrates user-access assignments and access-policies.
+- MDU normalizes Mango-facing contracts and hides downstream quirks (except where direct hybrid routing is explicitly approved)
 
 This workflow document explains the intended runtime flow of Phase 1 business APIs and how MDU interacts with OWSEC and PROV.
 
@@ -39,23 +37,25 @@ So Phase 1 is already a real integration phase with **OWSEC + PROV**.
 
 Phase 1 includes the following Mango-facing API families:
 
-- `GET /api/v1/mdu/me` — OWSEC is the authoritative owner for user identity; MDU calls PROV to fetch the authenticated user's Mango bootstrap context (operator scope, customer scope, roles, hierarchy visibility) and composes the normalized `/me` response
-- `GET /api/v1/mdu/session`
-- `/api/v1/mdu/operators/*`
-- `/api/v1/mdu/entities/*`
-- `/api/v1/mdu/venues/*`
-- `/api/v1/mdu/policies/*`
-- `/api/v1/mdu/roles/*`
-- `/api/v1/mdu/customers/*`
+- `GET /api/v1/session` — OWSEC is the authoritative owner for user identity; MDU calls PROV to fetch the authenticated user's Mango bootstrap context (operator scope, roles, hierarchy visibility) and composes the normalized `/session` response.
+- `/api/v1/operators/*` — Standard APIs for managing operators.
+- `/api/v1/entities/*` — APIs for entity hierarchy management wrapper.
+- `/api/v1/venues/*` — APIs for venue management wrapper.
+- `/api/v1/policies/*` — APIs for management policies wrapper.
+- `/api/v1/roles/*` — APIs for management roles wrapper.
+- `/api/v1/users/*` — User assignments and access-policy orchestration (e.g. `GET /api/v1/users/{userId}/assignments` and `GET /api/v1/users/{userId}/access-policy`).
+
+### Excluded APIs
+Contacts, subscriber management (invite/creation), and subscriber devices are not exposed as active MDU contract routes in Phase 1 (with the sole exception of `/api/v1/operators/{operatorId}/subscribers` for operator-scoped listing). They are managed downstream in PROV.
 
 These API families are indicative workflow groupings for Phase 1. They are not a strict one-to-one route inventory and do not require MDU to mirror downstream route structure exactly.
 
-In the current runtime baseline, the checked-in support routes are still limited to:
+In the current runtime baseline, the checked-in support routes are exposed on both public and private port interfaces:
 
-- `GET /livez`
-- `/api/v1/system`
+- **`GET /livez` (Liveness Check):** Registered on both public and private ports without authentication (only the public version on port `16010` is documented in the Phase 1 OpenAPI spec for simplicity).
+- **`/api/v1/system` (Diagnostics):** Registered on both public and private ports with a multi-mode authentication rule (token auth for public port `16010` when enabled via `AUTH_ENABLED=true`, and approved internal authentication model handled by the private interface `AuthHandler` middleware for private port `17010`).
 
-Those support routes are outside the Mango-facing business workflow families described in this document. The `/api/v1/mdu/*` sections below describe the intended Phase 1 business workflow model to be implemented.
+Those support routes are outside the Mango-facing business workflow families described in this document. The `/api/v1/*` sections below describe the intended Phase 1 business workflow model to be implemented.
 
 ---
 
@@ -74,9 +74,9 @@ The master requirements identify the following current known PROV route families
 - `/managementPolicy/{uuid}`
 - `/managementRole`
 - `/managementRole/{id}`
-- PROV-owned customer routes as required by the implementation baseline
+- `/subscriber` (for operator-scoped subscriber lists)
 
-MDU uses these as downstream sources where the Phase 1 Mango-facing workflow requires them.
+Contacts and subscriber device APIs are not active in MDU and remain purely downstream/supporting context in PROV. MDU uses these as downstream sources where the Phase 1 Mango-facing workflow requires them.
 
 ---
 
@@ -84,7 +84,7 @@ MDU uses these as downstream sources where the Phase 1 Mango-facing workflow req
 
 ### Inbound to MDU
 
-Protected Phase 1 APIs receive:
+All protected Phase 1 API operations accept optional tracing headers as part of their request contract:
 
 ```http
 Authorization: Bearer <owsec-token>
@@ -92,7 +92,7 @@ X-Request-Id: <request-id>         optional
 X-Correlation-Id: <correlation-id> optional
 ```
 
-If request or correlation IDs are missing, MDU generates them.
+If request or correlation IDs are missing, MDU generates them and preserves them across the entire request life-cycle.
 
 ### Outbound from MDU to PROV
 
@@ -105,7 +105,7 @@ x-request-id: <request-id>
 x-correlation-id: <correlation-id>
 ```
 
-This is the standard Phase 1 downstream trust flow.
+This is the standard Phase 1 downstream trust flow. MDU propagates tracing headers downstream where applicable. If downstream services do not accept them explicitly, MDU still uses them for internal observability/log correlation.
 
 ---
 
@@ -115,7 +115,7 @@ Every protected Phase 1 business API follows the same base workflow.
 
 ## Step 1 — UI calls MDU
 
-The Mango UI or equivalent caller sends a request to an MDU Phase 1 endpoint under `/api/v1/mdu/*`.
+The Mango UI or equivalent caller sends a request to an MDU Phase 1 endpoint under `/api/v1/*`.
 
 ## Step 2 — MDU validates transport input
 
@@ -132,7 +132,7 @@ If the request is malformed, MDU returns a normalized validation error without c
 
 ## Step 3 — MDU validates bearer token through OWSEC
 
-Before protected business execution, MDU validates the bearer token using OWSEC-owned validation behavior.
+Before protected business execution, MDU validates the bearer token using OWSEC-owned validation behavior (when token authentication is enabled via the `AUTH_ENABLED` configuration parameter).
 
 Validation confirms at minimum:
 
@@ -152,7 +152,7 @@ Once the token is valid, MDU determines which Phase 1 workflow is being executed
 - hierarchy/entity view
 - venue view
 - role/policy view
-- customer workflow
+- operator details/update/delete workflow
 - access-summary style view
 
 ## Step 5 — MDU calls PROV where domain truth is required
@@ -169,11 +169,11 @@ PROV remains responsible for:
 
 - scope decisions
 - RBAC decisions
-- customer access
+- operator access
 - hierarchy visibility
-- source-of-truth data for operators, entities, venues, roles, policies, and customers
+- source-of-truth data for operators, entities, venues, roles, and policies
 
-OWSEC is the authoritative owner for user identity (user CRUD, login, token issuance). PROV provides the user's Mango operational context: operator scope, customer scope, roles, policies, and hierarchy visibility.
+OWSEC is the authoritative owner for user identity (user CRUD, login, token issuance). PROV provides the user's Mango operational context: operator scope, roles, policies, and hierarchy visibility.
 
 ## Step 7 — MDU normalizes response
 
@@ -182,7 +182,7 @@ MDU maps the downstream response into a Mango-facing contract.
 This is where MDU adds value:
 
 - normalizes field shape
-- hides downstream quirks
+- hides downstream quirks (except for approved exceptions such as operator list/create)
 - maps errors into stable MDU categories
 - returns a clean MDU response model
 
@@ -192,7 +192,7 @@ The caller receives a normalized Phase 1 response.
 
 ---
 
-# 2. Bootstrap Workflow — `GET /api/v1/mdu/me`
+# 2. Bootstrap Workflow — `GET /api/v1/session`
 
 ## Goal
 
@@ -201,15 +201,15 @@ Return the normalized Mango-facing caller context for the authenticated user, co
 ## Ownership Model
 
 - **OWSEC** owns user CRUD, login, token issuance, and user account identity. The bearer token from OWSEC is the source of the caller's identity claim.
-- **PROV** provides the logged-in user's operational context for Mango: operator scope, customer scope, roles, policies, hierarchy visibility, and dashboard bootstrap data.
-- **MDU** composes the final `/me` response from the OWSEC-validated identity plus the PROV-fetched Mango context.
+- **PROV** provides the logged-in user's operational context for Mango: operator scope, roles, policies, hierarchy visibility, and dashboard bootstrap data.
+- **MDU** composes the final `/session` response from the OWSEC-validated identity plus the PROV-fetched Mango context.
 
 ## Workflow
 
-1. UI calls `GET /api/v1/mdu/me`
-2. MDU validates the bearer token through OWSEC — this confirms user identity
-3. MDU calls PROV with service auth plus forwarded user token to fetch the caller's Mango operational context (operator scope, customer scope, roles, policies, hierarchy visibility)
-4. MDU composes the normalized `/me` response from the confirmed OWSEC identity and the PROV-returned context
+1. UI calls `GET /api/v1/session`
+2. MDU validates the bearer token through OWSEC (when enabled via `AUTH_ENABLED=true`) — this confirms user identity
+3. MDU calls PROV with service auth plus forwarded user token to fetch the caller's Mango operational context (operator scope, roles, policies, hierarchy visibility)
+4. MDU composes the normalized `/session` response from the confirmed OWSEC identity and the PROV-returned context
 5. MDU returns the Mango-facing result
 
 ## Important Rule
@@ -226,36 +226,13 @@ OWSEC is the authoritative owner for user identity. PROV is the source of the us
 
 ---
 
-# 3. Bootstrap Workflow — `GET /api/v1/mdu/session`
-
-## Goal
-
-Return the token-backed bootstrap/session view for the authenticated caller.
-
-## Workflow
-
-1. UI calls `GET /api/v1/mdu/session`
-2. MDU validates the bearer token through OWSEC
-3. MDU determines the caller bootstrap/session context
-4. If required, MDU uses PROV-backed domain context to complete the response
-5. MDU returns a normalized session/bootstrap payload
-
-## Important Rule
-
-This endpoint does **not** mean MDU owns browser session issuance.
-
-It is only a Mango-facing bootstrap/session-context view built on top of authenticated user context.
-
----
-
-# 4. Read Workflow — PROV-backed List or Detail APIs
+# 3. Read Workflow — PROV-backed List or Detail APIs
 
 This is the common flow for Phase 1 read endpoints such as:
 
 - operators
 - entities
 - venues
-- customers
 - policies
 - roles
 
@@ -282,17 +259,17 @@ The exact MDU route may vary, but the read workflow is the same.
 
 Examples include:
 
-- `/api/v1/mdu/operators/*` using PROV `/operator` routes
-- `/api/v1/mdu/entities/*` using PROV `/entity` routes
-- `/api/v1/mdu/venues/*` using PROV `/venue` routes
-- `/api/v1/mdu/policies/*` using PROV `/managementPolicy` routes
-- `/api/v1/mdu/roles/*` using PROV `/managementRole` routes
+- `/api/v1/operators/*` using PROV `/operator` routes
+- `/api/v1/entities/*` using PROV `/entity` routes
+- `/api/v1/venues/*` using PROV `/venue` routes
+- `/api/v1/policies/*` using PROV `/managementPolicy` routes
+- `/api/v1/roles/*` using PROV `/managementRole` routes
 
 MDU may reshape or rename fields, but PROV remains the source of truth.
 
 ---
 
-# 5. Hierarchy Workflow — Entities and Tree-Oriented Reads
+# 4. Hierarchy Workflow — Entities and Tree-Oriented Reads
 
 Phase 1 includes foundational hierarchy-related workflows backed by PROV.
 
@@ -318,14 +295,13 @@ Phase 1 does **not** create a local hierarchy source of truth inside MDU.
 
 ---
 
-# 6. Authorization-sensitive Read Workflow
+# 5. Authorization-sensitive Read Workflow
 
 Some Phase 1 APIs may look like simple reads, but they are still authorization-sensitive because the caller should only see:
 
 - allowed operators
 - allowed entities
 - allowed venues
-- allowed customers
 - allowed policies/roles
 - allowed hierarchy scope
 
@@ -347,7 +323,7 @@ MDU must not rely on frontend hiding to enforce these rules.
 
 ---
 
-# 7. Optional Phase 1 Mutation Workflow — if approved for selected PROV-backed domains
+# 6. Optional Phase 1 Mutation Workflow — if approved for selected PROV-backed domains
 
 If a selected Phase 1 API includes an approved mutation on a PROV-owned domain object, MDU still acts only as the orchestration layer and not as the source of truth.
 
@@ -380,7 +356,7 @@ This section describes the mutation flow only for approved Phase 1 cases. It mus
 
 ---
 
-# 8. Access Summary Workflow
+# 7. Access Summary Workflow
 
 Phase 1 may include access-summary style endpoints where the UI needs a summarized view of effective access.
 
@@ -404,6 +380,135 @@ PROV remains the RBAC decision-maker.
 
 MDU only shapes the summary.
 
+---
+
+# 8. User, Operator, and Policy Management Workflow
+
+This section describes how northbound clients manage user access, roles, policies, and operator-scoped subscribers.
+
+## Goal
+Manage user-related access context, roles, and access-policies in Phase 1, using OWSEC as the source of truth for user accounts and identity, and PROV as the source of truth for operators, roles, policies, hierarchy, and subscribers.
+
+## Architectural Boundaries & Service Division
+In Phase 1, all user-related entities belong to one of two services:
+1. **OWSEC (User identity, credentials, token authority, and user CRUD):** 
+   - Authoritative for basic user profiles (name, email, password, login status, MFA) and user CRUD operations.
+   - Serves as the authentication and authorization token authority.
+2. **PROV (User roles, policies, and operator data):**
+   - **Management Roles & Policies:** Defines the specific permissions and resource scopes (entities, venues) linked to user UUIDs.
+   - **Operators:** Manages operator metadata and settings.
+
+MDU acts as the orchestration layer for access-policies and assignments. Contacts, subscriber invite/registration, and subscriber devices are out of scope for Phase 1.
+
+## Detailed Workflows
+
+### 1. User Identity Management (OWSEC)
+User identity, credentials, login, session token validation/issuance, and user account CRUD are out of MDU scope and are handled directly between the UI/clients and OWSEC. MDU does not expose user CRUD endpoints.
+* **OWSEC Endpoints (Bypassing MDU):**
+  * `GET /users` (List users)
+  * `GET /user/{id}` (Get user profile)
+  * `POST /user` (Create user account)
+  * `PUT /user/{id}` (Update user account profile or status)
+  * `DELETE /user/{id}` (Delete user account)
+* **Orchestration Flow:** These requests bypass MDU entirely and go directly to OWSEC. MDU has no CRUD user database and does not coordinate user account lifecycle events in Phase 1.
+
+### 2. User Roles & Access Policies Management (PROV via MDU)
+To retrieve, grant, modify, or revoke scoped resource-level access permissions for a user:
+
+#### Role Distinction note
+The MDU API contract distinguishes between two different types of roles:
+*   **Global Identity Roles (`RoleKey` enum):** These represent the static, system-wide account types defined and enforced by the identity provider (OWSEC) (such as `root`, `admin`, `csr`). These are immutable system classes.
+*   **Dynamic Management Roles (`ManagementRole` resource):** These are dynamic, custom role-templates created within Provisioning (PROV) to bind policies, users, and hierarchy nodes together. Because operators can define and name their own resource templates (e.g. "Custom Venue Admin Template"), this resource uses a free-form string for its descriptive name. However, northbound user scope assignments (`CreateUserAssignmentRequest`, `UserAssignment`, and `SessionAssignment` schemas) only support the fixed `RoleKey` allowlist of global identity roles, meaning custom PROV templates themselves are out of scope for these assignment endpoints.
+* **MDU Northbound API Endpoints:**
+  * `GET /api/v1/users/{userId}/access-policy?scope={scope}&entityId={entityId}&venueId={venueId}`
+  * `PUT /api/v1/users/{userId}/access-policy`
+* **Downstream PROV API Endpoints:**
+  * **Management Roles:** `GET /managementRole`, `POST /managementRole`, `PUT /managementRole/{id}`, `DELETE /managementRole/{id}`
+  * **Management Policies:** `GET /managementPolicy`, `POST /managementPolicy`, `PUT /managementPolicy/{uuid}`, `DELETE /managementPolicy/{uuid}`
+* **Orchestration Flow:**
+  * **Retrieve Access Policy (GET):**
+    1. The client calls `GET /api/v1/users/{userId}/access-policy` specifying `scope` (always required), `entityId` (always required), and `venueId` (required only for venue scope).
+    2. MDU validates the authorization token via OWSEC.
+    3. MDU calls PROV `GET /managementRole` filtering by `entity` ID (and `venue` ID if requesting venue scope) to locate the role template associated with the user.
+    4. MDU calls PROV `GET /managementPolicy/{uuid}` using the policy ID linked to the role to fetch its detailed permission entries.
+    5. MDU maps and merges this data into a unified `UserAccessPolicy` payload: if scope is `entity`, only `entityId` is included; if scope is `venue`, both `entityId` and `venueId` are included.
+  * **Assign or Update Access Policy (PUT):**
+    1. The client submits a `PUT /api/v1/users/{userId}/access-policy` payload detailing the scope (entity/venue), role template, target `entityId` (always required), `venueId` (required only if scope is `venue`), and resource permissions.
+    2. MDU validates the request body and authorizes the caller.
+    3. MDU interacts with PROV downstream:
+       - Creates or updates a `ManagementPolicy` containing entries for the specified resource permissions (assigning resource UUIDs/patterns and access lists).
+       - Creates or updates a `ManagementRole` for the target scope (entity or venue), linking it to the `ManagementPolicy`, and ensuring the target user's UUID is in the `users` list.
+       > [!NOTE]
+       > **ManagementPolicyEntry User Bindings Behavior:** For compatibility with the downstream PROV database schema, `ManagementPolicyEntry` exposes a `users` array. MDU does not persist this array locally; instead, it acts as a stateless facade and forwards it directly to downstream PROV as-is during policy creation and updates, where PROV persists it in the system of record. Although not ignored or rejected, standard Mango-facing client applications should primarily manage user bindings via the `ManagementRole` and assignments endpoints rather than modifying the policy `users` array directly.
+
+    4. MDU returns the normalized `UserAccessPolicy` configuration back to the client.
+
+### 2a. User Scope Assignments (PROV via MDU)
+To list, assign, or remove user bindings to entity and venue scopes:
+* **MDU Northbound API Endpoints:**
+  * `GET /api/v1/users/{userId}/assignments` (Get effective scope assignments)
+  * `POST /api/v1/users/{userId}/assignments` (Assign user to entity or venue scope)
+  * `DELETE /api/v1/users/{userId}/assignments/{assignmentId}` (Remove assignment by ID)
+* **Orchestration Flow:**
+  * **List Assignments:** MDU calls PROV `GET /managementRole`, retrieves all roles containing the target `userId`, and maps the associated `entity` or `venue` field to list entries.
+  * **Assign User (POST):** 
+    - The client sends a `CreateUserAssignmentRequest` containing `scopeType` (`entity` or `venue`), `scopeId`, and `role`.
+    - MDU calls PROV `GET /managementRole` to check if a matching role already exists for that scope.
+    - MDU resolves the target assignment using the following rules:
+      1. **Create (returns 201 Created)**: If no matching scoped role exists, MDU creates one using `POST /managementRole` with the user's UUID in the `users` list.
+      2. **Update/Resolve (returns 201 Created)**: If a matching scoped role exists but the target user is not yet bound to it, MDU updates it using `PUT /managementRole/{id}` to add the user's UUID to the `users` array.
+      3. **No-Op/Idempotent Success (returns 200 OK)**: If the target user's UUID is already present in the existing matching role's `users` array, MDU returns success immediately without performing any downstream modifications.
+      4. **Conflict (returns 409 Conflict)**: If the request conflicts with downstream state in a way that cannot be safely/deterministically resolved (e.g. unresolvable name/ID duplicates), MDU rejects the operation.
+  * **Remove Assignment (DELETE):**
+    - MDU retrieves the `ManagementRole` identified by `assignmentId` using `GET /managementRole/{id}`.
+    - MDU removes the user's UUID from the `users` array and updates the role using `PUT /managementRole/{id}`.
+    - If the user was the only member in the role, MDU may optionally delete the role entirely using `DELETE /managementRole/{id}`.
+
+### 3. Excluded Contact Workflows
+Contacts and Operator Contacts (backed by PROV `/contact` and `/operatorContact` routes) are out of scope for MDU in Phase 1 and are not exposed as active MDU endpoints.
+
+### 4. Operator Management (PROV via MDU & Direct)
+To manage operator profile details (retrieval, updates, and deletion through the MDU facade, or list and create operations directly to PROV):
+* **MDU Northbound API Endpoints:**
+  * **Operator Paths:**
+    * `GET /api/v1/operators/{operatorId}` (Retrieve operator details)
+    * `PUT /api/v1/operators/{operatorId}` (Update operator details)
+    * `DELETE /api/v1/operators/{operatorId}` (Delete an operator)
+* **Direct UI/Client API Endpoints (Bypassing MDU):**
+  * `GET /operator` (List all operators in PROV)
+  * `POST /operator/{uuid}` (Create a new operator in PROV; `{uuid}` must be set to `00000000-0000-0000-0000-000000000000` or `0` for new creation)
+* **Orchestration Flow:**
+  * **Hybrid Routing Model:** Standard client applications (e.g. the MDU UI) call PROV directly to list operators (`GET /operator`) and create a new operator (`POST /operator/{uuid}` where `{uuid}` is set to the nil/zero UUID `00000000-0000-0000-0000-000000000000` or `0`). Detail-level operations such as retrieving details, updating name/description, or deleting an operator are routed through the MDU facade. The MDU facade routes enforce OWSEC bearer authentication, while direct PROV list/create operations follow their own approved authentication paths.
+
+### 4a. Management Policies & Roles (PROV via MDU)
+To retrieve, create, update, or delete management policies and roles:
+* **MDU Northbound API Endpoints:**
+  * **Policies:**
+    * `GET /api/v1/policies` (List management policies)
+    * `POST /api/v1/policies` (Create management policy)
+    * `GET /api/v1/policies/{policyId}` (Get policy details)
+    * `PUT /api/v1/policies/{policyId}` (Update policy)
+    * `DELETE /api/v1/policies/{policyId}` (Delete policy)
+  * **Roles:**
+    * `GET /api/v1/roles` (List management roles)
+    * `POST /api/v1/roles` (Create management role)
+    * `GET /api/v1/roles/{roleId}` (Get role details)
+    * `PUT /api/v1/roles/{roleId}` (Update role)
+    * `DELETE /api/v1/roles/{roleId}` (Delete role)
+* **Downstream PROV API Endpoints:**
+  * `GET /managementPolicy`, `POST /managementPolicy`, `PUT /managementPolicy/{uuid}`, `DELETE /managementPolicy/{uuid}`
+  * `GET /managementRole`, `POST /managementRole`, `PUT /managementRole/{id}`, `DELETE /managementRole/{id}`
+* **Orchestration Flow:**
+  * **Façade Pattern:** MDU acts as a stateless pass-through for policies and roles, forwarding the requests directly to the downstream PROV endpoints, translating schemas where necessary.
+
+### 5. Operator-scoped Subscriber Management (PROV via MDU)
+To list subscriber accounts associated with a specific operator:
+* **MDU Northbound API Endpoints:**
+  * `GET /api/v1/operators/{operatorId}/subscribers` (List subscribers)
+* **Downstream PROV API Endpoints:**
+  * `GET /subscriber`
+* **Orchestration Flow:**
+  * **List Subscribers (Constrained):** MDU calls PROV `GET /subscriber?listOnly=true` to retrieve all signup entries, filters the results to only include those matching the target `operatorId` parameter, and returns the filtered subset as a simple, unpaginated list.
 ---
 
 # 9. Timeout and Retry Behavior

@@ -18,9 +18,10 @@ A repo-ready foundation for the Mango Cloud MDU backend service in the OpenWiFi 
 ├── docs/                        # Specifications and API contracts
 │   ├── requirement.md           # Master requirements document
 │   ├── common-requirement.md    # Cross-phase engineering and security guardrails
-│   ├── openapi.yaml             # OpenAPI (Swagger) API definition
+│   ├── openapi.yaml             # OpenAPI (Swagger) API definition (master draft)
 │   └── phase-1/                 # Phase 1 specification and workflow documents
 │       ├── spec.md              # Phase 1 specification
+│       ├── mango-mdu-openapi.yaml # Phase 1 OpenAPI API contract (authoritative for Phase 1)
 │       └── phase-1-workflow.md  # Phase 1 runtime workflow description
 ├── configs/                     # Configurations for development/testing
 │   └── local-dev.env            # Env configuration for local running (outside Docker)
@@ -47,16 +48,24 @@ A repo-ready foundation for the Mango Cloud MDU backend service in the OpenWiFi 
 
 ---
 
+## OpenAPI Contract Versioning
+
+Because the MDU service is implemented phase-wise, each phase maintains its own dedicated and authoritative OpenAPI specification under `docs/phase-<N>/`. **Reviewers and implementers should refer to the phase-specific active contract (e.g., `docs/phase-1/mango-mdu-openapi.yaml`) as the source of truth for active development before referencing the top-level master draft `docs/openapi.yaml`.**
+
+* **Phase 1 Active Contract:** `docs/phase-1/mango-mdu-openapi.yaml` is the authoritative contract for Phase 1 development, testing, and reviews. Note that this file intentionally defines only the public interface (port `16010`) to prevent exposing internal infrastructure in the client-facing specification. For the complete runtime route and authentication coverage—including private-port support routes—reviewers should refer to the **Runtime Surface** section below and the Phase 1 specification (`docs/phase-1/spec.md`).
+* **Master Draft Contract:** The top-level `docs/openapi.yaml` acts as a master draft encompassing multi-phase proposals.
+* **Alignment Strategy:** As each phase's implementation is completed and validated, the master draft `docs/openapi.yaml` will be aligned to match the finalized contract of that phase. Currently, the phase-specific OpenAPI spec takes priority for the code in that phase.
+
+---
+
 ## Runtime Surface
 
-The current checked-in runtime baseline exposes:
+The current checked-in runtime baseline exposes the operational support surface across two distinct port interfaces:
 
-- public TLS interface on port `16010`
-- private TLS interface on port `17010`
-- unauthenticated `/livez` on both ports
-- authenticated `/api/v1/system` diagnostics routes on both ports via the shared `system-routes` module
+- **Public TLS Interface (Port `16010`):** Exposes `/livez` (unauthenticated) and `/api/v1/system` (requires standard `bearerAuth`). These public endpoints are formally documented in the authoritative Phase 1 OpenAPI contract (`docs/phase-1/mango-mdu-openapi.yaml`).
+- **Private TLS Interface (Port `17010`):** Exposes `/livez` (unauthenticated) and `/api/v1/system` (requires the approved internal authentication model handled by the private interface `AuthHandler` middleware). These internal/private version endpoints are kept internal and are intentionally omitted from the client-facing OpenAPI spec.
 
-The MDU-specific Mango-facing `/api/v1/mdu/*` business APIs described in the Phase 1 docs are not yet implemented in this branch.
+For full details on this multi-mode route and authentication rule, see `docs/phase-1/spec.md`. The MDU-specific Mango-facing `/api/v1/*` business APIs described in the Phase 1 docs are not yet implemented in this branch.
 
 ---
 

@@ -14,13 +14,13 @@ This document defines what Phase 1 must include, what it must not include, and w
 
 The goal of Phase 1 is to establish MDU Service as the service that:
 
-- accepts Mango-facing API requests under `/api/v1/mdu/*`
+- accepts Mango-facing API requests under `/api/v1/*`
 - validates OWSEC bearer tokens before protected operations
 - calls downstream services using service credentials
 - forwards user context to PROV where required
 - exposes normalized Mango-facing contracts
-- preserves OWSEC as the authoritative owner for users
-- preserves PROV as the source of truth for customers, hierarchy, roles, policies, and RBAC
+- preserves OWSEC as the authoritative owner for user identity and credentials
+- preserves PROV as the source of truth for operators, hierarchy, roles, policies, and RBAC
 
 In simple terms, Phase 1 makes MDU the first real backend entry point for Mango operator workflows.
 
@@ -30,28 +30,24 @@ In simple terms, Phase 1 makes MDU the first real backend entry point for Mango 
 
 Phase 1 includes:
 
-- service bootstrap and production-ready runtime setup
-- authenticated Mango-facing APIs under `/api/v1/mdu/*`
-- inbound bearer-token validation through OWSEC
-- token-backed bootstrap APIs:
-  - `GET /api/v1/mdu/me`
-  - `GET /api/v1/mdu/session`
-- service-to-service downstream calls using internal service credentials
-- forwarding user bearer context to PROV using `x-authorization` where required
-- foundational PROV-backed APIs and workflows for:
-  - operators
-  - entities
-  - venues
-  - roles
-  - policies
-  - customers where needed for the foundation baseline
-- access-summary style workflows where PROV remains the RBAC decision-maker
-- normalized request validation
-- normalized error handling
-- request tracing, request ID, and correlation ID propagation
-- a clean production route baseline without placeholder scaffold CRUD surfaces
+- service bootstrap and production-ready runtime setup.
+- authenticated Mango-facing APIs under `/api/v1/*` requiring validated bearer-token authentication through OWSEC.
+- inbound bearer-token validation through OWSEC.
+- token-backed session/bootstrap view APIs:
+  - `GET /api/v1/session`.
+- operator APIs and user-access orchestration APIs (assignments, access policies) as approved Phase 1 northbound wrapper contracts over downstream services.
+- complete resource management wrapper APIs (entities, venues, roles, policies) delegating state persistence to PROV.
+- user-scoped assignment APIs (for user roles and access scopes) and access-policy management.
+- subscriber list retrieval for operators.
+- service-to-service downstream calls using internal service credentials.
+- forwarding user bearer context to PROV using `x-authorization` where required.
+- access-summary style workflows where PROV remains the RBAC decision-maker.
+- normalized request validation.
+- normalized error handling, supporting return of `401`, `403`, `404`, `409`, and `503` responses where appropriate in a stable `ApiError` envelope.
+- request tracing, request ID, and correlation ID propagation.
+- a clean production route baseline without placeholder scaffold CRUD surfaces.
 
-The non-business support surface is limited to `/livez` and `/api/v1/system` while Mango-facing `/api/v1/mdu/*` business APIs remain Phase 1 implementation work.
+All operator, entity, venue, role, and policy APIs in Phase 1 act as MDU-facing normalized wrapper contracts, and user endpoints are limited to access orchestration (assignments, access policies) while user identity and CRUD remain directly with OWSEC.
 
 ---
 
@@ -59,16 +55,15 @@ The non-business support surface is limited to `/livez` and `/api/v1/system` whi
 
 Phase 1 does not include:
 
-- MDU-owned login
-- MDU-owned session issuance
-- local RBAC ownership
-- local user or customer source-of-truth ownership
-- billing integration
-- live device runtime integration
-- topology integration
-- analytics integration
-- async job/workflow durability
-- advanced admin/debug workflow APIs
+- MDU-owned login or session issuance.
+- local RBAC or policy persistence (PROV is the source of truth).
+- local user or operator database storage (OWSEC/PROV are the sources of truth).
+- billing integrations (billing is out of scope for Phase 1).
+- live device runtime integration.
+- topology integration.
+- analytics integration.
+- async job/workflow durability.
+- advanced admin/debug workflow APIs.
 
 These belong to later phases unless the requirements are formally changed.
 
@@ -99,13 +94,13 @@ Admin/debug/support APIs are out of the normal Phase 1 business scope except min
 
 For the current runtime baseline, the operational support surface is:
 
-- `GET /livez` on both public and private ports without authentication
-- `/api/v1/system` on both public and private ports through the shared subsystem/system-routes module
+- `GET /livez` on both public and private ports without authentication (only the public interface on port `16010` is documented in the Phase 1 OpenAPI spec for simplicity).
+- `/api/v1/system` on both public and private ports through the shared subsystem/system-routes module.
 
 `/api/v1/system` is not a Mango-facing Phase 1 business API. It is an operational support API with an explicitly documented **multi-mode auth rule**:
 
-- on the public port it uses validated bearer-token auth
-- on the private port it uses the approved internal authentication model
+- on the public port (port `16010`) it uses validated bearer-token auth (when public authentication is enabled via `AUTH_ENABLED=true`), which is documented in the Phase 1 OpenAPI contract.
+- on the private port (port `17010`) it uses the approved internal authentication model (handled by the private interface `AuthHandler` middleware), which is kept internal and omitted from the client-facing OpenAPI spec.
 
 This multi-mode rule is intentional and must remain explicit in repo-tracked API contract and requirements documents so the security posture is not ambiguous.
 
@@ -133,9 +128,12 @@ Phase 1 must follow these rules:
 
 - the UI authenticates directly with OWSEC
 - protected MDU APIs accept `Authorization: Bearer <owsec-token>`
-- MDU validates the token before protected business logic
+- protected MDU APIs accept optional request tracking headers:
+  - `X-Request-Id`: a unique identifier for the request, generated by the service if absent.
+  - `X-Correlation-Id`: a tracking identifier linking requests across distributed system components, set to `X-Request-Id` or generated if absent.
+- MDU validates the token before protected business logic (when enabled via the `AUTH_ENABLED` configuration)
 - MDU calls downstreams using service credentials such as `x-api`
-- MDU forwards the user token to PROV using `x-authorization` where PROV needs user context
+- MDU forwards the user token to PROV using `x-authorization` where PROV needs user context. MDU propagates tracing headers downstream where applicable; if downstream services do not accept them explicitly, MDU still uses them for internal observability/log correlation.
 - PROV remains responsible for RBAC and scope decisions
 - MDU must not create a second source of truth for access control
 
@@ -157,60 +155,95 @@ MDU does not become the RBAC authority in Phase 1, but it must still enforce the
 
 ---
 
-## Main Phase 1 APIs
+## Phase 1 API Inventory
 
-The main Phase 1 API families are:
+All Phase 1 MDU business APIs listed below require validated bearer-token authentication (via the `Authorization: Bearer <token>` header, when enabled via the `AUTH_ENABLED` configuration). Requests with missing or invalid credentials must be rejected with a `401 Unauthorized` response when token validation is enabled. Support routes may have different authentication posture (specifically, `/livez` is unauthenticated). Additionally, all routes (with the exception of `/livez`) accept the optional `X-Request-Id` and `X-Correlation-Id` tracking headers to enable tracing across distributed system components.
 
-- `GET /api/v1/mdu/me` — OWSEC is the authoritative owner for user identity; MDU calls PROV to fetch the authenticated user's Mango bootstrap context (operator scope, customer scope, roles, hierarchy visibility) and composes the normalized `/me` response
-- `GET /api/v1/mdu/session`
-- `/api/v1/mdu/operators/*`
-- `/api/v1/mdu/entities/*`
-- `/api/v1/mdu/venues/*`
-- `/api/v1/mdu/policies/*`
-- `/api/v1/mdu/roles/*`
-- `/api/v1/mdu/customers/*`
+> [!NOTE]
+> For Phase 1, collection-level operator operations (specifically listing all operators and creating a new operator) are handled directly by hitting PROV endpoints (`GET /operator` and `POST /operator/{uuid}`). Due to PROV's downstream schema, the operator creation path is member-style: clients issue a `POST /operator/{uuid}` where `{uuid}` is set to the nil/zero UUID (`00000000-0000-0000-0000-000000000000` or `0`). Only individual operator operations (`GET`, `PUT`, `DELETE` under `/api/v1/operators/{operatorId}`) are routed through MDU. This hybrid routing model is mandatory: standard clients must call PROV directly for list/create operations, and call MDU for detailed operator member operations.
 
-These are Mango-facing APIs. They do not need to mirror downstream APIs exactly, but they must be backed by the approved Phase 1 auth flow and PROV integration where the domain belongs to PROV.
+### 1. Session / Access Context (`Session` Tag)
+- `GET /api/v1/session` — Retrieve active session and effective access context.
 
-The Phase 1 bootstrap APIs are view/bootstrap endpoints only. They do not mean MDU owns login or session issuance.
+### 2. Operators (`Operators` Tag)
+- `GET /api/v1/operators/{operatorId}` — Retrieve operator details.
+- `PUT /api/v1/operators/{operatorId}` — Update operator details.
+- `DELETE /api/v1/operators/{operatorId}` — Delete operator.
 
-> **Note on `GET /api/v1/mdu/me`:** OWSEC owns user CRUD, login, token issuance, and user account identity. PROV provides the logged-in user's operational context for Mango — operator scope, customer scope, roles, policies, hierarchy visibility, and dashboard bootstrap data. MDU composes the final `/me` response from the OWSEC-validated identity plus the PROV-fetched Mango context.
+### 3. Subscribers (`Subscribers` Tag)
+- `GET /api/v1/operators/{operatorId}/subscribers` — Retrieve a simple, unpaginated list of subscriber signup entries filtered by operator ID (constrained listing flow).
+
+### 4. Hierarchy (`Hierarchy` Tag)
+- `GET /api/v1/hierarchy/tree` — Retrieve full or scoped resource hierarchy tree.
+
+### 5. Entities (`Entities` Tag)
+- `GET /api/v1/entities` — List entities.
+- `POST /api/v1/entities` — Create a new entity.
+- `GET /api/v1/entities/{entityId}` — Retrieve details of a specific entity.
+- `PUT /api/v1/entities/{entityId}` — Update entity details.
+- `DELETE /api/v1/entities/{entityId}` — Delete entity.
+- `GET /api/v1/entities/{entityId}/venues` — List venues under an entity.
+- `POST /api/v1/entities/{entityId}/venues` — Create a new venue under an entity.
+
+### 6. Venues (`Venues` Tag)
+- `GET /api/v1/venues/{venueId}` — Retrieve venue details.
+- `PUT /api/v1/venues/{venueId}` — Update venue details.
+- `DELETE /api/v1/venues/{venueId}` — Delete venue.
+
+### 7. Management Policies (`Management Policies` Tag)
+- `GET /api/v1/policies` — List management policies.
+- `POST /api/v1/policies` — Create a new management policy.
+- `GET /api/v1/policies/{policyId}` — Retrieve details of a specific policy.
+- `PUT /api/v1/policies/{policyId}` — Update management policy details.
+- `DELETE /api/v1/policies/{policyId}` — Delete management policy.
+
+### 8. Management Roles (`Management Roles` Tag)
+- `GET /api/v1/roles` — List management roles.
+- `POST /api/v1/roles` — Create a new management role.
+- `GET /api/v1/roles/{roleId}` — Retrieve details of a specific role.
+- `PUT /api/v1/roles/{roleId}` — Update management role details.
+- `DELETE /api/v1/roles/{roleId}` — Delete management role.
+
+### 9. Users / Scoped Assignments & Access (`Users` Tag)
+- `GET /api/v1/users/{userId}/assignments` — List resource assignments for a user.
+- `POST /api/v1/users/{userId}/assignments` — Assign resource (entity/venue) scope to a user (handles creation, updating/resolving existing roles, or no-op/idempotent success).
+- `DELETE /api/v1/users/{userId}/assignments/{assignmentId}` — Remove a user scope assignment.
+- `GET /api/v1/users/{userId}/access-policy` — Get user access policy (requires `scope`, `entityId`, and optional `venueId` query parameters).
+- `PUT /api/v1/users/{userId}/access-policy` — Update user access policy.
+
+### 10. Operational Support & Diagnostics (Support Routes)
+- `GET /livez` — Liveness/health probe check (unauthenticated; public port `16010` is part of the authoritative Phase 1 OpenAPI contract).
+- `GET /api/v1/system` — Retrieve system diagnostics (public port requires `bearerAuth` and is part of the Phase 1 OpenAPI contract).
+- `POST /api/v1/system` — Modify diagnostics log levels (public port requires `bearerAuth` and is part of the Phase 1 OpenAPI contract).
 
 ---
 
-## PROV-backed Phase 1 Functionality
+## MDU-facing Normalized Wrapper Contract and Source of Truth
 
-Phase 1 is not just a thin API shell. It must use PROV for the foundational business workflows listed in scope.
+The operator, entity, venue, role, policy, and user access orchestration APIs are MDU-facing normalized wrapper contracts over downstream services, NOT a transfer of domain ownership or persistent truth. MDU acts as a stateless facade/orchestrator:
+- **OWSEC** is the authoritative source of truth for user identity, credentials, login, token validation, and user CRUD. User CRUD does not route through MDU.
+- **PROV** is the authoritative source of truth for operators, entities, venues, roles, policies, and persisted RBAC structures. MDU forwards the caller's user context to PROV to validate authorization and retrieve/persist these records.
+- **Hybrid Routing:** Collection-level operator operations (listing and creating operators) bypass MDU and are called directly to PROV by standard clients. Individual operator member operations (retrieval, updates, deletion) are routed through the MDU facade.
 
-### Operators
+### Operator and User-Access Lifecycles
 
-Phase 1 operator APIs shall use PROV operator data and authorization decisions.
+Phase 1 provides method and lifecycle coverage for Operator and User-Access API operations as wrapper and orchestration contracts:
 
-### Entities
+- **Operators:** Support member details retrieval (`GET`), updating parameters (`PUT`), and deletion (`DELETE`) through the MDU facade. In alignment with the hybrid routing model, collection-level operator operations (listing and creating operators) bypass MDU and are called directly to PROV by standard clients.
+- **User-Access Orchestration:** MDU does not expose full user CRUD. Instead, it supports user scope assignments (`GET` assignments, `POST` assignment additions—which resolve idempotently to create, update, or return success on existing roles—and `DELETE` assignment removals) and access policy lookup (`GET`) and policy updates (`PUT`). User account lifecycle and profile CRUD remain directly with OWSEC.
+- **Resource Management (Entities & Venues):** Support full CRUD operations (`GET`, `POST`, `PUT`, `DELETE`) representing MDU wrappers over PROV's hierarchy tree.
+- **Access Policies & Roles:** Support listing, creation, reading details, updating, and deleting policies and roles, backed entirely by PROV.
 
-Phase 1 entity APIs shall use PROV entity and hierarchy data.
+#### Role Distinction
 
-Where tree or scope structure is needed, the PROV hierarchy model remains authoritative.
+The MDU architecture and API contract distinguish between two different types of roles:
+*   **Global Identity Roles (`RoleKey` enum):** These represent the static, system-wide account types defined and enforced by the identity provider (OWSEC) (such as `root`, `admin`, `csr`). These are immutable system classes.
+*   **Dynamic Management Roles (`ManagementRole` resource):** These are dynamic, custom role-templates created within Provisioning (PROV) to bind policies, users, and hierarchy nodes together. Because operators can define and name their own resource templates (e.g. "Custom Venue Admin Template"), this resource uses a free-form string for its descriptive name, while the assigned user's base identity role remains bound to the fixed `RoleKey` classification.
 
-### Venues
+**Design Alignment Decisions:**
+*   **Assignment and Session Role Modeling:** Although user scope assignments map to dynamic `ManagementRole` templates downstream, the northbound `CreateUserAssignmentRequest`, `UserAssignment`, and `SessionAssignment` schemas model the `role` property using the fixed `RoleKey` enum. This enforces system-wide identity classifications and ensures alignment with OWSEC's security constraints. As a result, Phase 1 user assignments only support this fixed allowlist of global identity roles, and custom PROV management role templates are out of scope for these assignment endpoints.
+*   **Management Policy Entry User Bindings Parity & Behavior:** To maintain strict 1:1 parity with the downstream PROV database schema, the northbound `ManagementPolicyEntry` schema retains the `users` array. MDU does not persist this array locally; instead, it acts as a stateless facade and forwards it directly to downstream PROV as-is during policy creation and updates, where PROV persists it in the system of record. Although not ignored or rejected, standard Mango-facing client applications should primarily manage user bindings via the `ManagementRole` and assignments endpoints rather than modifying the policy `users` array directly.
 
-Phase 1 venue APIs shall use PROV venue data.
-
-### Policies
-
-Phase 1 policy APIs shall use PROV-owned policy truth.
-
-### Roles
-
-Phase 1 role APIs shall use PROV-owned role truth.
-
-### Customers
-
-Phase 1 customer APIs may be included where needed for the foundation baseline, but they remain PROV-backed and must not imply Billing integration.
-
-### Access Summary
-
-If Phase 1 exposes access-summary or effective-access style APIs, those APIs shall use PROV as the RBAC decision-maker and MDU as the response-shaping layer.
 
 ---
 
@@ -229,7 +262,7 @@ The master requirements identify the following current known PROV route families
 - `/managementPolicy/{uuid}`
 - `/managementRole`
 - `/managementRole/{id}`
-- PROV-owned customer routes as required by the implementation baseline
+- PROV-owned operator routes as required by the implementation baseline
 
 These are downstream route families MDU is expected to use for Phase 1 foundation work where applicable.
 
@@ -250,7 +283,7 @@ This means:
 
 - MDU authenticates to PROV as a trusted internal service
 - MDU forwards the caller bearer token where PROV needs user context
-- PROV resolves RBAC, scope, customer, and user permissions
+- PROV resolves RBAC, scope, operator, and user permissions
 - MDU shapes the final Mango-facing response
 
 Phase 1 must not bypass PROV authorization by trying to replace it with local logic.
@@ -409,6 +442,12 @@ For Phase 1, OpenAPI must include:
 - explicit multi-mode auth rules where an endpoint is intentionally available through more than one interface/auth class
 - examples where appropriate
 
+In accordance with the repository documentation authority:
+- `docs/phase-1/mango-mdu-openapi.yaml` is the authoritative contract for Phase 1.
+- `docs/openapi.yaml` is the master draft / multi-phase document.
+- Right now, the phase-specific OpenAPI spec takes priority for the code in that phase, and the master draft will be aligned once each phase implementation is completed.
+- Important APIs should include request/response examples, error examples, auth expectations, and scope notes where useful to maintain contract clarity. Outdated or conflicting documentation must be updated or removed to maintain internal consistency.
+
 For the current runtime and contract baseline, this specifically means:
 
 - `/livez` is documented as unauthenticated on both ports
@@ -437,9 +476,9 @@ Phase 1 testing and CI must cover at minimum:
 After Phase 1, we will have:
 
 1. a real Mango-facing MDU API service
-2. authenticated APIs under `/api/v1/mdu/*`
+2. authenticated APIs under `/api/v1/*`
 3. OWSEC-based token validation at the MDU boundary
-4. PROV-backed foundational operator-domain APIs
+4. PROV-backed foundational operator, entity, venue, role, policy, and user-access orchestration APIs
 5. normalized Mango-facing contracts instead of raw downstream behavior
 6. consistent validation and error handling
 7. production-ready tracing, logging, metrics, and readiness behavior
@@ -455,13 +494,13 @@ In short, after Phase 1 we will have the **foundation MDU service** with real OW
 
 Phase 1 is complete only when:
 
-- protected APIs validate OWSEC bearer tokens
+- protected APIs validate OWSEC bearer tokens and reject unauthenticated requests with `401`
 - downstream calls use service auth correctly
 - user context is forwarded to PROV where required
-- `GET /api/v1/mdu/me` and `GET /api/v1/mdu/session` are working as bootstrap APIs
-- foundational PROV-backed APIs are available
+- `GET /api/v1/session` is working as the bootstrap API
+- all listed Session, Operator, User, Hierarchy, Entity, Venue, Policy, and Role endpoints are available and match the methods defined in the Phase 1 OpenAPI spec
 - no placeholder scaffold production routes remain in claimed scope
-- normalized validation and error handling are implemented
+- normalized validation and error handling are implemented, returning `401`, `403`, `404`, `409`, and `503` responses where appropriate
 - logging, tracing, metrics, and readiness are in place
 - OpenAPI and implementation are aligned
 - config validation and fail-fast startup are implemented
@@ -476,4 +515,4 @@ Phase 1 is complete only when:
 
 Phase 1 is the **foundation release** of MDU Service.
 
-It makes MDU the authenticated orchestration entry point for Mango operator workflows, with real PROV-backed foundational APIs, while keeping OWSEC as the authoritative owner for users and authentication, and PROV as the system of record for customers, hierarchy, and RBAC truth.
+It makes MDU the authenticated orchestration entry point for Mango operator workflows, with real PROV-backed foundational APIs, while keeping OWSEC as the authoritative owner for users and authentication, and PROV as the system of record for operators, hierarchy, and RBAC truth.
