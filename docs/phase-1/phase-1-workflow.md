@@ -25,20 +25,22 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 - MDU calls OWPROV: `GET /api/v1/managementRole?limit=1000`.
 - MDU filters all management roles where the role references `policyId` (by matching role's `managementPolicy` ID or name).
 - For each matching role:
+  - Collects `role.id`, `role.entity` (Property ID), and `role.venue` (Venue ID).
   - Collects all user IDs in `role.users[]`.
-  - Collects the entity ID (`role.entity`) and venue ID (`role.venue`).
 - Calculates the aggregate summary counts:
-  - `usedByUsers`: count of unique user IDs.
-  - `scopedAssignmentsCount`: count of matching management roles.
+  - `usedByUsers`: count of unique user IDs across all matching roles.
+  - `scopedAssignmentsCount`: total count of matching management roles (scoped assignments).
   - `propertiesCount`: count of unique non-empty entity IDs.
   - `venuesCount`: count of unique non-empty venue IDs.
 
 ### Step 4: User & Scope Entity Enrichment
-- For each assigned user:
-  - Resolves user display name and email (from OWSEC user directory or role data).
-  - Resolves property name from OWPROV entity directory.
-  - Resolves venue scope name ("Whole property" if venue is empty, or the specific venue name).
-- Populates the `assignedUsers[]` list.
+- Resolves entity names from OWPROV (`GET /api/v1/entity`) and venue names from OWPROV (`GET /api/v1/venue`).
+- Resolves user profiles (display name and email) from OWSEC (`GET /api/v1/users`).
+- Groups role assignments by unique user ID:
+  - Each unique user entry contains `id`, `name`, `email`, and a `scopes[]` array.
+  - Each item in `scopes[]` captures one assignment scope: `roleId`, `propertyId`, `propertyName`, `venueId`, and human-readable `venueScope` ("Whole property" if venue is empty/null, or the specific venue name).
+  - If a user has multiple scoped assignments (e.g., across multiple towers or properties), each assignment is preserved as an entry in `scopes[]` without dropping scope details or duplicating top-level user metadata.
+- Populates the `assignedUsers[]` list (`assignedUsers.length == summary.usedByUsers`).
 
 ### Step 5: Response Composition
 - Formats the consolidated response according to `docs/phase-1/mango-mdu-openapi.yaml`.

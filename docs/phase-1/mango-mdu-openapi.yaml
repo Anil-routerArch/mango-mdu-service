@@ -206,28 +206,18 @@ components:
           description: Total number of distinct venues linked to this policy
           example: 2
 
-    AssignedUserSummary:
+    UserScopeSummary:
       type: object
       required:
-        - id
-        - name
-        - email
+        - roleId
+        - propertyId
         - propertyName
         - venueScope
       properties:
-        id:
+        roleId:
           type: string
-          description: User unique identifier (UUID)
-          example: "018f3a22-1111-7000-8000-000000000001"
-        name:
-          type: string
-          description: Full display name of the user
-          example: "Default User"
-        email:
-          type: string
-          format: email
-          description: User email address
-          example: "user@example.com"
+          description: Management role identifier representing this scoped assignment
+          example: "00000000-0000-0000-0000-000000000003"
         propertyId:
           type: string
           description: Entity identifier of the assigned property
@@ -238,12 +228,40 @@ components:
           example: "Sunrise Apartments"
         venueId:
           type: string
-          description: Venue identifier if assigned to a specific venue
+          nullable: true
+          description: Venue identifier if assigned to a specific venue, or null if whole property
           example: "00000000-0000-0000-0000-000000000002"
         venueScope:
           type: string
           description: Human-readable venue scope name or "Whole property"
           example: "Tower A"
+
+    AssignedUserSummary:
+      type: object
+      required:
+        - id
+        - name
+        - email
+        - scopes
+      properties:
+        id:
+          type: string
+          description: User unique identifier (UUID)
+          example: "018f3a22-1111-7000-8000-000000000001"
+        name:
+          type: string
+          description: Full display name of the user
+          example: "Alice Smith"
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: "alice@example.com"
+        scopes:
+          type: array
+          description: List of scoped role assignments for this user under this policy
+          items:
+            $ref: '#/components/schemas/UserScopeSummary'
 
     PolicyOverviewResponse:
       type: object
