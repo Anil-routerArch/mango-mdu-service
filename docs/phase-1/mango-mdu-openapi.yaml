@@ -303,16 +303,16 @@ components:
     ApiError:
       type: object
       required:
-        - errorCode
-        - errorDescription
+        - ErrorCode
+        - ErrorDescription
       properties:
-        errorCode:
+        ErrorCode:
           type: integer
           example: 400
-        errorDescription:
+        ErrorDescription:
           type: string
           example: "Bad Request"
-        errorDetails:
+        ErrorDetails:
           type: string
           example: "Invalid policy identifier"
 
