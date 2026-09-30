@@ -140,9 +140,18 @@ The authoritative OpenAPI contract for this phase is:
 
 ## 5. Error Handling
 
-Normalized error responses use the standard `ApiError` format:
-- `400 Bad Request`: Malformed `policyId` parameter.
-- `401 Unauthorized`: Missing or invalid bearer token.
-- `403 Forbidden`: Caller lacks permission.
-- `404 Not Found`: Target policy does not exist.
-- `503 Service Unavailable`: Downstream dependency (OWPROV / OWSEC) unreachable.
+Normalized error responses adhere to the standard OpenWiFi/MDU PascalCase `ApiError` envelope:
+
+```json
+{
+  "ErrorCode": 404,
+  "ErrorDescription": "Not Found",
+  "ErrorDetails": "Management policy not found"
+}
+```
+
+- `400 Bad Request`: Malformed `policyId` parameter (`ErrorCode: 400`).
+- `401 Unauthorized`: Missing or invalid bearer token (`ErrorCode: 401`).
+- `403 Forbidden`: Caller lacks permission (`ErrorCode: 403`).
+- `404 Not Found`: Target policy does not exist (`ErrorCode: 404`).
+- `503 Service Unavailable`: Downstream dependency (OWPROV / OWSEC) unreachable (`ErrorCode: 503`).
