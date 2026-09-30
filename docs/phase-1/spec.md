@@ -30,7 +30,7 @@ Its immediate focus is providing the live **Policy Overview API** required by th
 3. **Security & Transport**:
    - Inbound bearer-token validation through OWSEC (`AUTH_ENABLED=true`) via `Authorization: Bearer <owsec-token>`.
    - Outbound service-to-service private lane: authenticates to downstream services using `x-api: <mdu-service-api-key>` and forwards the end-user bearer token via `x-authorization: Bearer <owsec-token>` for downstream RBAC.
-   - CORS support with automatic `OPTIONS` preflight bypass for browser compatibility.
+   - CORS support with automatic `OPTIONS` preflight bypass for browser compatibility. (Implementation requirement: `RegisterPublicCORS` in `internal/http/middleware/middleware.go` must configure `AllowHeaders` to include `"X-Request-Id"` and `"X-Correlation-Id"` alongside standard headers to allow browser tracing preflights).
    - Distributed request tracing: `X-Request-Id` and `X-Correlation-Id`.
 
 ### Deferred Scope (Later Milestones):
