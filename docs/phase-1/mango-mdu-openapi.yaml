@@ -134,10 +134,9 @@ paths:
         - name: policyId
           in: path
           required: true
-          description: Unique identifier (UUID) of the target management policy
+          description: UUID or system identifier of the target policy
           schema:
             type: string
-            format: uuid
         - $ref: '#/components/parameters/XRequestIdHeader'
         - $ref: '#/components/parameters/XCorrelationIdHeader'
       responses:
@@ -304,16 +303,16 @@ components:
     ApiError:
       type: object
       required:
-        - ErrorCode
-        - ErrorDescription
+        - errorCode
+        - errorDescription
       properties:
-        ErrorCode:
+        errorCode:
           type: integer
           example: 400
-        ErrorDescription:
+        errorDescription:
           type: string
           example: "Bad Request"
-        ErrorDetails:
+        errorDetails:
           type: string
           example: "Invalid policy identifier"
 
