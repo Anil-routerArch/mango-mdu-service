@@ -78,7 +78,7 @@ The authoritative OpenAPI contract for this phase is:
 `GET /api/v1/policies/{policyId}/overview`
 
 #### Parameters:
-- `policyId` (path, string, required): UUID or name of the target management policy.
+- `policyId` (path, string, required): UUID of the target management policy.
 - `X-Request-Id` (header, string, optional): Request tracking UUID.
 - `X-Correlation-Id` (header, string, optional): Correlation tracking UUID.
 

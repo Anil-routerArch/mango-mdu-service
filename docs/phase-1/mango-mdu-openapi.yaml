@@ -134,9 +134,10 @@ paths:
         - name: policyId
           in: path
           required: true
-          description: UUID or system identifier of the target policy
+          description: Unique identifier (UUID) of the target management policy
           schema:
             type: string
+            format: uuid
         - $ref: '#/components/parameters/XRequestIdHeader'
         - $ref: '#/components/parameters/XCorrelationIdHeader'
       responses:
