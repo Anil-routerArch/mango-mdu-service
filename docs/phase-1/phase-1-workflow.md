@@ -17,12 +17,17 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 - If token validation fails, a normalized `401 Unauthorized` is returned immediately.
 
 ### Step 2: Policy Details Resolution
-- MDU calls OWPROV: `GET /api/v1/managementPolicy/{policyId}` forwarding the user context.
+- MDU calls OWPROV: `GET /api/v1/managementPolicy/{policyId}`.
+- Propagates downstream headers according to the master architecture contract:
+  - `x-api: <mdu-service-api-key>` (identifies MDU Service as a trusted internal microservice)
+  - `x-authorization: Bearer <owsec-token>` and `Authorization: Bearer <owsec-token>` (forwards user token for OWPROV RBAC evaluation)
+  - `x-request-id` and `x-correlation-id` (preserves distributed trace context)
 - If the policy does not exist in OWPROV, MDU returns `404 Not Found`.
 - Policy metadata (Name, Description, Modified/Created timestamp) is extracted.
 
 ### Step 3: Management Roles & Scope Aggregation
-- MDU calls OWPROV: `GET /api/v1/managementRole?limit=1000`.
+- MDU calls OWPROV: `GET /api/v1/managementRole?limit=1000` using the established service auth (`x-api`) and forwarded user context (`x-authorization` / `Authorization`).
+- OWPROV evaluates the forwarded user token to authoritatively resolve caller permissions and user-scoped role visibility.
 - MDU filters all management roles where the role references `policyId` (by matching role's `managementPolicy` ID or name).
 - For each matching role:
   - Collects `role.id`, `role.entity` (Property ID), and `role.venue` (Venue ID).
@@ -34,7 +39,7 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
   - `venuesCount`: count of unique non-empty venue IDs.
 
 ### Step 4: User & Scope Entity Enrichment
-- Resolves entity names from OWPROV (`GET /api/v1/entity`) and venue names from OWPROV (`GET /api/v1/venue`).
+- Resolves entity names from OWPROV (`GET /api/v1/entity`) and venue names from OWPROV (`GET /api/v1/venue`) using the authenticated downstream client.
 - Resolves user profiles (display name and email) from OWSEC (`GET /api/v1/users`).
 - Groups role assignments by unique user ID:
   - Each unique user entry contains `id`, `name`, `email`, and a `scopes[]` array.

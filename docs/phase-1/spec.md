@@ -28,7 +28,8 @@ Its immediate focus is providing the live **Policy Overview API** required by th
    - `GET /api/v1/system`: System diagnostics with Bearer token authentication.
    - `POST /api/v1/system`: Runtime log level manipulation.
 3. **Security & Transport**:
-   - Inbound bearer-token validation through OWSEC (`AUTH_ENABLED=true`).
+   - Inbound bearer-token validation through OWSEC (`AUTH_ENABLED=true`) via `Authorization: Bearer <owsec-token>`.
+   - Outbound service-to-service private lane: authenticates to downstream services using `x-api: <mdu-service-api-key>` and forwards the end-user bearer token via `x-authorization: Bearer <owsec-token>` for downstream RBAC.
    - CORS support with automatic `OPTIONS` preflight bypass for browser compatibility.
    - Distributed request tracing: `X-Request-Id` and `X-Correlation-Id`.
 
@@ -42,14 +43,29 @@ Its immediate focus is providing the live **Policy Overview API** required by th
 
 ## 3. Downstream Systems Integration
 
+### Downstream Authentication & Propagation Contract
+Per the master architecture (`docs/requirement.md`), downstream calls from MDU to OWPROV and OWSEC maintain explicit separation between service identity and end-user context:
+
+```http
+x-api: <mdu-service-api-key>
+x-authorization: Bearer <owsec-token>
+Authorization: Bearer <owsec-token>
+x-request-id: <request-id>
+x-correlation-id: <correlation-id>
+```
+
+1. **`x-api` (or `X-API-KEY`)**: Service-to-service authentication credential establishing MDU Service as a trusted internal caller.
+2. **`x-authorization` (and `Authorization`)**: Forwards the end-user's OWSEC bearer token. Downstream services (particularly OWPROV) evaluate this token to authoritatively resolve user identity, tenant boundaries, and RBAC / entity / venue scope permissions.
+3. **Traceability**: Propagates `x-request-id` and `x-correlation-id` across all downstream interactions.
+
 ### OWSEC
 - Validates bearer tokens before processing protected requests.
-- Provides user directory lookups to resolve user names and email addresses.
+- Provides user directory lookups (`GET /api/v1/users` or `GET /api/v1/user/{id}`) to resolve user names and email addresses.
 
 ### OWPROV
 - Provides policy definitions (`GET /api/v1/managementPolicy/{id}`).
-- Provides management roles (`GET /api/v1/managementRole`).
-- Provides entity and venue names for resolving human-readable scope labels.
+- Provides management roles (`GET /api/v1/managementRole`). Evaluates user RBAC and entity/venue scoping based on the forwarded user token.
+- Provides entity and venue names (`GET /api/v1/entity`, `GET /api/v1/venue`) for resolving human-readable scope labels.
 
 ---
 
