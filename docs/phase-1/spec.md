@@ -13,16 +13,17 @@ Its immediate focus is providing the live **Policy Overview API** required by th
 
 ### In Scope for Phase 1:
 1. **Policy Overview Orchestration**:
-   - `GET /api/v1/policies/{policyId}/overview`
+   - `GET /api/v1/policy/{id}/overview`
    - Orchestrates data across **OWPROV** (management policies, management roles, entities, venues) and **OWSEC** (user identity).
    - Computes usage summaries:
-     - `usedByUsers`: count of unique users assigned to the policy.
-     - `scopedAssignmentsCount`: count of management role bindings using the policy.
-     - `propertiesCount`: count of unique properties (entities) linked to the policy.
-     - `venuesCount`: count of unique venues linked to the policy.
-   - Computes the itemized list of assigned users (`assignedUsers`):
-     - Unique user identity: `id`, `name`, `email`.
-     - Grouped list of scoped assignments (`scopes[]`): each containing `roleId`, `propertyId`, `propertyName`, `venueId`, and `venueScope` ("Whole property" or specific venue name).
+     - `totalUsers`: count of unique users assigned to the policy.
+     - `totalScopedAssignments`: count of management role bindings using the policy.
+     - `totalProperties`: count of unique properties (entities) linked to the policy.
+     - `totalVenues`: count of unique venues linked to the policy.
+   - Computes the itemized list of assigned users (`usersWithPolicy`):
+     - Unique user identity: `id`, `name`, `email`, `userRole`, optional `avatar`.
+     - `scopedAssignmentsCount`: count of assignments for this user under this policy.
+     - Grouped list of scoped assignments (`scopes[]`): each containing `entityId`, `entityName`, `venueId`, and `venueName` ("All venues" or specific venue name).
 2. **Operational Support & Diagnostics**:
    - `GET /livez`: Unauthenticated liveness probe on port `16010`.
    - `GET /api/v1/system`: System diagnostics with Bearer token authentication.
@@ -75,60 +76,49 @@ The authoritative OpenAPI contract for this phase is:
 **`docs/phase-1/mango-mdu-openapi.yaml`**
 
 ### Target Endpoint:
-`GET /api/v1/policies/{policyId}/overview`
+`GET /api/v1/policy/{id}/overview`
 
 #### Parameters:
-- `policyId` (path, string, required): UUID of the target management policy.
+- `id` (path, string, required): UUID of the target management policy.
 - `X-Request-Id` (header, string, optional): Request tracking UUID.
 - `X-Correlation-Id` (header, string, optional): Correlation tracking UUID.
 
 #### Response Envelope:
 ```json
 {
-  "id": "523e4567-e89b-12d3-a456-426614174000",
-  "name": "Property Manager Policy",
-  "description": "Standard management policy for property and venue staff",
-  "status": "Active",
-  "modified": 1727610000,
-  "summary": {
-    "usedByUsers": 2,
-    "scopedAssignmentsCount": 3,
-    "propertiesCount": 1,
-    "venuesCount": 2
+  "policy": {
+    "id": "523e4567-e89b-12d3-a456-426614174000",
+    "name": "Network Operator",
+    "description": "Monitor devices and manage network configuration.",
+    "entity": "",
+    "venue": "",
+    "created": 1725000000,
+    "modified": 1725500000
   },
-  "assignedUsers": [
+  "totalUsers": 9,
+  "totalScopedAssignments": 14,
+  "totalProperties": 4,
+  "totalVenues": 12,
+  "usersWithPolicy": [
     {
-      "id": "018f3a22-1111-7000-8000-000000000001",
-      "name": "Alice Smith",
-      "email": "alice@example.com",
+      "id": "user-uuid-1",
+      "name": "Anita Sharma",
+      "email": "anita@ipnx.example",
+      "userRole": "noc",
+      "avatar": "1",
+      "scopedAssignmentsCount": 2,
       "scopes": [
         {
-          "roleId": "00000000-0000-0000-0000-000000000003",
-          "propertyId": "00000000-0000-0000-0000-000000000001",
-          "propertyName": "Sunrise Apartments",
-          "venueId": "00000000-0000-0000-0000-000000000002",
-          "venueScope": "Tower A"
+          "entityId": "entity-uuid-1",
+          "entityName": "Sunrise Apartments",
+          "venueId": "",
+          "venueName": "All venues"
         },
         {
-          "roleId": "00000000-0000-0000-0000-000000000004",
-          "propertyId": "00000000-0000-0000-0000-000000000001",
-          "propertyName": "Sunrise Apartments",
-          "venueId": "00000000-0000-0000-0000-000000000005",
-          "venueScope": "Tower B"
-        }
-      ]
-    },
-    {
-      "id": "018f3a22-2222-7000-8000-000000000002",
-      "name": "Bob Jones",
-      "email": "bob@example.com",
-      "scopes": [
-        {
-          "roleId": "00000000-0000-0000-0000-000000000006",
-          "propertyId": "00000000-0000-0000-0000-000000000001",
-          "propertyName": "Sunrise Apartments",
-          "venueId": null,
-          "venueScope": "Whole property"
+          "entityId": "entity-uuid-2",
+          "entityName": "Oakwood Housing",
+          "venueId": "venue-uuid-001",
+          "venueName": "Building A"
         }
       ]
     }
@@ -150,7 +140,7 @@ Normalized error responses adhere to the standard OpenWiFi/MDU PascalCase `ApiEr
 }
 ```
 
-- `400 Bad Request`: Malformed `policyId` parameter (`ErrorCode: 400`).
+- `400 Bad Request`: Malformed `id` parameter (`ErrorCode: 400`).
 - `401 Unauthorized`: Missing or invalid bearer token (`ErrorCode: 401`).
 - `403 Forbidden`: Caller lacks permission (`ErrorCode: 403`).
 - `404 Not Found`: Target policy does not exist (`ErrorCode: 404`).

@@ -6,7 +6,7 @@ info:
     Northbound API exposed by MDU for Phase 1 workflows.
 
     Phase 1 Core Scope:
-    - Policy Overview orchestration for Operator UI (`GET /api/v1/policies/{policyId}/overview`)
+    - Policy Overview orchestration for Operator UI (`GET /api/v1/policy/{id}/overview`)
     - Operational System APIs (`/livez`, `/system`)
 
     Integrations:
@@ -122,7 +122,7 @@ paths:
         '503':
           $ref: '#/components/responses/BackendUnavailableError'
 
-  /policies/{policyId}/overview:
+  /policy/{id}/overview:
     get:
       tags: [Policies]
       summary: Get Policy Overview
@@ -131,12 +131,13 @@ paths:
         Orchestrates data across OWPROV (management policies, management roles, hierarchy) and OWSEC (users).
       operationId: getPolicyOverview
       parameters:
-        - name: policyId
+        - name: id
           in: path
           required: true
-          description: UUID or system identifier of the target policy
+          description: Unique identifier (UUID) of the target management policy
           schema:
             type: string
+            format: uuid
         - $ref: '#/components/parameters/XRequestIdHeader'
         - $ref: '#/components/parameters/XCorrelationIdHeader'
       responses:
@@ -181,138 +182,158 @@ components:
         type: string
 
   schemas:
-    PolicyUsageSummary:
+    UserPolicyScopeInfo:
       type: object
       required:
-        - usedByUsers
-        - scopedAssignmentsCount
-        - propertiesCount
-        - venuesCount
+        - entityId
+        - entityName
+        - venueId
+        - venueName
       properties:
-        usedByUsers:
-          type: integer
-          description: Total number of unique users assigned to this policy
-          example: 2
-        scopedAssignmentsCount:
-          type: integer
-          description: Total number of scoped role assignments referencing this policy
-          example: 3
-        propertiesCount:
-          type: integer
-          description: Total number of distinct properties (entities) linked to this policy
-          example: 1
-        venuesCount:
-          type: integer
-          description: Total number of distinct venues linked to this policy
-          example: 2
-
-    UserScopeSummary:
-      type: object
-      required:
-        - roleId
-        - propertyId
-        - propertyName
-        - venueScope
-      properties:
-        roleId:
+        entityId:
           type: string
-          description: Management role identifier representing this scoped assignment
-          example: "00000000-0000-0000-0000-000000000003"
-        propertyId:
+          description: Associated property (entity) UUID
+          example: "entity-uuid-1"
+        entityName:
           type: string
-          description: Entity identifier of the assigned property
-          example: "00000000-0000-0000-0000-000000000001"
-        propertyName:
-          type: string
-          description: Display name of the assigned property
+          description: Associated property name
           example: "Sunrise Apartments"
         venueId:
           type: string
-          nullable: true
-          description: Venue identifier if assigned to a specific venue, or null if whole property
-          example: "00000000-0000-0000-0000-000000000002"
-        venueScope:
+          description: Associated venue UUID, or empty string if whole property
+          example: ""
+        venueName:
           type: string
-          description: Human-readable venue scope name or "Whole property"
-          example: "Tower A"
+          description: Associated venue name, or 'All venues' if unscoped
+          example: "All venues"
 
-    AssignedUserSummary:
+    UserWithPolicySummary:
       type: object
       required:
         - id
         - name
         - email
+        - userRole
+        - scopedAssignmentsCount
         - scopes
       properties:
         id:
           type: string
+          format: uuid
           description: User unique identifier (UUID)
-          example: "018f3a22-1111-7000-8000-000000000001"
+          example: "user-uuid-1"
         name:
           type: string
           description: Full display name of the user
-          example: "Alice Smith"
+          example: "Anita Sharma"
         email:
           type: string
           format: email
           description: User email address
-          example: "alice@example.com"
+          example: "anita@ipnx.example"
+        userRole:
+          type: string
+          description: User role designation in OWSEC
+          example: "noc"
+        avatar:
+          type: string
+          description: User avatar identifier or URL
+          example: "1"
+        scopedAssignmentsCount:
+          type: integer
+          description: Number of scoped role assignments for this user under this policy
+          example: 2
         scopes:
           type: array
           description: List of scoped role assignments for this user under this policy
           items:
-            $ref: '#/components/schemas/UserScopeSummary'
+            $ref: '#/components/schemas/UserPolicyScopeInfo'
 
-    PolicyOverviewResponse:
+    PolicyMetadata:
       type: object
       required:
         - id
         - name
-        - status
-        - summary
-        - assignedUsers
       properties:
         id:
           type: string
+          format: uuid
           description: Policy UUID
           example: "523e4567-e89b-12d3-a456-426614174000"
         name:
           type: string
           description: Policy name
-          example: "adfcasdfcsacs"
+          example: "Network Operator"
         description:
           type: string
           description: Policy description
-          example: "Custom property admin policy"
-        status:
+          example: "Monitor devices and manage network configuration."
+        entity:
           type: string
-          description: Operational status of the policy
-          example: "Active"
+          description: Scope entity ID if entity-specific, or empty string if global
+          example: ""
+        venue:
+          type: string
+          description: Scope venue ID if venue-specific, or empty string if global
+          example: ""
+        created:
+          type: integer
+          format: int64
+          description: Creation Unix epoch timestamp (seconds)
+          example: 1725000000
         modified:
           type: integer
           format: int64
-          description: Unix epoch timestamp of last modification
-          example: 1727610000
-        summary:
-          $ref: '#/components/schemas/PolicyUsageSummary'
-        assignedUsers:
+          description: Last modification Unix epoch timestamp (seconds)
+          example: 1725500000
+
+    PolicyOverviewResponse:
+      type: object
+      required:
+        - policy
+        - totalUsers
+        - totalScopedAssignments
+        - totalProperties
+        - totalVenues
+        - usersWithPolicy
+      properties:
+        policy:
+          $ref: '#/components/schemas/PolicyMetadata'
+        totalUsers:
+          type: integer
+          description: Total unique users assigned to roles using this policy
+          example: 9
+        totalScopedAssignments:
+          type: integer
+          description: Total scoped assignments (roles) actively using this policy
+          example: 14
+        totalProperties:
+          type: integer
+          description: Total unique properties (entities) where this policy is applied
+          example: 4
+        totalVenues:
+          type: integer
+          description: Total unique venues where this policy is applied
+          example: 12
+        usersWithPolicy:
           type: array
+          description: List of unique users assigned to roles referencing this policy
           items:
-            $ref: '#/components/schemas/AssignedUserSummary'
+            $ref: '#/components/schemas/UserWithPolicySummary'
 
     ApiError:
       type: object
       required:
-        - errorCode
-        - errorDescription
+        - ErrorCode
+        - ErrorDescription
       properties:
-        errorCode:
+        ErrorCode:
           type: integer
           example: 400
-        errorDescription:
+        ErrorDescription:
           type: string
           example: "Bad Request"
-        errorDetails:
+        ErrorDetails:
           type: string
           example: "Invalid policy identifier"
 
