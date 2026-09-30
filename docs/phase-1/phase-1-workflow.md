@@ -26,9 +26,11 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 - Policy metadata (Name, Description, Modified/Created timestamp) is extracted.
 
 ### Step 3: Management Roles & Scope Aggregation
-- MDU calls OWPROV: `GET /api/v1/managementRole?limit=1000` using the established service auth (`x-api`) and forwarded user context (`x-authorization` / `Authorization`).
+- MDU queries OWPROV for management roles using the established service auth (`x-api`) and forwarded user context (`x-authorization` / `Authorization`):
+  - Where supported downstream, MDU queries by policy filter: `GET /api/v1/managementRole?managementPolicy={policyId}`.
+  - Alternatively, MDU retrieves roles exhaustively (either omitting `limit` or paginating via `offset` and `limit` until the full result set is exhausted) to prevent silent truncation.
 - OWPROV evaluates the forwarded user token to authoritatively resolve caller permissions and user-scoped role visibility.
-- MDU filters all management roles where the role references `policyId` (by matching role's `managementPolicy` ID or name).
+- MDU filters all matching management roles that reference `policyId` (by matching role's `managementPolicy` ID or name).
 - For each matching role:
   - Collects `role.id`, `role.entity` (Property ID), and `role.venue` (Venue ID).
   - Collects all user IDs in `role.users[]`.
