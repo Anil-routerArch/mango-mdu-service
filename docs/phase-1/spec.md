@@ -21,8 +21,8 @@ Its immediate focus is providing the live **Policy Overview API** required by th
      - `propertiesCount`: count of unique properties (entities) linked to the policy.
      - `venuesCount`: count of unique venues linked to the policy.
    - Computes the itemized list of assigned users (`assignedUsers`):
-     - User ID, display name, email.
-     - Associated property name and venue scope.
+     - Unique user identity: `id`, `name`, `email`.
+     - Grouped list of scoped assignments (`scopes[]`): each containing `roleId`, `propertyId`, `propertyName`, `venueId`, and `venueScope` ("Whole property" or specific venue name).
 2. **Operational Support & Diagnostics**:
    - `GET /livez`: Unauthenticated liveness probe on port `16010`.
    - `GET /api/v1/system`: System diagnostics with Bearer token authentication.
@@ -70,8 +70,8 @@ The authoritative OpenAPI contract for this phase is:
 ```json
 {
   "id": "523e4567-e89b-12d3-a456-426614174000",
-  "name": "adfcasdfcsacs",
-  "description": "asdascd",
+  "name": "Property Manager Policy",
+  "description": "Standard management policy for property and venue staff",
   "status": "Active",
   "modified": 1727610000,
   "summary": {
@@ -82,13 +82,39 @@ The authoritative OpenAPI contract for this phase is:
   },
   "assignedUsers": [
     {
-      "id": "usr-uuid-1",
-      "name": "Default User",
-      "email": "user@example.com",
-      "propertyId": "ent-uuid-1",
-      "propertyName": "Sunrise Apartments",
-      "venueId": "ven-uuid-1",
-      "venueScope": "Tower A"
+      "id": "018f3a22-1111-7000-8000-000000000001",
+      "name": "Alice Smith",
+      "email": "alice@example.com",
+      "scopes": [
+        {
+          "roleId": "00000000-0000-0000-0000-000000000003",
+          "propertyId": "00000000-0000-0000-0000-000000000001",
+          "propertyName": "Sunrise Apartments",
+          "venueId": "00000000-0000-0000-0000-000000000002",
+          "venueScope": "Tower A"
+        },
+        {
+          "roleId": "00000000-0000-0000-0000-000000000004",
+          "propertyId": "00000000-0000-0000-0000-000000000001",
+          "propertyName": "Sunrise Apartments",
+          "venueId": "00000000-0000-0000-0000-000000000005",
+          "venueScope": "Tower B"
+        }
+      ]
+    },
+    {
+      "id": "018f3a22-2222-7000-8000-000000000002",
+      "name": "Bob Jones",
+      "email": "bob@example.com",
+      "scopes": [
+        {
+          "roleId": "00000000-0000-0000-0000-000000000006",
+          "propertyId": "00000000-0000-0000-0000-000000000001",
+          "propertyName": "Sunrise Apartments",
+          "venueId": null,
+          "venueScope": "Whole property"
+        }
+      ]
     }
   ]
 }
