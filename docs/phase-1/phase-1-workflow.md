@@ -26,11 +26,17 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 - Policy metadata (`id`, `name`, `description`, `entity`, `venue`, `created`, `modified`) is extracted.
 
 ### Step 3: Management Roles & Scope Aggregation
-- MDU queries OWPROV for management roles using the established service auth (`x-api`) and forwarded user context (`x-authorization` / `Authorization`):
-  - Where supported downstream, MDU queries by policy filter: `GET /api/v1/managementRole?managementPolicy={id}`.
-  - Alternatively, MDU retrieves roles exhaustively (either omitting `limit` or paginating via `offset` and `limit` until the full result set is exhausted) to prevent silent truncation.
-- OWPROV evaluates the forwarded user token to authoritatively resolve caller permissions and user-scoped role visibility.
-- MDU filters all matching management roles that reference `id` (by matching role's `managementPolicy` ID).
+- MDU queries OWPROV for management roles using the established service auth (`x-api`) and forwarded user context (`x-authorization` / `Authorization`).
+- Because OWPROV defaults to `limit=100` (`QB_.Limit = 100`) when `limit` is omitted, and does not currently expose a `managementPolicy` query filter, MDU must retrieve all visible roles using explicit chunked pagination to prevent silent metric truncation:
+  - Initializes `offset = 0` and `limit = 500`.
+  - In a loop, requests:
+    ```http
+    GET /api/v1/managementRole?offset={offset}&limit={limit}
+    ```
+  - OWPROV evaluates the forwarded user token to authoritatively resolve caller permissions and user-scoped role visibility.
+  - Filters returned roles where `role.managementPolicy == id`.
+  - Increments `offset += limit` and continues while `returned_count == limit`.
+- Aggregation is performed only after the complete visible role set has been retrieved.
 - For each matching role:
   - Collects `role.id`, `role.entity` (Property ID), and `role.venue` (Venue ID).
   - Collects all user IDs in `role.users[]`.
