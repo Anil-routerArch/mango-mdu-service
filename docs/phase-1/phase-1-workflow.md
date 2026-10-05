@@ -27,15 +27,12 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 
 ### Step 3: Management Roles & Scope Aggregation
 - MDU queries OWPROV for management roles using the established service auth (`x-api`) and forwarded user context (`x-authorization` / `Authorization`).
-- Because OWPROV defaults to `limit=100` (`QB_.Limit = 100`) when `limit` is omitted, and does not currently expose a `managementPolicy` query filter, MDU must retrieve all visible roles using explicit chunked pagination to prevent silent metric truncation:
-  - Initializes `offset = 0` and `limit = 500`.
-  - In a loop, requests:
-    ```http
-    GET /api/v1/managementRole?offset={offset}&limit={limit}
-    ```
-  - OWPROV evaluates the forwarded user token to authoritatively resolve caller permissions and user-scoped role visibility.
-  - Filters returned roles where `role.managementPolicy == id`.
-  - Increments `offset += limit` and continues while `returned_count == limit`.
+- Leverages OWPROV's native `policyId` query filter to push role filtering directly to the database:
+  ```http
+  GET /api/v1/managementRole?policyId={id}&offset={offset}&limit={limit}
+  ```
+- OWPROV evaluates the forwarded user token to authoritatively resolve caller permissions and user-scoped role visibility, returning only roles matching `managementPolicy == id`.
+- For policies with many assignments exceeding page limit (OWPROV defaults to `limit=100` when omitted), MDU uses chunked pagination (`limit=500`) starting at `offset=0` and continuing while `returned_count == limit` to ensure complete retrieval without truncation.
 - Aggregation is performed only after the complete visible role set has been retrieved.
 - For each matching role:
   - Collects `role.id`, `role.entity` (Property ID), and `role.venue` (Venue ID).

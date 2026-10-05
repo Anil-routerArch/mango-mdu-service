@@ -65,7 +65,7 @@ x-correlation-id: <correlation-id>
 
 ### OWPROV
 - Provides policy definitions (`GET /api/v1/managementPolicy/{id}`).
-- Provides management roles (`GET /api/v1/managementRole`). Evaluates user RBAC and entity/venue scoping based on the forwarded user token. Because OWPROV defaults to `limit=100` and does not support filtering by policy, MDU retrieves roles using explicit offset/limit pagination loops (`limit=500`) until the complete visible role set is exhausted to prevent silent metric truncation.
+- Provides management roles (`GET /api/v1/managementRole`). Evaluates user RBAC and entity/venue scoping based on the forwarded user token. Leverages the native `policyId` query filter (`GET /api/v1/managementRole?policyId={id}`) to perform database-level filtering directly in OWPROV. If a policy has a large volume of roles exceeding OWPROV's page size, MDU paginates using `limit=500` and `offset` until all policy-scoped roles are retrieved, preventing silent metric truncation while avoiding full-table scans.
 - Provides entity and venue names (`GET /api/v1/entity`, `GET /api/v1/venue`) for resolving human-readable scope labels.
 
 ---
