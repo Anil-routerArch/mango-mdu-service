@@ -62,6 +62,7 @@ x-correlation-id: <correlation-id>
 ### OWSEC
 - Validates bearer tokens before processing protected requests.
 - Provides user directory lookups (`GET /api/v1/users` or `GET /api/v1/user/{id}`) to resolve user names and email addresses.
+- **Orphaned User Handling**: Because OWPROV role assignments reference user UUIDs without cross-database foreign key constraints, an assigned user may have been deleted from OWSEC. If a user UUID in a role cannot be resolved in OWSEC, MDU handles this gracefully by generating a placeholder entry (`name: "Deleted User"`, `email: "deleted@example.invalid"`, `userRole: "unknown"`, `avatar: ""`) and retaining their scoped assignments. This ensures metrics remain consistent (`usersWithPolicy.length == totalUsers`) and operators can inspect orphaned assignments. In a later lifecycle milestone, user deletion workflows will be enhanced to automatically cascade and remove role bindings across OWPROV upon user deletion.
 
 ### OWPROV
 - Provides policy definitions (`GET /api/v1/managementPolicy/{id}`).
