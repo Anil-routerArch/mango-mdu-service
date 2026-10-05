@@ -73,11 +73,12 @@ X-Correlation-Id: <correlation-id>
 
 ### OWSEC
 - Validates bearer tokens before processing protected requests.
-- Provides authoritative user lookups (`GET /api/v1/user/{id}`) for specific user UUIDs extracted from matching roles to resolve user names, email addresses, and avatars.
-- **Unassigned Roles & Unresolved Users Handling**:
-  - If a management role has no users assigned (`role.users` is empty), the role is still counted towards `totalScopedAssignments`, but contributes 0 users to `totalUsers` and `usersWithPolicy`.
-  - If a role references a user UUID that cannot be resolved in OWSEC (e.g., returns `404 Not Found` because the user was deleted, or cannot be found), MDU gracefully skips that user instead of synthesizing artificial placeholder records (`"Deleted User"`).
-  - Skipped users are not counted in `totalUsers`, maintaining the natural invariant `usersWithPolicy.length == totalUsers` and preventing false data in the UI.
+- Provides bulk user directory lookups (`GET /api/v1/users` with pagination) to resolve user profiles (names, emails, avatars) accessible to the authenticated requester.
+- **Requester-Scoped User Mapping & Unresolved User Handling**:
+  - To avoid an $N+1$ HTTP request bottleneck of querying each user individually when resolving large role sets, MDU retrieves the requester's accessible users via paginated bulk retrieval (`GET /api/v1/users?offset={offset}&limit={limit}`) and indexes them in an in-memory lookup map.
+  - Roles with empty or unassigned users (`role.users == []`) are counted towards `totalScopedAssignments`, but contribute 0 users to `usersWithPolicy`.
+  - When mapping roles to users, if a user UUID is not present in the requester's accessible user set (e.g., user was deleted from OWSEC, or is outside the caller's administrative scope), MDU **simply skips** that user. MDU does **not** synthesize artificial placeholder records (`"Deleted User"`).
+  - `totalUsers` authoritatively reflects the count of unique, accessible users assigned to this policy, naturally maintaining `usersWithPolicy.length == totalUsers` without injecting false data into the UI.
   - (Note: In a later lifecycle milestone, role deletion/cleanup will be coordinated in OWPROV when users are removed).
 
 ### OWPROV

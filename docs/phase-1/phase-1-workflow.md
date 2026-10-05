@@ -44,13 +44,15 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 
 ### Step 4: User & Scope Entity Enrichment
 - Resolves entity names from OWPROV (`GET /api/v1/entity`) and venue names from OWPROV (`GET /api/v1/venue`) using the authenticated downstream client.
-- Resolves user profiles (display name, email, userRole, avatar) authoritatively by user ID from OWSEC (`GET /api/v1/user/{id}`) forwarding `Authorization: Bearer <owsec-token>` and distributed tracing headers.
-- Handles empty roles and unresolvable users:
-  - Roles with empty or unassigned users (`role.users == []`) are counted towards `totalScopedAssignments`, but contribute 0 users to `usersWithPolicy`.
-  - If a role references a user UUID that cannot be found or resolved in OWSEC (`404 Not Found`), MDU gracefully skips that user instead of synthesizing artificial placeholder records (`"Deleted User"`).
-  - Skipped users are not counted in `totalUsers`. `totalUsers` authoritatively reflects the count of unique resolved users, naturally maintaining `usersWithPolicy.length == totalUsers`.
-  - (Note: In a later lifecycle milestone, role deletion/cleanup will be coordinated in OWPROV when users are removed).
-- Groups role assignments by unique resolved user ID:
+- Fetches all user profiles accessible to the requester from OWSEC via paginated bulk retrieval (`GET /api/v1/users`):
+  - Calls OWSEC in a pagination loop (`limit=100` or `500`, incrementing `offset`) forwarding `Authorization: Bearer <owsec-token>` and tracing headers until all accessible users are retrieved.
+  - Builds an in-memory lookup map of visible users: `map[userId]UserProfile`. This avoids an $N+1$ HTTP query problem where MDU would otherwise make hundreds of individual per-user requests for each role assignment.
+- Maps management roles to visible users:
+  - Iterates over matching roles and the user IDs in `role.users[]`.
+  - For each user ID, looks up the user in the visible user map.
+  - **Matched**: Populates user profile data, increments user scoped assignment count, and appends the role scope (`entityId`, `entityName`, `venueId`, `venueName`) to the user's `scopes[]` array.
+  - **Unmatched / Empty / Deleted**: If a role has no users (`role.users == []`), or if a user ID is not found in the requester's accessible user set (e.g. user deleted from OWSEC or not accessible to the caller), MDU **simply skips** that user. MDU does **not** create synthetic `"Deleted User"` placeholders.
+- Groups role assignments by unique matched user ID:
   - Each unique user entry contains `id`, `name`, `email`, `userRole`, `avatar`, `scopedAssignmentsCount`, and a `scopes[]` array.
   - Each item in `scopes[]` captures one assignment scope: `entityId`, `entityName`, `venueId`, and human-readable `venueName` ("All venues" if venue is empty/null, or the specific venue name).
   - If a user has multiple scoped assignments (e.g., across multiple towers or properties), each assignment is preserved as an entry in `scopes[]` without dropping scope details or duplicating top-level user metadata.
