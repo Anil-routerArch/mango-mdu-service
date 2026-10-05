@@ -37,25 +37,24 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 - For each matching role:
   - Collects `role.id`, `role.entity` (Property ID), and `role.venue` (Venue ID).
   - Collects all user IDs in `role.users[]`.
-- Calculates the aggregate summary counts:
-  - `totalUsers`: count of unique user IDs across all matching roles.
+- Calculates aggregate summary counts:
   - `totalScopedAssignments`: total count of matching management roles (scoped assignments).
   - `totalProperties`: count of unique non-empty entity IDs.
   - `totalVenues`: count of unique non-empty venue IDs.
 
 ### Step 4: User & Scope Entity Enrichment
 - Resolves entity names from OWPROV (`GET /api/v1/entity`) and venue names from OWPROV (`GET /api/v1/venue`) using the authenticated downstream client.
-- Resolves user profiles (display name, email, userRole, avatar) from OWSEC (`GET /api/v1/users`) forwarding `Authorization: Bearer <owsec-token>` and distributed tracing headers.
-- Handles orphaned users (users deleted from OWSEC whose UUIDs remain in OWPROV roles):
-  - Instead of failing the request or dropping the user, MDU populates the user record with fallback values: `name: "Deleted User"`, `email: "deleted@example.invalid"`, `userRole: "unknown"`, `avatar: ""`.
-  - Preserves the user's role assignments in `scopes[]`, enabling operators to identify and clean up orphaned assignments.
-  - Ensures the invariant `usersWithPolicy.length == totalUsers` is strictly maintained.
-  - (Note: Future lifecycle enhancements will implement cascaded role cleanup in OWPROV upon user deletion).
-- Groups role assignments by unique user ID:
+- Resolves user profiles (display name, email, userRole, avatar) authoritatively by user ID from OWSEC (`GET /api/v1/user/{id}`) forwarding `Authorization: Bearer <owsec-token>` and distributed tracing headers.
+- Handles empty roles and unresolvable users:
+  - Roles with empty or unassigned users (`role.users == []`) are counted towards `totalScopedAssignments`, but contribute 0 users to `usersWithPolicy`.
+  - If a role references a user UUID that cannot be found or resolved in OWSEC (`404 Not Found`), MDU gracefully skips that user instead of synthesizing artificial placeholder records (`"Deleted User"`).
+  - Skipped users are not counted in `totalUsers`. `totalUsers` authoritatively reflects the count of unique resolved users, naturally maintaining `usersWithPolicy.length == totalUsers`.
+  - (Note: In a later lifecycle milestone, role deletion/cleanup will be coordinated in OWPROV when users are removed).
+- Groups role assignments by unique resolved user ID:
   - Each unique user entry contains `id`, `name`, `email`, `userRole`, `avatar`, `scopedAssignmentsCount`, and a `scopes[]` array.
   - Each item in `scopes[]` captures one assignment scope: `entityId`, `entityName`, `venueId`, and human-readable `venueName` ("All venues" if venue is empty/null, or the specific venue name).
   - If a user has multiple scoped assignments (e.g., across multiple towers or properties), each assignment is preserved as an entry in `scopes[]` without dropping scope details or duplicating top-level user metadata.
-- Populates the `usersWithPolicy[]` list (`usersWithPolicy.length == totalUsers`).
+- Populates the `usersWithPolicy[]` list and sets `totalUsers = len(usersWithPolicy)`.
 
 ### Step 5: Response Composition
 - Formats the consolidated response according to `docs/phase-1/mango-mdu-openapi.yaml` with the `policy` object, KPI counts (`totalUsers`, `totalScopedAssignments`, `totalProperties`, `totalVenues`), and `usersWithPolicy[]`.

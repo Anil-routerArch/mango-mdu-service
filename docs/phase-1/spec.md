@@ -73,8 +73,12 @@ X-Correlation-Id: <correlation-id>
 
 ### OWSEC
 - Validates bearer tokens before processing protected requests.
-- Provides user directory lookups (`GET /api/v1/users` or `GET /api/v1/user/{id}`) to resolve user names and email addresses.
-- **Orphaned User Handling**: Because OWPROV role assignments reference user UUIDs without cross-database foreign key constraints, an assigned user may have been deleted from OWSEC. If a user UUID in a role cannot be resolved in OWSEC, MDU handles this gracefully by generating a placeholder entry (`name: "Deleted User"`, `email: "deleted@example.invalid"`, `userRole: "unknown"`, `avatar: ""`) and retaining their scoped assignments. This ensures metrics remain consistent (`usersWithPolicy.length == totalUsers`) and operators can inspect orphaned assignments. In a later lifecycle milestone, user deletion workflows will be enhanced to automatically cascade and remove role bindings across OWPROV upon user deletion.
+- Provides authoritative user lookups (`GET /api/v1/user/{id}`) for specific user UUIDs extracted from matching roles to resolve user names, email addresses, and avatars.
+- **Unassigned Roles & Unresolved Users Handling**:
+  - If a management role has no users assigned (`role.users` is empty), the role is still counted towards `totalScopedAssignments`, but contributes 0 users to `totalUsers` and `usersWithPolicy`.
+  - If a role references a user UUID that cannot be resolved in OWSEC (e.g., returns `404 Not Found` because the user was deleted, or cannot be found), MDU gracefully skips that user instead of synthesizing artificial placeholder records (`"Deleted User"`).
+  - Skipped users are not counted in `totalUsers`, maintaining the natural invariant `usersWithPolicy.length == totalUsers` and preventing false data in the UI.
+  - (Note: In a later lifecycle milestone, role deletion/cleanup will be coordinated in OWPROV when users are removed).
 
 ### OWPROV
 - Provides policy definitions (`GET /api/v1/managementPolicy/{id}`).
