@@ -18,15 +18,15 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 
 ### Step 2: Policy Details Resolution
 - MDU calls OWPROV: `GET /api/v1/managementPolicy/{id}`.
-- Propagates downstream headers according to the master architecture contract:
-  - `x-api: <mdu-service-api-key>` (identifies MDU Service as a trusted internal microservice)
-  - `x-authorization: Bearer <owsec-token>` and `Authorization: Bearer <owsec-token>` (forwards user token for OWPROV RBAC evaluation)
-  - `x-request-id` and `x-correlation-id` (preserves distributed trace context)
+- Propagates downstream headers:
+  - `Authorization: Bearer <owsec-token>` (forwards caller token for OWPROV RBAC evaluation)
+  - `X-API-KEY: <mdu-service-api-key>` (identifies MDU Service as a trusted internal microservice)
+  - `X-Request-Id` and `X-Correlation-Id` (preserves distributed trace context)
 - If the policy does not exist in OWPROV, MDU returns `404 Not Found`.
 - Policy metadata (`id`, `name`, `description`, `entity`, `venue`, `created`, `modified`) is extracted.
 
 ### Step 3: Management Roles & Scope Aggregation
-- MDU queries OWPROV for management roles using the established service auth (`x-api`) and forwarded user context (`x-authorization` / `Authorization`).
+- MDU queries OWPROV for management roles using the service authentication (`X-API-KEY`) and forwarded user context (`Authorization: Bearer <owsec-token>`).
 - Leverages OWPROV's native `policyId` query filter to push role filtering directly to the database:
   ```http
   GET /api/v1/managementRole?policyId={id}&offset={offset}&limit={limit}

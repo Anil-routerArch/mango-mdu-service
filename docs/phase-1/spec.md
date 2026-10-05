@@ -30,7 +30,7 @@ Its immediate focus is providing the live **Policy Overview API** required by th
    - `POST /api/v1/system`: Runtime log level manipulation.
 3. **Security & Transport**:
    - Inbound bearer-token validation through OWSEC (`AUTH_ENABLED=true`) via `Authorization: Bearer <owsec-token>`.
-   - Outbound service-to-service private lane: authenticates to downstream services using `x-api: <mdu-service-api-key>` and forwards the end-user bearer token via `x-authorization: Bearer <owsec-token>` for downstream RBAC.
+   - Outbound service-to-service calls: authenticates using service credentials (`X-API-KEY: <mdu-service-api-key>`) and forwards the caller's bearer token (`Authorization: Bearer <owsec-token>`) for downstream RBAC.
    - CORS support with automatic `OPTIONS` preflight bypass for browser compatibility. (Implementation requirement: `RegisterPublicCORS` in `internal/http/middleware/middleware.go` must configure `AllowHeaders` to include `"X-Request-Id"` and `"X-Correlation-Id"` alongside standard headers to allow browser tracing preflights).
    - Distributed request tracing: `X-Request-Id` and `X-Correlation-Id`.
 
@@ -45,19 +45,18 @@ Its immediate focus is providing the live **Policy Overview API** required by th
 ## 3. Downstream Systems Integration
 
 ### Downstream Authentication & Propagation Contract
-Per the master architecture (`docs/requirement.md`), downstream calls from MDU to OWPROV and OWSEC maintain explicit separation between service identity and end-user context:
+Downstream calls from MDU to OWPROV and OWSEC maintain explicit separation between service identity and end-user context:
 
 ```http
-x-api: <mdu-service-api-key>
-x-authorization: Bearer <owsec-token>
 Authorization: Bearer <owsec-token>
-x-request-id: <request-id>
-x-correlation-id: <correlation-id>
+X-API-KEY: <mdu-service-api-key>
+X-Request-Id: <request-id>
+X-Correlation-Id: <correlation-id>
 ```
 
-1. **`x-api` (or `X-API-KEY`)**: Service-to-service authentication credential establishing MDU Service as a trusted internal caller.
-2. **`x-authorization` (and `Authorization`)**: Forwards the end-user's OWSEC bearer token. Downstream services (particularly OWPROV) evaluate this token to authoritatively resolve user identity, tenant boundaries, and RBAC / entity / venue scope permissions.
-3. **Traceability**: Propagates `x-request-id` and `x-correlation-id` across all downstream interactions.
+1. **`Authorization: Bearer <owsec-token>`**: Forwards the end-user's OWSEC bearer token. Downstream services (particularly OWPROV) evaluate this token to authoritatively resolve caller identity, tenant boundaries, and RBAC / entity / venue scope permissions.
+2. **`X-API-KEY` (or `x-api`)**: Service-to-service authentication credential establishing MDU Service as a trusted internal caller when accessing downstream microservices.
+3. **Traceability**: Propagates `X-Request-Id` and `X-Correlation-Id` across all downstream interactions to maintain end-to-end distributed observability.
 
 ### OWSEC
 - Validates bearer tokens before processing protected requests.
