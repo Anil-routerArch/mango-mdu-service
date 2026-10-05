@@ -45,7 +45,13 @@ Its immediate focus is providing the live **Policy Overview API** required by th
 ## 3. Downstream Systems Integration
 
 ### Downstream Authentication & Propagation Contract
-Downstream calls from MDU to OWPROV and OWSEC maintain explicit separation between service identity and end-user context:
+Downstream calls from MDU maintain explicit separation between service identity and end-user caller context. MDU communicates with two downstream services (OWPROV and OWSEC) with specific header contracts:
+
+#### To OWPROV (Policy, Roles, Entities, Venues)
+OWPROV manages multi-tenant policy definitions and role scopes. It relies on the caller's Bearer token to enforce RBAC tenant boundaries (Entity/Venue scoping):
+- **`Authorization: Bearer <owsec-token>`**: Primary auth carrying end-user context for downstream RBAC and scope evaluation.
+- **`X-API-KEY: <mdu-service-api-key>`**: Service auth establishing MDU as a trusted internal microservice caller.
+- **`X-Request-Id` & `X-Correlation-Id`**: Distributed request tracing headers.
 
 ```http
 Authorization: Bearer <owsec-token>
@@ -54,9 +60,16 @@ X-Request-Id: <request-id>
 X-Correlation-Id: <correlation-id>
 ```
 
-1. **`Authorization: Bearer <owsec-token>`**: Forwards the end-user's OWSEC bearer token. Downstream services (particularly OWPROV) evaluate this token to authoritatively resolve caller identity, tenant boundaries, and RBAC / entity / venue scope permissions.
-2. **`X-API-KEY` (or `x-api`)**: Service-to-service authentication credential establishing MDU Service as a trusted internal caller when accessing downstream microservices.
-3. **Traceability**: Propagates `X-Request-Id` and `X-Correlation-Id` across all downstream interactions to maintain end-to-end distributed observability.
+#### To OWSEC (Token Validation & User Profile Lookups)
+OWSEC validates authentication tokens and provides user directory lookups (`GET /api/v1/users`):
+- **`Authorization: Bearer <owsec-token>`**: Validates caller tokens and queries user profiles.
+- **`X-Request-Id` & `X-Correlation-Id`**: Distributed request tracing headers.
+
+```http
+Authorization: Bearer <owsec-token>
+X-Request-Id: <request-id>
+X-Correlation-Id: <correlation-id>
+```
 
 ### OWSEC
 - Validates bearer tokens before processing protected requests.

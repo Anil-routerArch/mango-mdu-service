@@ -45,7 +45,7 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 
 ### Step 4: User & Scope Entity Enrichment
 - Resolves entity names from OWPROV (`GET /api/v1/entity`) and venue names from OWPROV (`GET /api/v1/venue`) using the authenticated downstream client.
-- Resolves user profiles (display name, email, userRole, avatar) from OWSEC (`GET /api/v1/users`).
+- Resolves user profiles (display name, email, userRole, avatar) from OWSEC (`GET /api/v1/users`) forwarding `Authorization: Bearer <owsec-token>` and distributed tracing headers.
 - Handles orphaned users (users deleted from OWSEC whose UUIDs remain in OWPROV roles):
   - Instead of failing the request or dropping the user, MDU populates the user record with fallback values: `name: "Deleted User"`, `email: "deleted@example.invalid"`, `userRole: "unknown"`, `avatar: ""`.
   - Preserves the user's role assignments in `scopes[]`, enabling operators to identify and clean up orphaned assignments.
