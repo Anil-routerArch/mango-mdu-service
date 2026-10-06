@@ -39,3 +39,21 @@ type PolicyOverviewResponse struct {
 	TotalVenues            int                     `json:"totalVenues"`
 	UsersWithPolicy        []UserWithPolicySummary `json:"usersWithPolicy"`
 }
+
+// ManagementPolicyEntry represents a single resource access permission in OWPROV.
+type ManagementPolicyEntry struct {
+	Resources []string `json:"resources"`
+	Access    []string `json:"access"`
+}
+
+// ManagementPolicy represents a policy record in OWPROV.
+type ManagementPolicy struct {
+	ID          string                  `json:"id"`
+	Name        string                  `json:"name"`
+	Description string                  `json:"description,omitempty"`
+	Entity      string                  `json:"entity,omitempty"`
+	Venue       string                  `json:"venue,omitempty"`
+	Entries     []ManagementPolicyEntry `json:"entries,omitempty"`
+	Created     int64                   `json:"created,omitempty"`
+	Modified    int64                   `json:"modified,omitempty"`
+}
