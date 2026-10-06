@@ -151,6 +151,7 @@ paths:
           schema:
             type: string
             format: uuid
+            example: "523e4567-e89b-12d3-a456-426614174000"
         - $ref: '#/components/parameters/XRequestIdHeader'
         - $ref: '#/components/parameters/XCorrelationIdHeader'
       responses:
@@ -205,16 +206,17 @@ components:
       properties:
         entityId:
           type: string
+          format: uuid
           description: Associated property (entity) UUID
-          example: "entity-uuid-1"
+          example: "e290f1ee-6c54-4b01-90e6-d701748f0851"
         entityName:
           type: string
           description: Associated property name
           example: "Sunrise Apartments"
         venueId:
           type: string
-          description: Associated venue UUID, or empty string if whole property
-          example: ""
+          description: Associated venue UUID, or empty string if assigned to whole property / all venues
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
         venueName:
           type: string
           description: Associated venue name, or 'All venues' if unscoped
@@ -234,7 +236,7 @@ components:
           type: string
           format: uuid
           description: User unique identifier (UUID)
-          example: "user-uuid-1"
+          example: "4b96f542-2304-4c15-b19e-f43d21d93c50"
         name:
           type: string
           description: Full display name of the user

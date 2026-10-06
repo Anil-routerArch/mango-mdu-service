@@ -123,7 +123,7 @@ The authoritative OpenAPI contract for this phase is:
   "totalVenues": 12,
   "usersWithPolicy": [
     {
-      "id": "user-uuid-1",
+      "id": "4b96f542-2304-4c15-b19e-f43d21d93c50",
       "name": "Anita Sharma",
       "email": "anita@ipnx.example",
       "userRole": "noc",
@@ -131,15 +131,15 @@ The authoritative OpenAPI contract for this phase is:
       "scopedAssignmentsCount": 2,
       "scopes": [
         {
-          "entityId": "entity-uuid-1",
+          "entityId": "e290f1ee-6c54-4b01-90e6-d701748f0851",
           "entityName": "Sunrise Apartments",
           "venueId": "",
           "venueName": "All venues"
         },
         {
-          "entityId": "entity-uuid-2",
+          "entityId": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
           "entityName": "Oakwood Housing",
-          "venueId": "venue-uuid-001",
+          "venueId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
           "venueName": "Building A"
         }
       ]
