@@ -16,13 +16,12 @@ A repo-ready foundation for the Mango Cloud MDU backend service in the OpenWiFi 
 │   └── schema/                  # SQL schema migrations directory
 │       └── 0001_initial.sql     # Reserved migration baseline for approved MDU-owned schema
 ├── docs/                        # Specifications and API contracts
-│   ├── requirement.md           # Master requirements document
-│   ├── common-requirement.md    # Cross-phase engineering and security guardrails
 │   ├── openapi.yaml             # OpenAPI (Swagger) API definition (master draft)
 │   └── phase-1/                 # Phase 1 specification and workflow documents
 │       ├── spec.md              # Phase 1 specification
 │       ├── mango-mdu-openapi.yaml # Phase 1 OpenAPI API contract (authoritative for Phase 1)
-│       └── phase-1-workflow.md  # Phase 1 runtime workflow description
+│       ├── phase-1-workflow.md  # Phase 1 runtime workflow description
+│       └── testcases.md         # Phase 1 test case matrix
 ├── configs/                     # Configurations for development/testing
 │   └── local-dev.env            # Env configuration for local running (outside Docker)
 ├── deployments/                 # Deployment-related configurations
