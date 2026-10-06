@@ -100,22 +100,9 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [command]
-              properties:
-                command:
-                  type: string
-                  enum: [setloglevel, getloglevels, getloglevelnames, getsubsystemnames]
-                subsystems:
-                  type: array
-                  items:
-                    type: object
-                    required: [tag, value]
-                    properties:
-                      tag:
-                        type: string
-                      value:
-                        type: string
+              oneOf:
+                - $ref: '#/components/schemas/SystemSetLogLevelRequest'
+                - $ref: '#/components/schemas/SystemQueryRequest'
       responses:
         '200':
           description: Successful action execution
@@ -413,6 +400,33 @@ components:
           type: integer
           description: Cumulative bytes allocated for heap objects
           example: 73400320
+
+    SystemSetLogLevelRequest:
+      type: object
+      required:
+        - command
+        - subsystems
+      properties:
+        command:
+          type: string
+          enum: [setloglevel]
+          example: setloglevel
+        subsystems:
+          type: array
+          description: List of subsystem log level overrides (at least 1 subsystem required)
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/SystemLogLevelItem'
+
+    SystemQueryRequest:
+      type: object
+      required:
+        - command
+      properties:
+        command:
+          type: string
+          enum: [getloglevels, getloglevelnames, getsubsystemnames]
+          example: getloglevels
 
     SystemCommandSuccessResponse:
       type: object
