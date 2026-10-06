@@ -30,7 +30,7 @@ Its immediate focus is providing the live **Policy Overview API** required by th
    - `POST /api/v1/system`: Runtime log level manipulation.
 3. **Security & Transport**:
    - Inbound bearer-token validation through OWSEC (`AUTH_ENABLED=true`) via `Authorization: Bearer <owsec-token>`.
-   - Outbound service-to-service calls: authenticates using service credentials (`X-API-KEY: <mdu-service-api-key>`) and forwards the caller's bearer token (`Authorization: Bearer <owsec-token>`) for downstream RBAC.
+   - Outbound downstream calls: forwards the caller's bearer token (`Authorization: Bearer <owsec-token>`) to downstream services (OWPROV and OWSEC) so they authoritatively enforce user-level RBAC and tenant scoping. Identifies MDU via client `User-Agent: mango-mdu-service/1.0` and distributed tracing headers without `X-API-KEY` (which would override user identity in OWPROV).
    - CORS support with automatic `OPTIONS` preflight bypass for browser compatibility. *(Implementation note: The existing middleware currently permits standard headers; updating `RegisterPublicCORS` in `internal/http/middleware/middleware.go` to include `"X-Request-Id"` and `"X-Correlation-Id"` in `AllowHeaders` is an acceptance requirement that will be implemented during code implementation).*
    - Distributed request tracing: `X-Request-Id` and `X-Correlation-Id`.
 
@@ -45,17 +45,19 @@ Its immediate focus is providing the live **Policy Overview API** required by th
 ## 3. Downstream Systems Integration
 
 ### Downstream Authentication & Propagation Contract
-Downstream calls from MDU maintain explicit separation between service identity and end-user caller context. MDU communicates with two downstream services (OWPROV and OWSEC) with specific header contracts:
+Downstream calls from MDU forward the authenticated end-user context to allow downstream services (OWPROV and OWSEC) to natively evaluate caller permissions, tenant boundaries, and entity/venue scoping. 
+
+Because OWPROV treats `X-API-KEY` as a primary authentication credential that overrides the `Authorization: Bearer` token when present, MDU **does not send `X-API-KEY`** on user-scoped operations. Instead, MDU relies on user token delegation with standard service attribution (`User-Agent`) and distributed tracing:
 
 #### To OWPROV (Policy, Roles, Entities, Venues)
-OWPROV manages multi-tenant policy definitions and role scopes. It relies on the caller's Bearer token to enforce RBAC tenant boundaries (Entity/Venue scoping):
+OWPROV evaluates the forwarded user token to enforce RBAC tenant boundaries (Entity/Venue scoping):
 - **`Authorization: Bearer <owsec-token>`**: Primary auth carrying end-user context for downstream RBAC and scope evaluation.
-- **`X-API-KEY: <mdu-service-api-key>`**: Service auth establishing MDU as a trusted internal microservice caller.
+- **`User-Agent: mango-mdu-service/1.0`**: Identifies MDU as the originating calling service in downstream access logs.
 - **`X-Request-Id` & `X-Correlation-Id`**: Distributed request tracing headers.
 
 ```http
 Authorization: Bearer <owsec-token>
-X-API-KEY: <mdu-service-api-key>
+User-Agent: mango-mdu-service/1.0
 X-Request-Id: <request-id>
 X-Correlation-Id: <correlation-id>
 ```
@@ -63,10 +65,12 @@ X-Correlation-Id: <correlation-id>
 #### To OWSEC (Token Validation & User Profile Lookups)
 OWSEC validates authentication tokens and provides user directory lookups (`GET /api/v1/users`):
 - **`Authorization: Bearer <owsec-token>`**: Validates caller tokens and queries user profiles.
+- **`User-Agent: mango-mdu-service/1.0`**: Identifies MDU service in downstream access logs.
 - **`X-Request-Id` & `X-Correlation-Id`**: Distributed request tracing headers.
 
 ```http
 Authorization: Bearer <owsec-token>
+User-Agent: mango-mdu-service/1.0
 X-Request-Id: <request-id>
 X-Correlation-Id: <correlation-id>
 ```

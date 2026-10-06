@@ -20,13 +20,13 @@ The focus of this phase is delivering the **Policy Overview API** to power the `
 - MDU calls OWPROV: `GET /api/v1/managementPolicy/{id}`.
 - Propagates downstream headers:
   - `Authorization: Bearer <owsec-token>` (forwards caller token for OWPROV RBAC evaluation)
-  - `X-API-KEY: <mdu-service-api-key>` (identifies MDU Service as a trusted internal microservice)
+  - `User-Agent: mango-mdu-service/1.0` (identifies MDU Service in downstream access logs)
   - `X-Request-Id` and `X-Correlation-Id` (preserves distributed trace context)
 - If the policy does not exist in OWPROV, MDU returns `404 Not Found`.
 - Policy metadata (`id`, `name`, `description`, `entity`, `venue`, `created`, `modified`) is extracted.
 
 ### Step 3: Management Roles & Scope Aggregation
-- MDU queries OWPROV for management roles using the service authentication (`X-API-KEY`) and forwarded user context (`Authorization: Bearer <owsec-token>`).
+- MDU queries OWPROV for management roles forwarding user context (`Authorization: Bearer <owsec-token>`) without `X-API-KEY` (ensuring OWPROV evaluates the caller's authentic user permissions rather than overriding with a service identity).
 - Leverages OWPROV's native `policyId` query filter to push role filtering directly to the database:
   ```http
   GET /api/v1/managementRole?policyId={id}&offset={offset}&limit={limit}
