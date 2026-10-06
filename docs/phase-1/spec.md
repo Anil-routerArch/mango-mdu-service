@@ -26,8 +26,8 @@ Its immediate focus is providing the live **Policy Overview API** required by th
      - Grouped list of scoped assignments (`scopes[]`): each containing `entityId`, `entityName`, `venueId`, and `venueName` ("All venues" or specific venue name).
 2. **Operational Support & Diagnostics**:
    - `GET /livez`: Unauthenticated liveness probe on port `16010`.
-   - `GET /api/v1/system`: System diagnostics with Bearer token authentication.
-   - `POST /api/v1/system`: Runtime log level manipulation.
+   - `GET /api/v1/system`: System diagnostics with Bearer token authentication (supports `command=info` returning system metadata and certificates, and `command=resources` returning memory and file descriptor metrics).
+   - `POST /api/v1/system`: Runtime log level manipulation and diagnostics queries (supports `setloglevel`, `getloglevels`, `getloglevelnames`, `getsubsystemnames`).
 3. **Security & Transport**:
    - Inbound bearer-token validation through OWSEC (`AUTH_ENABLED=true`) via `Authorization: Bearer <owsec-token>`.
    - Outbound downstream calls: forwards the caller's bearer token (`Authorization: Bearer <owsec-token>`) to downstream services (OWPROV and OWSEC) so they authoritatively enforce user-level RBAC and tenant scoping. Identifies MDU via client `User-Agent: mango-mdu-service/1.0` and distributed tracing headers without `X-API-KEY` (which would override user identity in OWPROV).

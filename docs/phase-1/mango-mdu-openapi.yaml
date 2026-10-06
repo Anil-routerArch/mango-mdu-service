@@ -72,6 +72,12 @@ paths:
       responses:
         '200':
           description: Successful query execution
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SystemInfoResponse'
+                  - $ref: '#/components/schemas/SystemResourcesResponse'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -113,6 +119,13 @@ paths:
       responses:
         '200':
           description: Successful action execution
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SystemCommandSuccessResponse'
+                  - $ref: '#/components/schemas/SystemLogLevelsResponse'
+                  - $ref: '#/components/schemas/SystemStringListResponse'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -320,6 +333,135 @@ components:
           description: List of unique users assigned to roles referencing this policy
           items:
             $ref: '#/components/schemas/UserWithPolicySummary'
+
+    SystemCertificateInfo:
+      type: object
+      properties:
+        filename:
+          type: string
+          example: server.pem
+        expiresOn:
+          type: integer
+          description: Unix timestamp in seconds
+          example: 1759654800
+
+    SystemInfoResponse:
+      type: object
+      required:
+        - version
+        - uptime
+        - start
+        - os
+        - processors
+        - hostname
+      properties:
+        version:
+          type: string
+          example: "0.1.0-e11d6df"
+        uptime:
+          type: integer
+          description: Process uptime in seconds
+          example: 3600
+        start:
+          type: integer
+          description: Unix start timestamp in seconds
+          example: 1728100000
+        os:
+          type: string
+          example: linux
+        processors:
+          type: integer
+          example: 4
+        hostname:
+          type: string
+          example: mango-mdu-01
+        UI:
+          type: string
+          example: "https://mdu.example.com"
+        certificates:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemCertificateInfo'
+
+    SystemResourcesResponse:
+      type: object
+      required:
+        - numberOfFileDescriptors
+        - currRealMem
+        - peakRealMem
+        - currVirtMem
+        - peakVirtMem
+      properties:
+        numberOfFileDescriptors:
+          type: integer
+          example: 42
+        currRealMem:
+          type: integer
+          description: Currently allocated heap memory in bytes
+          example: 15728640
+        peakRealMem:
+          type: integer
+          description: Heap system memory obtained from OS in bytes
+          example: 31457280
+        currVirtMem:
+          type: integer
+          description: Total system memory obtained from OS in bytes
+          example: 62914560
+        peakVirtMem:
+          type: integer
+          description: Cumulative bytes allocated for heap objects
+          example: 73400320
+
+    SystemCommandSuccessResponse:
+      type: object
+      required:
+        - Code
+        - Operation
+        - Details
+      properties:
+        Code:
+          type: integer
+          example: 0
+        Operation:
+          type: string
+          example: POST
+        Details:
+          type: string
+          example: Command completed.
+
+    SystemLogLevelItem:
+      type: object
+      required:
+        - tag
+        - value
+      properties:
+        tag:
+          type: string
+          example: HTTP
+        value:
+          type: string
+          example: INFO
+
+    SystemLogLevelsResponse:
+      type: object
+      required:
+        - tagList
+      properties:
+        tagList:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemLogLevelItem'
+
+    SystemStringListResponse:
+      type: object
+      required:
+        - list
+      properties:
+        list:
+          type: array
+          items:
+            type: string
+          example: ["DEBUG", "INFO", "WARN", "ERROR"]
 
     ApiError:
       type: object
