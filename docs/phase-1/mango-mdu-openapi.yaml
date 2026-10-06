@@ -331,6 +331,7 @@ components:
           example: server.pem
         expiresOn:
           type: integer
+          format: int64
           description: Unix timestamp in seconds
           example: 1759654800
 
@@ -349,10 +350,12 @@ components:
           example: "0.1.0-e11d6df"
         uptime:
           type: integer
+          format: int64
           description: Process uptime in seconds
           example: 3600
         start:
           type: integer
+          format: int64
           description: Unix start timestamp in seconds
           example: 1728100000
         os:
@@ -386,18 +389,22 @@ components:
           example: 42
         currRealMem:
           type: integer
+          format: int64
           description: Currently allocated heap memory in bytes
           example: 15728640
         peakRealMem:
           type: integer
+          format: int64
           description: Heap system memory obtained from OS in bytes
           example: 31457280
         currVirtMem:
           type: integer
+          format: int64
           description: Total system memory obtained from OS in bytes
           example: 62914560
         peakVirtMem:
           type: integer
+          format: int64
           description: Cumulative bytes allocated for heap objects
           example: 73400320
 
