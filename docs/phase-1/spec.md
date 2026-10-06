@@ -26,7 +26,7 @@ Its immediate focus is providing the live **Policy Overview API** required by th
      - Grouped list of scoped assignments (`scopes[]`): each containing `entityId`, `entityName`, `venueId`, and `venueName` ("All venues" or specific venue name).
 2. **Operational Support & Diagnostics**:
    - `GET /livez`: Unauthenticated liveness probe on port `16010`.
-   - `GET /api/v1/system`: System diagnostics with Bearer token authentication (supports `command=info` returning system metadata and certificates, and `command=resources` returning memory and file descriptor metrics).
+   - `GET /api/v1/system`: System diagnostics with Bearer token or `X-API-KEY` authentication (supports `command=info` returning system metadata and certificates, and `command=resources` returning memory and file descriptor metrics). Unauthenticated requests receive a bare HTTP 401 status code from common public auth middleware.
    - `POST /api/v1/system`: Runtime log level manipulation and diagnostics queries (supports `setloglevel`, `getloglevels`, `getloglevelnames`, `getsubsystemnames`).
 3. **Security & Transport**:
    - Inbound bearer-token validation through OWSEC (`AUTH_ENABLED=true`) via `Authorization: Bearer <owsec-token>`.
@@ -169,7 +169,7 @@ Normalized error responses adhere to the standard OpenWiFi/MDU PascalCase `ApiEr
 
 ### Standard Error Statuses:
 - `400 Bad Request`: Malformed `id` parameter (`ErrorCode: 400`).
-- `401 Unauthorized`: Missing or invalid bearer token (`ErrorCode: 401`).
+- `401 Unauthorized`: Missing or invalid authentication (`ErrorCode: 401` on MDU endpoints; bare HTTP 401 status on shared `/api/v1/system`).
 - `403 Forbidden`: Caller lacks permission (`ErrorCode: 403`).
 - `404 Not Found`: Target policy does not exist (`ErrorCode: 404`).
 - `503 Service Unavailable`: Downstream dependency (OWPROV / OWSEC) unreachable (`ErrorCode: 503`).

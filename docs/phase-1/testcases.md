@@ -14,7 +14,7 @@ This document specifies test cases for Phase 1 of `mango-mdu-service`:
 |:---|:---|:---|:---|:---|
 | **TC-SYS-001** | Public Liveness probe | `GET /livez` (no auth) | `200 OK` | Returns empty body or OK status |
 | **TC-SYS-002** | System diagnostics info | `GET /api/v1/system?command=info` with valid token | `200 OK` | Returns `SystemInfoResponse` JSON conforming to OpenAPI schema (`version`, `uptime`, `start`, `os`, `processors`, `hostname`, `UI`, `certificates`) |
-| **TC-SYS-003** | System diagnostics unauthorized | `GET /api/v1/system?command=info` without token | `401 Unauthorized` | Standard `ApiError` envelope |
+| **TC-SYS-003** | System diagnostics unauthorized | `GET /api/v1/system?command=info` without token or API key | `401 Unauthorized` | HTTP 401 status code with empty body (bare status response from common public auth middleware) |
 | **TC-SYS-004** | System diagnostics resources | `GET /api/v1/system?command=resources` with valid token | `200 OK` | Returns `SystemResourcesResponse` JSON conforming to OpenAPI schema (`numberOfFileDescriptors`, `currRealMem`, `peakRealMem`, `currVirtMem`, `peakVirtMem`) |
 | **TC-SYS-005** | System set log levels | `POST /api/v1/system` with valid token and body `{"command":"setloglevel","subsystems":[{"tag":"HTTP","value":"INFO"}]}` | `200 OK` | Returns `SystemCommandSuccessResponse` JSON conforming to OpenAPI schema (`Code: 0`, `Operation: "POST"`, `Details: "Command completed."`) |
 | **TC-SYS-006** | System set log levels missing subsystems | `POST /api/v1/system` with valid token and body `{"command":"setloglevel"}` (missing or empty `subsystems`) | `400 Bad Request` | Returns `ApiError` envelope with `ErrorCode: 400` ("Invalid or missing parameters") |

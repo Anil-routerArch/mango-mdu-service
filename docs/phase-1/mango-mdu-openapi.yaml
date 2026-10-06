@@ -60,6 +60,7 @@ paths:
       description: Returns system status info or resource usage based on the requested command.
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestIdHeader'
         - $ref: '#/components/parameters/XCorrelationIdHeader'
@@ -81,7 +82,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/UnauthorizedBareError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
@@ -92,6 +93,7 @@ paths:
       description: Dynamically mutate runtime subsystem log levels or fetch subsystem metadata.
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestIdHeader'
         - $ref: '#/components/parameters/XCorrelationIdHeader'
@@ -116,7 +118,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/UnauthorizedBareError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '503':
@@ -165,6 +167,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-KEY
+      description: API key authentication header supported by common public authentication middleware
 
   parameters:
     XRequestIdHeader:
@@ -518,6 +525,8 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
+    UnauthorizedBareError:
+      description: Authentication missing, invalid, or expired (HTTP 401 status with empty body)
     ForbiddenError:
       description: Insufficient permissions to access this policy
       content:
