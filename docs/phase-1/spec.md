@@ -152,7 +152,7 @@ The authoritative OpenAPI contract for this phase is:
 
 ## 5. Error Handling
 
-Normalized error responses adhere to the standard OpenWiFi/MDU PascalCase `ApiError` envelope:
+Normalized error responses adhere to the standard OpenWiFi/MDU PascalCase `ApiError` envelope defined in `docs/phase-1/mango-mdu-openapi.yaml`:
 
 ```json
 {
@@ -162,6 +162,12 @@ Normalized error responses adhere to the standard OpenWiFi/MDU PascalCase `ApiEr
 }
 ```
 
+### Schema Fields:
+- `ErrorCode` (integer, required): HTTP status code or normalized application error code.
+- `ErrorDescription` (string, required): Standard HTTP status description or high-level error summary.
+- `ErrorDetails` (string, optional): Context-specific diagnostic message explaining the cause when available.
+
+### Standard Error Statuses:
 - `400 Bad Request`: Malformed `id` parameter (`ErrorCode: 400`).
 - `401 Unauthorized`: Missing or invalid bearer token (`ErrorCode: 401`).
 - `403 Forbidden`: Caller lacks permission (`ErrorCode: 403`).

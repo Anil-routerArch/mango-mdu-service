@@ -473,12 +473,15 @@ components:
       properties:
         ErrorCode:
           type: integer
+          description: HTTP status code or normalized application error code
           example: 400
         ErrorDescription:
           type: string
+          description: Standard HTTP status description or high-level error summary
           example: "Bad Request"
         ErrorDetails:
           type: string
+          description: Optional diagnostic details explaining the failure context
           example: "Invalid policy identifier"
 
   responses:
