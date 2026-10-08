@@ -95,4 +95,3 @@ func TestOWSecClient_DualAuthentication(t *testing.T) {
 		t.Errorf("unexpected users: %+v", users)
 	}
 }
-
