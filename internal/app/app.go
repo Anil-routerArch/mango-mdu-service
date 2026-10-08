@@ -2,17 +2,25 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/routerarchitects/mango-mdu-service/internal/config"
 	"github.com/routerarchitects/mango-mdu-service/internal/db"
+	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owprov"
+	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owsec"
 	apphttp "github.com/routerarchitects/mango-mdu-service/internal/http"
+	"github.com/routerarchitects/mango-mdu-service/internal/http/handlers"
+	"github.com/routerarchitects/mango-mdu-service/internal/services"
 	"github.com/routerarchitects/ow-common-mods/fiber/middleware/auth"
 	"github.com/routerarchitects/ow-common-mods/servicediscovery"
 	"github.com/routerarchitects/ow-common-mods/servicerpc"
-	"github.com/routerarchitects/ow-common-mods/servicerpc/owsec"
+	owsecrpc "github.com/routerarchitects/ow-common-mods/servicerpc/owsec"
 	"github.com/routerarchitects/ra-common-mods/logger"
 )
 
@@ -63,7 +71,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 	}
 
 	// 4. Initialize RPC client factory (conditional)
-	var tokenValidator *owsec.SecurityClient
+	var tokenValidator *owsecrpc.SecurityClient
 	if cfg.RPC.Enabled && cfg.Discovery.Enabled {
 		rpcFactory, err := servicerpc.NewServiceRpc(
 			discovery,
@@ -88,10 +96,58 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 		rootLog.Info("service RPC client factory and token validation are disabled via configuration")
 	}
 
-	// 5. Assemble Fiber HTTP apps module
+	// 5. Initialize TLS configuration for downstream microservices
+	var tlsConfig *tls.Config
+	if strings.TrimSpace(cfg.Server.TLS_ROOTCA) != "" {
+		pemBytes, err := os.ReadFile(cfg.Server.TLS_ROOTCA)
+		if err == nil {
+			pool := x509.NewCertPool()
+			if pool.AppendCertsFromPEM(pemBytes) {
+				tlsConfig = &tls.Config{RootCAs: pool}
+			}
+		}
+	}
+
+	// 6. Initialize downstream gateway clients with dynamic discovery
+	owprovClient := owprov.NewClient(owprov.Config{
+		URLResolver: func() string {
+			if discovery != nil {
+				if inst := discovery.Store().GetServiceInstances("owprov"); inst != nil {
+					return inst.PrivateEndPoint
+				}
+			}
+			return ""
+		},
+		TLSConfig: tlsConfig,
+	})
+
+	owsecClient := owsec.NewClient(owsec.Config{
+		URLResolver: func() string {
+			if discovery != nil {
+				if inst := discovery.Store().GetServiceInstances("owsec"); inst != nil {
+					return inst.PrivateEndPoint
+				}
+			}
+			return ""
+		},
+		TLSConfig: tlsConfig,
+	})
+
+	policyService := services.NewPolicyService(owprovClient, owsecClient)
+	policyHandler := handlers.NewPolicyHandler(policyService)
+
+	// 7. Assemble Fiber HTTP apps module
 	publicAuthConfig := auth.PublicAuthConfig{}
+	instanceKey := cfg.Discovery.InstanceKey
+	if instanceKey == "" && discovery != nil {
+		instanceKey = discovery.Self().Key
+	}
+	if strings.TrimSpace(instanceKey) == "" {
+		database.Close()
+		return nil, fmt.Errorf("internal API key is required: set discovery.instance_key or enable discovery")
+	}
 	privateAuthConfig := auth.InternalAPIKeyConfig{
-		ExpectedAPIKey: cfg.Discovery.InstanceKey,
+		ExpectedAPIKey: instanceKey,
 	}
 
 	module, err := apphttp.NewModule(apphttp.Dependencies{
@@ -102,6 +158,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 		PrivateAuthConfig: privateAuthConfig,
 		TokenValidator:    tokenValidator,
 		AuthEnabled:       cfg.Auth.Enabled,
+		PolicyHandler:     policyHandler,
 	})
 	if err != nil {
 		database.Close()

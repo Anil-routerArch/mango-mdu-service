@@ -29,15 +29,15 @@ type Client interface {
 }
 
 type client struct {
-	baseURL    string
-	httpClient *http.Client
+	urlResolver func() string
+	httpClient  *http.Client
 }
 
 // Config holds configuration for creating an OWPROV client.
 type Config struct {
-	BaseURL   string
-	Timeout   time.Duration
-	TLSConfig *tls.Config
+	URLResolver func() string
+	Timeout     time.Duration
+	TLSConfig   *tls.Config
 }
 
 // NewClient creates a new OWPROV client instance.
@@ -53,7 +53,7 @@ func NewClient(cfg Config) Client {
 	}
 
 	return &client{
-		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
+		urlResolver: cfg.URLResolver,
 		httpClient: &http.Client{
 			Timeout:   timeout,
 			Transport: transport,
@@ -61,9 +61,22 @@ func NewClient(cfg Config) Client {
 	}
 }
 
+func (c *client) getBaseURL() (string, error) {
+	if c.urlResolver != nil {
+		if resolved := c.urlResolver(); resolved != "" {
+			return strings.TrimRight(resolved, "/"), nil
+		}
+	}
+	return "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov service endpoint not discovered or available")
+}
+
 // GetPolicy retrieves a single management policy by ID from OWPROV.
 func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/managementPolicy/%s", c.baseURL, url.PathEscape(id))
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+	endpoint := fmt.Sprintf("%s/api/v1/managementPolicy/%s", baseURL, url.PathEscape(id))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create policy request", err)
@@ -100,12 +113,17 @@ func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string)
 
 // GetRolesByPolicy fetches all management roles associated with policyID using pagination.
 func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, corrID string) ([]models.ManagementRole, error) {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+
 	var allRoles []models.ManagementRole
 	offset := 0
 
 	for {
 		endpoint := fmt.Sprintf("%s/api/v1/managementRole?policyId=%s&limit=%d&offset=%d",
-			c.baseURL, url.QueryEscape(policyID), pageSize, offset)
+			baseURL, url.QueryEscape(policyID), pageSize, offset)
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
@@ -145,7 +163,12 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 
 // GetEntities fetches properties/entities from OWPROV.
 func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/entity", c.baseURL)
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/entity", baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create entity request", err)
@@ -174,7 +197,12 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 
 // GetVenues fetches venues from OWPROV.
 func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/venue", c.baseURL)
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/venue", baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create venue request", err)

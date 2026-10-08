@@ -32,7 +32,7 @@ func TestOWSecClient_GetUsers(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owsec.NewClient(owsec.Config{BaseURL: ts.URL})
+	client := owsec.NewClient(owsec.Config{URLResolver: func() string { return ts.URL }})
 	users, err := client.GetUsers(context.Background(), "test-sec-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -43,7 +43,7 @@ func TestOWSecClient_GetUsers(t *testing.T) {
 }
 
 func TestOWSecClient_Unreachable(t *testing.T) {
-	client := owsec.NewClient(owsec.Config{BaseURL: "http://127.0.0.1:1"}) // closed port
+	client := owsec.NewClient(owsec.Config{URLResolver: func() string { return "http://127.0.0.1:1" }}) // closed port
 	_, err := client.GetUsers(context.Background(), "token", "req", "corr")
 	if err == nil {
 		t.Fatal("expected error, got nil")
