@@ -31,7 +31,7 @@ func TestOWProvClient_GetPolicy_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{BaseURL: ts.URL})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
 	policy, err := client.GetPolicy(context.Background(), "pol-1", "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -47,7 +47,7 @@ func TestOWProvClient_GetPolicy_NotFound(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{BaseURL: ts.URL})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
 	_, err := client.GetPolicy(context.Background(), "not-found", "test-token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -77,7 +77,7 @@ func TestOWProvClient_GetRolesByPolicy(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{BaseURL: ts.URL})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
 	roles, err := client.GetRolesByPolicy(context.Background(), "pol-1", "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -98,7 +98,7 @@ func TestOWProvClient_GetEntities(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{BaseURL: ts.URL})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
 	entities, err := client.GetEntities(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -119,7 +119,7 @@ func TestOWProvClient_GetVenues(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{BaseURL: ts.URL})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
 	venues, err := client.GetVenues(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -25,15 +25,15 @@ type Client interface {
 }
 
 type client struct {
-	baseURL    string
-	httpClient *http.Client
+	urlResolver func() string
+	httpClient  *http.Client
 }
 
 // Config holds configuration for creating an OWSEC client.
 type Config struct {
-	BaseURL   string
-	Timeout   time.Duration
-	TLSConfig *tls.Config
+	URLResolver func() string
+	Timeout     time.Duration
+	TLSConfig   *tls.Config
 }
 
 // NewClient creates a new OWSEC client instance.
@@ -49,7 +49,7 @@ func NewClient(cfg Config) Client {
 	}
 
 	return &client{
-		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
+		urlResolver: cfg.URLResolver,
 		httpClient: &http.Client{
 			Timeout:   timeout,
 			Transport: transport,
@@ -57,13 +57,27 @@ func NewClient(cfg Config) Client {
 	}
 }
 
+func (c *client) getBaseURL() (string, error) {
+	if c.urlResolver != nil {
+		if resolved := c.urlResolver(); resolved != "" {
+			return strings.TrimRight(resolved, "/"), nil
+		}
+	}
+	return "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owsec service endpoint not discovered or available")
+}
+
 // GetUsers retrieves all accessible users from OWSEC using pagination.
 func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]models.SecUser, error) {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+
 	var allUsers []models.SecUser
 	offset := 0
 
 	for {
-		endpoint := fmt.Sprintf("%s/api/v1/users?limit=%d&offset=%d", c.baseURL, pageSize, offset)
+		endpoint := fmt.Sprintf("%s/api/v1/users?limit=%d&offset=%d", baseURL, pageSize, offset)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to create users request", err)
