@@ -121,6 +121,20 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 		TLSConfig: tlsConfig,
 	})
 
+	instanceKey := cfg.Discovery.InstanceKey
+	if instanceKey == "" && discovery != nil {
+		instanceKey = discovery.Self().Key
+	}
+	if strings.TrimSpace(instanceKey) == "" {
+		database.Close()
+		return nil, fmt.Errorf("internal API key is required: set discovery.instance_key or enable discovery")
+	}
+
+	instancePrivateEndpoint := ""
+	if discovery != nil {
+		instancePrivateEndpoint = discovery.Self().PrivateEndPoint
+	}
+
 	owsecClient := owsec.NewClient(owsec.Config{
 		URLResolver: func() string {
 			if discovery != nil {
@@ -130,7 +144,17 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 			}
 			return ""
 		},
-		TLSConfig: tlsConfig,
+		KeyResolver: func() string {
+			if discovery != nil {
+				if inst := discovery.Store().GetServiceInstances("owsec"); inst != nil {
+					return inst.Key
+				}
+			}
+			return ""
+		},
+		InternalName: instancePrivateEndpoint,
+		InternalKey:  instanceKey,
+		TLSConfig:    tlsConfig,
 	})
 
 	policyService := services.NewPolicyService(owprovClient, owsecClient)
@@ -138,14 +162,6 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 
 	// 7. Assemble Fiber HTTP apps module
 	publicAuthConfig := auth.PublicAuthConfig{}
-	instanceKey := cfg.Discovery.InstanceKey
-	if instanceKey == "" && discovery != nil {
-		instanceKey = discovery.Self().Key
-	}
-	if strings.TrimSpace(instanceKey) == "" {
-		database.Close()
-		return nil, fmt.Errorf("internal API key is required: set discovery.instance_key or enable discovery")
-	}
 	privateAuthConfig := auth.InternalAPIKeyConfig{
 		ExpectedAPIKey: instanceKey,
 	}

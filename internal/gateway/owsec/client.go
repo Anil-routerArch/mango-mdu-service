@@ -25,15 +25,21 @@ type Client interface {
 }
 
 type client struct {
-	urlResolver func() string
-	httpClient  *http.Client
+	urlResolver  func() string
+	keyResolver  func() string
+	internalName string
+	internalKey  string
+	httpClient   *http.Client
 }
 
 // Config holds configuration for creating an OWSEC client.
 type Config struct {
-	URLResolver func() string
-	Timeout     time.Duration
-	TLSConfig   *tls.Config
+	URLResolver  func() string
+	KeyResolver  func() string
+	InternalName string
+	InternalKey  string
+	Timeout      time.Duration
+	TLSConfig    *tls.Config
 }
 
 // NewClient creates a new OWSEC client instance.
@@ -49,7 +55,10 @@ func NewClient(cfg Config) Client {
 	}
 
 	return &client{
-		urlResolver: cfg.URLResolver,
+		urlResolver:  cfg.URLResolver,
+		keyResolver:  cfg.KeyResolver,
+		internalName: cfg.InternalName,
+		internalKey:  cfg.InternalKey,
 		httpClient: &http.Client{
 			Timeout:   timeout,
 			Transport: transport,
@@ -115,6 +124,18 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 }
 
 func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {
+	if c.internalName != "" {
+		req.Header.Set("X-INTERNAL-NAME", c.internalName)
+	}
+	key := c.internalKey
+	if c.keyResolver != nil {
+		if resolved := c.keyResolver(); resolved != "" {
+			key = resolved
+		}
+	}
+	if key != "" {
+		req.Header.Set("X-API-KEY", key)
+	}
 	if token != "" {
 		if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
 			req.Header.Set("Authorization", "Bearer "+token)
