@@ -126,4 +126,7 @@ func TestPolicyHandler_GetOverview_InternalError(t *testing.T) {
 	if apiErr.ErrorCode != 500 {
 		t.Errorf("expected 500, got %d", apiErr.ErrorCode)
 	}
+	if apiErr.ErrorDetails != "Internal server error" {
+		t.Errorf("expected 'Internal server error', got %q", apiErr.ErrorDetails)
+	}
 }
