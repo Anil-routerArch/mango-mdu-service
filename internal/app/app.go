@@ -132,14 +132,19 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 	if instanceKey == "" && discovery != nil {
 		instanceKey = discovery.Self().Key
 	}
-	if strings.TrimSpace(instanceKey) == "" {
-		database.Close()
-		return nil, fmt.Errorf("internal API key is required: set discovery.instance_key or enable discovery")
+	if strings.TrimSpace(instanceKey) == "" && cfg.Auth.Enabled {
+		rootLog.Warn("internal API key is empty; set discovery.instance_key or enable discovery for authenticated internal requests")
 	}
 
-	instancePrivateEndpoint := ""
+	instanceInternalName := ""
 	if discovery != nil {
-		instancePrivateEndpoint = discovery.Self().PrivateEndPoint
+		instanceInternalName = discovery.Self().PrivateEndPoint
+	}
+	if instanceInternalName == "" {
+		instanceInternalName = strings.TrimSpace(cfg.Discovery.PublicEndpoint)
+	}
+	if instanceInternalName == "" {
+		instanceInternalName = "mango-mdu-service"
 	}
 
 	owsecClient := owsec.NewClient(owsec.Config{
@@ -151,7 +156,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 			}
 			return "", "", fmt.Errorf("owsec service endpoint not discovered or available")
 		},
-		InternalName: instancePrivateEndpoint,
+		InternalName: instanceInternalName,
 		TLSConfig:    tlsConfig,
 		Logger:       rootLog,
 	})
