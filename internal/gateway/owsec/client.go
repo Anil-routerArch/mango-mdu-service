@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ type client struct {
 	internalName string
 	internalKey  string
 	httpClient   *http.Client
+	logger       *slog.Logger
 }
 
 // Config holds configuration for creating an OWSEC client.
@@ -40,6 +42,7 @@ type Config struct {
 	InternalKey  string
 	Timeout      time.Duration
 	TLSConfig    *tls.Config
+	Logger       *slog.Logger
 }
 
 // NewClient creates a new OWSEC client instance.
@@ -54,6 +57,11 @@ func NewClient(cfg Config) Client {
 		transport.TLSClientConfig = cfg.TLSConfig
 	}
 
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	return &client{
 		urlResolver:  cfg.URLResolver,
 		keyResolver:  cfg.KeyResolver,
@@ -63,6 +71,7 @@ func NewClient(cfg Config) Client {
 			Timeout:   timeout,
 			Transport: transport,
 		},
+		logger: logger,
 	}
 }
 
@@ -96,13 +105,30 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", fmt.Sprintf("downstream OWSEC unreachable: %v", err))
+			if c.logger != nil {
+				c.logger.Error("downstream OWSEC request failed",
+					"error", err,
+					"path", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWSEC service unreachable")
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("OWSEC returned status %d: %s", resp.StatusCode, string(body)))
+			if c.logger != nil {
+				c.logger.Error("downstream OWSEC returned non-200 status",
+					"status", resp.StatusCode,
+					"body", string(body),
+					"path", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWSEC returned status %d", resp.StatusCode))
 		}
 
 		var usersResp models.SecUserListResponse
@@ -127,11 +153,11 @@ func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {
 	if c.internalName != "" {
 		req.Header.Set("X-INTERNAL-NAME", c.internalName)
 	}
-	key := c.internalKey
+	var key string
 	if c.keyResolver != nil {
-		if resolved := c.keyResolver(); resolved != "" {
-			key = resolved
-		}
+		key = c.keyResolver()
+	} else {
+		key = c.internalKey
 	}
 	if key != "" {
 		req.Header.Set("X-API-KEY", key)

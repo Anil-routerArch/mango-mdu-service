@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,6 +32,7 @@ type Client interface {
 type client struct {
 	urlResolver func() string
 	httpClient  *http.Client
+	logger      *slog.Logger
 }
 
 // Config holds configuration for creating an OWPROV client.
@@ -38,6 +40,7 @@ type Config struct {
 	URLResolver func() string
 	Timeout     time.Duration
 	TLSConfig   *tls.Config
+	Logger      *slog.Logger
 }
 
 // NewClient creates a new OWPROV client instance.
@@ -52,12 +55,18 @@ func NewClient(cfg Config) Client {
 		transport.TLSClientConfig = cfg.TLSConfig
 	}
 
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	return &client{
 		urlResolver: cfg.URLResolver,
 		httpClient: &http.Client{
 			Timeout:   timeout,
 			Transport: transport,
 		},
+		logger: logger,
 	}
 }
 
@@ -86,7 +95,15 @@ func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", fmt.Sprintf("downstream OWPROV unreachable: %v", err))
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV request failed",
+				"error", err,
+				"path", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
 	}
 	defer resp.Body.Close()
 
@@ -100,7 +117,16 @@ func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("OWPROV returned status %d: %s", resp.StatusCode, string(body)))
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV returned non-200 status",
+				"status", resp.StatusCode,
+				"body", string(body),
+				"path", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
 	}
 
 	var policy models.ManagementPolicy
@@ -134,13 +160,30 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", fmt.Sprintf("downstream OWPROV unreachable: %v", err))
+			if c.logger != nil {
+				c.logger.Error("downstream OWPROV request failed",
+					"error", err,
+					"path", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("OWPROV returned status %d: %s", resp.StatusCode, string(body)))
+			if c.logger != nil {
+				c.logger.Error("downstream OWPROV returned non-200 status",
+					"status", resp.StatusCode,
+					"body", string(body),
+					"path", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
 		}
 
 		var roleResp models.ManagementRoleListResponse
@@ -161,72 +204,134 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 	return allRoles, nil
 }
 
-// GetEntities fetches properties/entities from OWPROV.
+// GetEntities fetches properties/entities from OWPROV using pagination.
 func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error) {
 	baseURL, err := c.getBaseURL()
 	if err != nil {
 		return nil, err
 	}
 
-	endpoint := fmt.Sprintf("%s/api/v1/entity", baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create entity request", err)
+	var allEntities []models.Entity
+	offset := 0
+
+	for {
+		endpoint := fmt.Sprintf("%s/api/v1/entity?limit=%d&offset=%d", baseURL, pageSize, offset)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, apperror.Wrap(apperror.CodeInternal, "failed to create entity request", err)
+		}
+
+		c.setHeaders(req, token, reqID, corrID)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if c.logger != nil {
+				c.logger.Error("downstream OWPROV request failed",
+					"error", err,
+					"path", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if c.logger != nil {
+				c.logger.Error("downstream OWPROV returned non-200 status",
+					"status", resp.StatusCode,
+					"body", string(body),
+					"path", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+		}
+
+		var entityResp models.EntityListResponse
+		err = json.NewDecoder(resp.Body).Decode(&entityResp)
+		resp.Body.Close()
+		if err != nil {
+			return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse entities response", err)
+		}
+
+		allEntities = append(allEntities, entityResp.Entities...)
+
+		if len(entityResp.Entities) < pageSize {
+			break
+		}
+		offset += pageSize
 	}
 
-	c.setHeaders(req, token, reqID, corrID)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", fmt.Sprintf("downstream OWPROV unreachable: %v", err))
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("OWPROV returned status %d: %s", resp.StatusCode, string(body)))
-	}
-
-	var entityResp models.EntityListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&entityResp); err != nil {
-		return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse entities response", err)
-	}
-
-	return entityResp.Entities, nil
+	return allEntities, nil
 }
 
-// GetVenues fetches venues from OWPROV.
+// GetVenues fetches venues from OWPROV using pagination.
 func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error) {
 	baseURL, err := c.getBaseURL()
 	if err != nil {
 		return nil, err
 	}
 
-	endpoint := fmt.Sprintf("%s/api/v1/venue", baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create venue request", err)
+	var allVenues []models.Venue
+	offset := 0
+
+	for {
+		endpoint := fmt.Sprintf("%s/api/v1/venue?limit=%d&offset=%d", baseURL, pageSize, offset)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, apperror.Wrap(apperror.CodeInternal, "failed to create venue request", err)
+		}
+
+		c.setHeaders(req, token, reqID, corrID)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if c.logger != nil {
+				c.logger.Error("downstream OWPROV request failed",
+					"error", err,
+					"path", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if c.logger != nil {
+				c.logger.Error("downstream OWPROV returned non-200 status",
+					"status", resp.StatusCode,
+					"body", string(body),
+					"path", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+		}
+
+		var venueResp models.VenueListResponse
+		err = json.NewDecoder(resp.Body).Decode(&venueResp)
+		resp.Body.Close()
+		if err != nil {
+			return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse venues response", err)
+		}
+
+		allVenues = append(allVenues, venueResp.Venues...)
+
+		if len(venueResp.Venues) < pageSize {
+			break
+		}
+		offset += pageSize
 	}
 
-	c.setHeaders(req, token, reqID, corrID)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", fmt.Sprintf("downstream OWPROV unreachable: %v", err))
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("OWPROV returned status %d: %s", resp.StatusCode, string(body)))
-	}
-
-	var venueResp models.VenueListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&venueResp); err != nil {
-		return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse venues response", err)
-	}
-
-	return venueResp.Venues, nil
+	return allVenues, nil
 }
 
 func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {

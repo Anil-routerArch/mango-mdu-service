@@ -98,14 +98,20 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 
 	// 5. Initialize TLS configuration for downstream microservices
 	var tlsConfig *tls.Config
-	if strings.TrimSpace(cfg.Server.TLS_ROOTCA) != "" {
-		pemBytes, err := os.ReadFile(cfg.Server.TLS_ROOTCA)
-		if err == nil {
-			pool := x509.NewCertPool()
-			if pool.AppendCertsFromPEM(pemBytes) {
-				tlsConfig = &tls.Config{RootCAs: pool}
-			}
+	caPath := strings.TrimSpace(cfg.Server.TLS_ROOTCA)
+	if caPath != "" {
+		pemBytes, err := os.ReadFile(caPath)
+		if err != nil {
+			database.Close()
+			return nil, fmt.Errorf("failed to read TLS root CA %q: %w", caPath, err)
 		}
+
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pemBytes) {
+			database.Close()
+			return nil, fmt.Errorf("failed to parse TLS root CA %q: invalid PEM format", caPath)
+		}
+		tlsConfig = &tls.Config{RootCAs: pool}
 	}
 
 	// 6. Initialize downstream gateway clients with dynamic discovery
@@ -119,6 +125,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 			return ""
 		},
 		TLSConfig: tlsConfig,
+		Logger:    rootLog,
 	})
 
 	instanceKey := cfg.Discovery.InstanceKey
@@ -153,8 +160,8 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 			return ""
 		},
 		InternalName: instancePrivateEndpoint,
-		InternalKey:  instanceKey,
 		TLSConfig:    tlsConfig,
+		Logger:       rootLog,
 	})
 
 	policyService := services.NewPolicyService(owprovClient, owsecClient)
