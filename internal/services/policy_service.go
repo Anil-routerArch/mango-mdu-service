@@ -105,13 +105,6 @@ func (s *policyService) GetPolicyOverview(ctx context.Context, policyID, token, 
 	var userOrder []string
 
 	for _, role := range roles {
-		if role.Entity != "" {
-			uniqueEntities[role.Entity] = struct{}{}
-		}
-		if role.Venue != "" {
-			uniqueVenues[role.Venue] = struct{}{}
-		}
-
 		for _, userID := range role.Users {
 			secUser, exists := userMap[userID]
 			if !exists {
@@ -120,6 +113,13 @@ func (s *policyService) GetPolicyOverview(ctx context.Context, policyID, token, 
 			}
 
 			totalScopedAssignments++
+
+			if role.Entity != "" {
+				uniqueEntities[role.Entity] = struct{}{}
+			}
+			if role.Venue != "" {
+				uniqueVenues[role.Venue] = struct{}{}
+			}
 
 			// Resolve entity name
 			entityName := entityNameMap[role.Entity]
