@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	userAgent = "mango-mdu-service/1.0"
-	pageSize  = 500
+	userAgent     = "mango-mdu-service/1.0"
+	pageSize      = 500
+	maxErrorBytes = 2048
 )
 
 // Client defines the contract for communicating with OWSEC.
@@ -107,8 +108,9 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 		if err != nil {
 			if c.logger != nil {
 				c.logger.Error("downstream OWSEC request failed",
+					"service", "owsec",
 					"error", err,
-					"path", req.URL.Path,
+					"endpoint", req.URL.Path,
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
@@ -117,13 +119,14 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
 			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWSEC returned non-200 status",
+					"service", "owsec",
 					"status", resp.StatusCode,
-					"body", string(body),
-					"path", req.URL.Path,
+					"endpoint", req.URL.Path,
+					"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)

@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	userAgent = "mango-mdu-service/1.0"
-	pageSize  = 500
+	userAgent     = "mango-mdu-service/1.0"
+	pageSize      = 500
+	maxErrorBytes = 2048
 )
 
 // Client defines the contract for communicating with OWPROV.
@@ -97,8 +98,9 @@ func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string)
 	if err != nil {
 		if c.logger != nil {
 			c.logger.Error("downstream OWPROV request failed",
+				"service", "owprov",
 				"error", err,
-				"path", req.URL.Path,
+				"endpoint", req.URL.Path,
 				"request_id", reqID,
 				"correlation_id", corrID,
 			)
@@ -116,12 +118,13 @@ func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
 		if c.logger != nil {
 			c.logger.Error("downstream OWPROV returned non-200 status",
+				"service", "owprov",
 				"status", resp.StatusCode,
-				"body", string(body),
-				"path", req.URL.Path,
+				"endpoint", req.URL.Path,
+				"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 				"request_id", reqID,
 				"correlation_id", corrID,
 			)
@@ -162,8 +165,9 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 		if err != nil {
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV request failed",
+					"service", "owprov",
 					"error", err,
-					"path", req.URL.Path,
+					"endpoint", req.URL.Path,
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
@@ -172,13 +176,14 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
 			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status",
+					"service", "owprov",
 					"status", resp.StatusCode,
-					"body", string(body),
-					"path", req.URL.Path,
+					"endpoint", req.URL.Path,
+					"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
@@ -227,8 +232,9 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 		if err != nil {
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV request failed",
+					"service", "owprov",
 					"error", err,
-					"path", req.URL.Path,
+					"endpoint", req.URL.Path,
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
@@ -237,13 +243,14 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
 			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status",
+					"service", "owprov",
 					"status", resp.StatusCode,
-					"body", string(body),
-					"path", req.URL.Path,
+					"endpoint", req.URL.Path,
+					"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
@@ -292,8 +299,9 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 		if err != nil {
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV request failed",
+					"service", "owprov",
 					"error", err,
-					"path", req.URL.Path,
+					"endpoint", req.URL.Path,
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
@@ -302,13 +310,14 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
 			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status",
+					"service", "owprov",
 					"status", resp.StatusCode,
-					"body", string(body),
-					"path", req.URL.Path,
+					"endpoint", req.URL.Path,
+					"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)

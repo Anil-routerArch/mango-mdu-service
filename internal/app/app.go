@@ -165,7 +165,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 	})
 
 	policyService := services.NewPolicyService(owprovClient, owsecClient)
-	policyHandler := handlers.NewPolicyHandler(policyService)
+	policyHandler := handlers.NewPolicyHandler(policyService, rootLog)
 
 	// 7. Assemble Fiber HTTP apps module
 	publicAuthConfig := auth.PublicAuthConfig{}
