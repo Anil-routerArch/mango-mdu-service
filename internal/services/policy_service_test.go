@@ -232,11 +232,11 @@ func TestGetPolicyOverview_UnmatchedUser_TC_POL_010(t *testing.T) {
 		getRolesByPolicyFn: func(ctx context.Context, pID, token, reqID, corrID string) ([]models.ManagementRole, error) {
 			return []models.ManagementRole{
 				{ID: "r1", ManagementPolicy: policyID, Entity: "e1", Users: []string{userMatched}},
-				{ID: "r2", ManagementPolicy: policyID, Entity: "e1", Users: []string{userDeleted}},
+				{ID: "r2", ManagementPolicy: policyID, Entity: "e2", Users: []string{userDeleted}},
 			}, nil
 		},
 		getEntitiesFn: func(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error) {
-			return []models.Entity{{ID: "e1", Name: "Prop 1"}}, nil
+			return []models.Entity{{ID: "e1", Name: "Prop 1"}, {ID: "e2", Name: "Prop 2"}}, nil
 		},
 		getVenuesFn: func(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error) {
 			return []models.Venue{}, nil
@@ -260,6 +260,9 @@ func TestGetPolicyOverview_UnmatchedUser_TC_POL_010(t *testing.T) {
 
 	if res.TotalUsers != 1 {
 		t.Errorf("expected TotalUsers=1, got %d", res.TotalUsers)
+	}
+	if res.TotalProperties != 1 {
+		t.Errorf("expected TotalProperties=1 (excluding unmatched user's property), got %d", res.TotalProperties)
 	}
 	if len(res.UsersWithPolicy) != 1 {
 		t.Errorf("expected 1 user in usersWithPolicy, got %d", len(res.UsersWithPolicy))
