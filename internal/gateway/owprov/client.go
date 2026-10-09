@@ -119,12 +119,12 @@ func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
+		_ = body
 		if c.logger != nil {
 			c.logger.Error("downstream OWPROV returned non-200 status",
 				"service", "owprov",
 				"status", resp.StatusCode,
 				"endpoint", req.URL.Path,
-				"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 				"request_id", reqID,
 				"correlation_id", corrID,
 			)
@@ -177,13 +177,13 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
+			_ = body
 			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status",
 					"service", "owprov",
 					"status", resp.StatusCode,
 					"endpoint", req.URL.Path,
-					"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
@@ -244,13 +244,13 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
+			_ = body
 			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status",
 					"service", "owprov",
 					"status", resp.StatusCode,
 					"endpoint", req.URL.Path,
-					"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
@@ -311,13 +311,13 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
+			_ = body
 			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status",
 					"service", "owprov",
 					"status", resp.StatusCode,
 					"endpoint", req.URL.Path,
-					"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
