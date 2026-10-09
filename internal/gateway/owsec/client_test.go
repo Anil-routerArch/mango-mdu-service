@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owsec"
@@ -95,3 +96,68 @@ func TestOWSecClient_DualAuthentication(t *testing.T) {
 		t.Errorf("unexpected users: %+v", users)
 	}
 }
+
+func TestOWSecClient_KeyResolver(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-INTERNAL-NAME") != "https://localhost:17005" {
+			t.Errorf("missing or incorrect X-INTERNAL-NAME: %s", r.Header.Get("X-INTERNAL-NAME"))
+		}
+		if r.Header.Get("X-API-KEY") != "discovered-owsec-key" {
+			t.Errorf("expected discovered-owsec-key, got: %s", r.Header.Get("X-API-KEY"))
+		}
+
+		resp := models.SecUserListResponse{
+			Users: []models.SecUser{
+				{ID: "usr-3", Name: "Carol Danvers", Email: "carol@example.com", UserRole: "csr"},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client := owsec.NewClient(owsec.Config{
+		URLResolver:  func() string { return ts.URL },
+		KeyResolver:  func() string { return "discovered-owsec-key" },
+		InternalName: "https://localhost:17005",
+	})
+	users, err := client.GetUsers(context.Background(), "test-user-token", "req-key-1", "corr-key-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(users) != 1 || users[0].Name != "Carol Danvers" {
+		t.Errorf("unexpected users: %+v", users)
+	}
+}
+
+func TestOWSecClient_DownstreamError_Sanitized(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"internal_error":"FATAL: connection to sec-db-01.lan:5432 failed"}`))
+	}))
+	defer ts.Close()
+
+	client := owsec.NewClient(owsec.Config{URLResolver: func() string { return ts.URL }})
+	_, err := client.GetUsers(context.Background(), "token", "req-1", "corr-1")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(models.ApiError)
+	if !ok {
+		t.Fatalf("expected ApiError, got %T: %v", err, err)
+	}
+	if apiErr.ErrorCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", apiErr.ErrorCode)
+	}
+	if apiErr.ErrorDescription != "Downstream Error" {
+		t.Errorf("expected 'Downstream Error', got %q", apiErr.ErrorDescription)
+	}
+	// Verify raw body is NOT leaked
+	if strings.Contains(apiErr.ErrorDetails, "sec-db-01.lan") {
+		t.Errorf("sensitive body leaked in ErrorDetails: %s", apiErr.ErrorDetails)
+	}
+	if apiErr.ErrorDetails != "downstream OWSEC returned status 500" {
+		t.Errorf("expected sanitized message, got %q", apiErr.ErrorDetails)
+	}
+}
+
