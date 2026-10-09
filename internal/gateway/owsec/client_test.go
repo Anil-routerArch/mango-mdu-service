@@ -160,4 +160,3 @@ func TestOWSecClient_DownstreamError_Sanitized(t *testing.T) {
 		t.Errorf("expected sanitized message, got %q", apiErr.ErrorDetails)
 	}
 }
-
