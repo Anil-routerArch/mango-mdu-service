@@ -143,21 +143,13 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 	}
 
 	owsecClient := owsec.NewClient(owsec.Config{
-		URLResolver: func() string {
+		InstanceResolver: func() (string, string, error) {
 			if discovery != nil {
 				if inst := discovery.Store().GetServiceInstances("owsec"); inst != nil {
-					return inst.PrivateEndPoint
+					return inst.PrivateEndPoint, inst.Key, nil
 				}
 			}
-			return ""
-		},
-		KeyResolver: func() string {
-			if discovery != nil {
-				if inst := discovery.Store().GetServiceInstances("owsec"); inst != nil {
-					return inst.Key
-				}
-			}
-			return ""
+			return "", "", fmt.Errorf("owsec service endpoint not discovered or available")
 		},
 		InternalName: instancePrivateEndpoint,
 		TLSConfig:    tlsConfig,

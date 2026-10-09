@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,24 +27,29 @@ type Client interface {
 	GetUsers(ctx context.Context, token, reqID, corrID string) ([]models.SecUser, error)
 }
 
+// InstanceResolver resolves an instance's endpoint and key together from a single discovered instance.
+type InstanceResolver func() (endpoint string, key string, err error)
+
 type client struct {
-	urlResolver  func() string
-	keyResolver  func() string
-	internalName string
-	internalKey  string
-	httpClient   *http.Client
-	logger       *slog.Logger
+	instanceResolver InstanceResolver
+	urlResolver      func() string
+	keyResolver      func() string
+	internalName     string
+	internalKey      string
+	httpClient       *http.Client
+	logger           *slog.Logger
 }
 
 // Config holds configuration for creating an OWSEC client.
 type Config struct {
-	URLResolver  func() string
-	KeyResolver  func() string
-	InternalName string
-	InternalKey  string
-	Timeout      time.Duration
-	TLSConfig    *tls.Config
-	Logger       *slog.Logger
+	InstanceResolver InstanceResolver
+	URLResolver      func() string
+	KeyResolver      func() string
+	InternalName     string
+	InternalKey      string
+	Timeout          time.Duration
+	TLSConfig        *tls.Config
+	Logger           *slog.Logger
 }
 
 // NewClient creates a new OWSEC client instance.
@@ -64,10 +70,11 @@ func NewClient(cfg Config) Client {
 	}
 
 	return &client{
-		urlResolver:  cfg.URLResolver,
-		keyResolver:  cfg.KeyResolver,
-		internalName: cfg.InternalName,
-		internalKey:  cfg.InternalKey,
+		instanceResolver: cfg.InstanceResolver,
+		urlResolver:      cfg.URLResolver,
+		keyResolver:      cfg.KeyResolver,
+		internalName:     cfg.InternalName,
+		internalKey:      cfg.InternalKey,
 		httpClient: &http.Client{
 			Timeout:   timeout,
 			Transport: transport,
@@ -76,18 +83,42 @@ func NewClient(cfg Config) Client {
 	}
 }
 
-func (c *client) getBaseURL() (string, error) {
-	if c.urlResolver != nil {
-		if resolved := c.urlResolver(); resolved != "" {
-			return strings.TrimRight(resolved, "/"), nil
+func (c *client) resolveTarget() (string, string, error) {
+	if c.instanceResolver != nil {
+		ep, key, err := c.instanceResolver()
+		if err != nil {
+			var apiErr models.ApiError
+			if errors.As(err, &apiErr) {
+				return "", "", err
+			}
+			return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owsec service endpoint not discovered or available")
 		}
+		if ep == "" {
+			return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owsec service endpoint not discovered or available")
+		}
+		return strings.TrimRight(ep, "/"), key, nil
 	}
-	return "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owsec service endpoint not discovered or available")
+
+	var ep string
+	if c.urlResolver != nil {
+		ep = c.urlResolver()
+	}
+	if ep == "" {
+		return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owsec service endpoint not discovered or available")
+	}
+
+	var key string
+	if c.keyResolver != nil {
+		key = c.keyResolver()
+	} else {
+		key = c.internalKey
+	}
+	return strings.TrimRight(ep, "/"), key, nil
 }
 
 // GetUsers retrieves all accessible users from OWSEC using pagination.
 func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]models.SecUser, error) {
-	baseURL, err := c.getBaseURL()
+	baseURL, apiKey, err := c.resolveTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +133,7 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to create users request", err)
 		}
 
-		c.setHeaders(req, token, reqID, corrID)
+		c.setHeaders(req, apiKey, token, reqID, corrID)
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -120,13 +151,13 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
+			_ = body
 			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWSEC returned non-200 status",
 					"service", "owsec",
 					"status", resp.StatusCode,
 					"endpoint", req.URL.Path,
-					"error_summary", strings.ToValidUTF8(strings.TrimSpace(string(body)), ""),
 					"request_id", reqID,
 					"correlation_id", corrID,
 				)
@@ -152,15 +183,9 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 	return allUsers, nil
 }
 
-func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {
+func (c *client) setHeaders(req *http.Request, key, token, reqID, corrID string) {
 	if c.internalName != "" {
 		req.Header.Set("X-INTERNAL-NAME", c.internalName)
-	}
-	var key string
-	if c.keyResolver != nil {
-		key = c.keyResolver()
-	} else {
-		key = c.internalKey
 	}
 	if key != "" {
 		req.Header.Set("X-API-KEY", key)
