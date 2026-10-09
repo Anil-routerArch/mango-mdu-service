@@ -20,6 +20,12 @@ func TestOWSecClient_GetUsers(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer test-sec-token" {
 			t.Errorf("missing or invalid auth header: %s", r.Header.Get("Authorization"))
 		}
+		if r.Header.Get("X-INTERNAL-NAME") != "mango-mdu-service" {
+			t.Errorf("missing or invalid internal name header: %s", r.Header.Get("X-INTERNAL-NAME"))
+		}
+		if r.Header.Get("X-API-KEY") != "test-sec-api-key" {
+			t.Errorf("missing or invalid api key header: %s", r.Header.Get("X-API-KEY"))
+		}
 		if r.Header.Get("User-Agent") != "mango-mdu-service/1.0" {
 			t.Errorf("missing user-agent: %s", r.Header.Get("User-Agent"))
 		}
@@ -33,7 +39,10 @@ func TestOWSecClient_GetUsers(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owsec.NewClient(owsec.Config{URLResolver: func() string { return ts.URL }})
+	client := owsec.NewClient(owsec.Config{
+		URLResolver: func() string { return ts.URL },
+		InternalKey: "test-sec-api-key",
+	})
 	users, err := client.GetUsers(context.Background(), "test-sec-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -44,7 +53,10 @@ func TestOWSecClient_GetUsers(t *testing.T) {
 }
 
 func TestOWSecClient_Unreachable(t *testing.T) {
-	client := owsec.NewClient(owsec.Config{URLResolver: func() string { return "http://127.0.0.1:1" }}) // closed port
+	client := owsec.NewClient(owsec.Config{
+		URLResolver: func() string { return "http://127.0.0.1:1" }, // closed port
+		InternalKey: "test-sec-api-key",
+	})
 	_, err := client.GetUsers(context.Background(), "token", "req", "corr")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -136,7 +148,10 @@ func TestOWSecClient_DownstreamError_Sanitized(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owsec.NewClient(owsec.Config{URLResolver: func() string { return ts.URL }})
+	client := owsec.NewClient(owsec.Config{
+		URLResolver: func() string { return ts.URL },
+		InternalKey: "test-sec-api-key",
+	})
 	_, err := client.GetUsers(context.Background(), "token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -191,5 +206,20 @@ func TestOWSecClient_InstanceResolver(t *testing.T) {
 	}
 	if len(users) != 1 || users[0].Name != "Dave Miller" {
 		t.Errorf("unexpected users: %+v", users)
+	}
+}
+
+func TestOWSecClient_MissingAPIKey(t *testing.T) {
+	client := owsec.NewClient(owsec.Config{
+		URLResolver: func() string { return "http://127.0.0.1:8080" },
+	})
+	_, err := client.GetUsers(context.Background(), "token", "req", "corr")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(models.ApiError)
+	if !ok || apiErr.ErrorCode != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 ApiError, got %+v", err)
 	}
 }

@@ -69,11 +69,16 @@ func NewClient(cfg Config) Client {
 		logger = slog.Default()
 	}
 
+	internalName := strings.TrimSpace(cfg.InternalName)
+	if internalName == "" {
+		internalName = "mango-mdu-service"
+	}
+
 	return &client{
 		instanceResolver: cfg.InstanceResolver,
 		urlResolver:      cfg.URLResolver,
 		keyResolver:      cfg.KeyResolver,
-		internalName:     cfg.InternalName,
+		internalName:     internalName,
 		internalKey:      cfg.InternalKey,
 		httpClient: &http.Client{
 			Timeout:   timeout,
@@ -96,6 +101,9 @@ func (c *client) resolveTarget() (string, string, error) {
 		if ep == "" {
 			return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owsec service endpoint not discovered or available")
 		}
+		if strings.TrimSpace(key) == "" {
+			return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owsec service API key not discovered or available")
+		}
 		return strings.TrimRight(ep, "/"), key, nil
 	}
 
@@ -112,6 +120,9 @@ func (c *client) resolveTarget() (string, string, error) {
 		key = c.keyResolver()
 	} else {
 		key = c.internalKey
+	}
+	if strings.TrimSpace(key) == "" {
+		return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owsec service API key not discovered or available")
 	}
 	return strings.TrimRight(ep, "/"), key, nil
 }
@@ -184,12 +195,8 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 }
 
 func (c *client) setHeaders(req *http.Request, key, token, reqID, corrID string) {
-	if c.internalName != "" {
-		req.Header.Set("X-INTERNAL-NAME", c.internalName)
-	}
-	if key != "" {
-		req.Header.Set("X-API-KEY", key)
-	}
+	req.Header.Set("X-INTERNAL-NAME", c.internalName)
+	req.Header.Set("X-API-KEY", key)
 	if token != "" {
 		if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
 			req.Header.Set("Authorization", "Bearer "+token)
