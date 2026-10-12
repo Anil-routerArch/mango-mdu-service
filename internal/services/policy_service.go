@@ -114,11 +114,10 @@ func (s *policyService) GetPolicyOverview(ctx context.Context, policyID, token, 
 
 			totalScopedAssignments++
 
-			if role.Entity != "" {
-				uniqueEntities[role.Entity] = struct{}{}
-			}
 			if role.Venue != "" {
 				uniqueVenues[role.Venue] = struct{}{}
+			} else if role.Entity != "" {
+				uniqueEntities[role.Entity] = struct{}{}
 			}
 
 			// Resolve entity name
