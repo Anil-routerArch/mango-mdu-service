@@ -19,6 +19,7 @@ import (
 const (
 	userAgent        = "mango-mdu-service/1.0"
 	pageSize         = 500
+	maxPages         = 100
 	maxErrorBytes    = 2048
 	maxResponseBytes = 10 << 20 // 10 MB
 )
@@ -153,8 +154,10 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 
 	var allRoles []models.ManagementRole
 	offset := 0
+	pages := 0
 
 	for {
+		pages++
 		endpoint := fmt.Sprintf("%s/api/v1/managementRole?policyId=%s&limit=%d&offset=%d",
 			baseURL, url.QueryEscape(policyID), pageSize, offset)
 
@@ -205,7 +208,10 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 
 		allRoles = append(allRoles, roleResp.Roles...)
 
-		if len(roleResp.Roles) < pageSize {
+		if len(roleResp.Roles) < pageSize || pages >= maxPages {
+			if len(roleResp.Roles) == pageSize && pages >= maxPages && c.logger != nil {
+				c.logger.Warn("pagination reached maximum allowed pages", "service", "owprov", "endpoint", "managementRole", "max_pages", maxPages, "total_records", len(allRoles))
+			}
 			break
 		}
 		offset += pageSize
@@ -223,8 +229,10 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 
 	var allEntities []models.Entity
 	offset := 0
+	pages := 0
 
 	for {
+		pages++
 		endpoint := fmt.Sprintf("%s/api/v1/entity?limit=%d&offset=%d", baseURL, pageSize, offset)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
@@ -273,7 +281,10 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 
 		allEntities = append(allEntities, entityResp.Entities...)
 
-		if len(entityResp.Entities) < pageSize {
+		if len(entityResp.Entities) < pageSize || pages >= maxPages {
+			if len(entityResp.Entities) == pageSize && pages >= maxPages && c.logger != nil {
+				c.logger.Warn("pagination reached maximum allowed pages", "service", "owprov", "endpoint", "entity", "max_pages", maxPages, "total_records", len(allEntities))
+			}
 			break
 		}
 		offset += pageSize
@@ -291,8 +302,10 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 
 	var allVenues []models.Venue
 	offset := 0
+	pages := 0
 
 	for {
+		pages++
 		endpoint := fmt.Sprintf("%s/api/v1/venue?limit=%d&offset=%d", baseURL, pageSize, offset)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
@@ -341,7 +354,10 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 
 		allVenues = append(allVenues, venueResp.Venues...)
 
-		if len(venueResp.Venues) < pageSize {
+		if len(venueResp.Venues) < pageSize || pages >= maxPages {
+			if len(venueResp.Venues) == pageSize && pages >= maxPages && c.logger != nil {
+				c.logger.Warn("pagination reached maximum allowed pages", "service", "owprov", "endpoint", "venue", "max_pages", maxPages, "total_records", len(allVenues))
+			}
 			break
 		}
 		offset += pageSize

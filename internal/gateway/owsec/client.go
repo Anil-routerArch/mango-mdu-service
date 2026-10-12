@@ -19,6 +19,7 @@ import (
 const (
 	userAgent        = "mango-mdu-service/1.0"
 	pageSize         = 500
+	maxPages         = 100
 	maxErrorBytes    = 2048
 	maxResponseBytes = 10 << 20 // 10 MB
 )
@@ -137,8 +138,10 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 
 	var allUsers []models.SecUser
 	offset := 0
+	pages := 0
 
 	for {
+		pages++
 		endpoint := fmt.Sprintf("%s/api/v1/users?limit=%d&offset=%d", baseURL, pageSize, offset)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
@@ -187,7 +190,10 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 
 		allUsers = append(allUsers, usersResp.Users...)
 
-		if len(usersResp.Users) < pageSize {
+		if len(usersResp.Users) < pageSize || pages >= maxPages {
+			if len(usersResp.Users) == pageSize && pages >= maxPages && c.logger != nil {
+				c.logger.Warn("pagination reached maximum allowed pages", "service", "owsec", "max_pages", maxPages, "total_records", len(allUsers))
+			}
 			break
 		}
 		offset += pageSize
