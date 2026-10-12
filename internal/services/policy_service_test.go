@@ -320,3 +320,64 @@ func TestGetPolicyOverview_MultiUserRole_TC_POL_011(t *testing.T) {
 		t.Errorf("expected 2 users in usersWithPolicy, got %d", len(res.UsersWithPolicy))
 	}
 }
+
+func TestGetPolicyOverview_VenueOnlyScope(t *testing.T) {
+	policyID := "523e4567-e89b-12d3-a456-426614174000"
+	u1 := "11111111-1111-1111-1111-111111111111"
+
+	prov := &mockProvClient{
+		getPolicyFn: func(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error) {
+			return &models.ManagementPolicy{ID: policyID, Name: "CSR Policy"}, nil
+		},
+		getRolesByPolicyFn: func(ctx context.Context, pID, token, reqID, corrID string) ([]models.ManagementRole, error) {
+			return []models.ManagementRole{
+				{
+					ID:               "role-venue-only",
+					ManagementPolicy: policyID,
+					Entity:           "e-1",
+					Venue:            "v-1",
+					Users:            []string{u1},
+				},
+			}, nil
+		},
+		getEntitiesFn: func(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error) {
+			return []models.Entity{{ID: "e-1", Name: "Property One"}}, nil
+		},
+		getVenuesFn: func(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error) {
+			return []models.Venue{{ID: "v-1", Name: "Venue One"}}, nil
+		},
+	}
+
+	sec := &mockSecClient{
+		getUsersFn: func(ctx context.Context, token, reqID, corrID string) ([]models.SecUser, error) {
+			return []models.SecUser{
+				{ID: u1, Name: "Aditya"},
+			}, nil
+		},
+	}
+
+	svc := services.NewPolicyService(prov, sec)
+	res, err := svc.GetPolicyOverview(context.Background(), policyID, "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.TotalUsers != 1 {
+		t.Errorf("expected TotalUsers=1, got %d", res.TotalUsers)
+	}
+	if res.TotalScopedAssignments != 1 {
+		t.Errorf("expected TotalScopedAssignments=1, got %d", res.TotalScopedAssignments)
+	}
+	if res.TotalProperties != 0 {
+		t.Errorf("expected TotalProperties=0 for venue-only scope, got %d", res.TotalProperties)
+	}
+	if res.TotalVenues != 1 {
+		t.Errorf("expected TotalVenues=1, got %d", res.TotalVenues)
+	}
+	if len(res.UsersWithPolicy) != 1 {
+		t.Fatalf("expected 1 user, got %d", len(res.UsersWithPolicy))
+	}
+	if res.UsersWithPolicy[0].Scopes[0].VenueName != "Venue One" || res.UsersWithPolicy[0].Scopes[0].EntityName != "Property One" {
+		t.Errorf("unexpected scope names: %+v", res.UsersWithPolicy[0].Scopes[0])
+	}
+}
