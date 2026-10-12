@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	userAgent     = "mango-mdu-service/1.0"
-	pageSize      = 500
-	maxErrorBytes = 2048
+	userAgent        = "mango-mdu-service/1.0"
+	pageSize         = 500
+	maxErrorBytes    = 2048
+	maxResponseBytes = 10 << 20 // 10 MB
 )
 
 // Client defines the contract for communicating with OWSEC.
@@ -177,7 +178,8 @@ func (c *client) GetUsers(ctx context.Context, token, reqID, corrID string) ([]m
 		}
 
 		var usersResp models.SecUserListResponse
-		err = json.NewDecoder(resp.Body).Decode(&usersResp)
+		limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+		err = json.NewDecoder(limitedReader).Decode(&usersResp)
 		resp.Body.Close()
 		if err != nil {
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse users response", err)

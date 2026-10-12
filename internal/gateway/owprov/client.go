@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	userAgent     = "mango-mdu-service/1.0"
-	pageSize      = 500
-	maxErrorBytes = 2048
+	userAgent        = "mango-mdu-service/1.0"
+	pageSize         = 500
+	maxErrorBytes    = 2048
+	maxResponseBytes = 10 << 20 // 10 MB
 )
 
 // Client defines the contract for communicating with OWPROV.
@@ -133,7 +134,10 @@ func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string)
 	}
 
 	var policy models.ManagementPolicy
-	if err := json.NewDecoder(resp.Body).Decode(&policy); err != nil {
+	limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+	err = json.NewDecoder(limitedReader).Decode(&policy)
+	resp.Body.Close()
+	if err != nil {
 		return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse policy response", err)
 	}
 
@@ -192,7 +196,8 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 		}
 
 		var roleResp models.ManagementRoleListResponse
-		err = json.NewDecoder(resp.Body).Decode(&roleResp)
+		limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+		err = json.NewDecoder(limitedReader).Decode(&roleResp)
 		resp.Body.Close()
 		if err != nil {
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse roles response", err)
@@ -259,7 +264,8 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 		}
 
 		var entityResp models.EntityListResponse
-		err = json.NewDecoder(resp.Body).Decode(&entityResp)
+		limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+		err = json.NewDecoder(limitedReader).Decode(&entityResp)
 		resp.Body.Close()
 		if err != nil {
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse entities response", err)
@@ -326,7 +332,8 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 		}
 
 		var venueResp models.VenueListResponse
-		err = json.NewDecoder(resp.Body).Decode(&venueResp)
+		limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+		err = json.NewDecoder(limitedReader).Decode(&venueResp)
 		resp.Body.Close()
 		if err != nil {
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse venues response", err)
