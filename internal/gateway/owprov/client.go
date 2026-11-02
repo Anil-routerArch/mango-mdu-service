@@ -30,6 +30,11 @@ type Client interface {
 	GetRolesByPolicy(ctx context.Context, policyID, token, reqID, corrID string) ([]models.ManagementRole, error)
 	GetEntities(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error)
 	GetVenues(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error)
+	GetInventory(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error)
+	GetInventoryCount(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error)
+	GetInventorySerials(ctx context.Context, token, reqID, corrID string) ([]string, error)
+	GetInventoryItem(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
+	DeleteInventoryItem(ctx context.Context, serial, token, reqID, corrID string) error
 }
 
 type client struct {
@@ -364,6 +369,307 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 	}
 
 	return allVenues, nil
+}
+
+// GetInventory retrieves a page of inventory records from OWPROV with extended information.
+func (c *client) GetInventory(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error) {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/inventory?withExtendedInfo=true&limit=%d&offset=%d", baseURL, limit, offset)
+	if unassigned {
+		endpoint += "&unassigned=true"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create inventory request", err)
+	}
+
+	c.setHeaders(req, token, reqID, corrID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV inventory request failed",
+				"service", "owprov",
+				"error", err,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV returned non-200 status for inventory",
+				"service", "owprov",
+				"status", resp.StatusCode,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+	}
+
+	var tagResp models.InventoryTagListResponse
+	limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+	if err := json.NewDecoder(limitedReader).Decode(&tagResp); err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse inventory response", err)
+	}
+
+	return tagResp.Tags(), nil
+}
+
+// GetInventoryCount retrieves the total count of inventory records accessible to the caller.
+func (c *client) GetInventoryCount(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error) {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return 0, err
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/inventory?countOnly=true", baseURL)
+	if unassigned {
+		endpoint += "&unassigned=true"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, apperror.Wrap(apperror.CodeInternal, "failed to create inventory count request", err)
+	}
+
+	c.setHeaders(req, token, reqID, corrID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV inventory count request failed",
+				"service", "owprov",
+				"error", err,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return 0, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return 0, models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV returned non-200 status for inventory count",
+				"service", "owprov",
+				"status", resp.StatusCode,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return 0, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+	}
+
+	var countResp models.CountOnlyResponse
+	limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+	if err := json.NewDecoder(limitedReader).Decode(&countResp); err != nil {
+		return 0, apperror.Wrap(apperror.CodeInternal, "failed to parse inventory count response", err)
+	}
+
+	return countResp.Count, nil
+}
+
+func (c *client) GetInventorySerials(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/inventory?serialOnly=true", baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create inventory serials request", err)
+	}
+
+	c.setHeaders(req, token, reqID, corrID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV inventory serials request failed",
+				"service", "owprov",
+				"error", err,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV returned non-200 status for inventory serials",
+				"service", "owprov",
+				"status", resp.StatusCode,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+	}
+
+	var serialsResp models.InventorySerialsResponse
+	limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+	if err := json.NewDecoder(limitedReader).Decode(&serialsResp); err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse inventory serials response", err)
+	}
+
+	return serialsResp.SerialNumbers, nil
+}
+
+func normalizeSerial(s string) string {
+	clean := strings.ToLower(strings.TrimSpace(s))
+	clean = strings.ReplaceAll(clean, ":", "")
+	clean = strings.ReplaceAll(clean, "-", "")
+	return clean
+}
+
+// GetInventoryItem retrieves a single inventory record from OWPROV by serial number.
+func (c *client) GetInventoryItem(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+
+	clean := normalizeSerial(serial)
+
+	endpoint := fmt.Sprintf("%s/api/v1/inventory/%s?withExtendedInfo=true", baseURL, url.PathEscape(clean))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create inventory item request", err)
+	}
+
+	c.setHeaders(req, token, reqID, corrID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV inventory item request failed",
+				"service", "owprov",
+				"serial", clean,
+				"error", err,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "failed to reach downstream owprov service")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
+	}
+
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
+		return nil, models.NewApiError(http.StatusForbidden, "Forbidden", "Device is not assigned to user or access denied")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV returned non-200 status for inventory item",
+				"service", "owprov",
+				"serial", clean,
+				"status", resp.StatusCode,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+	}
+
+	var tag models.InventoryTag
+	limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+	if err := json.NewDecoder(limitedReader).Decode(&tag); err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse inventory item response", err)
+	}
+
+	return &tag, nil
+}
+
+// DeleteInventoryItem removes an inventory item from OWPROV.
+func (c *client) DeleteInventoryItem(ctx context.Context, serial, token, reqID, corrID string) error {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return err
+	}
+
+	clean := normalizeSerial(serial)
+	if clean == "" {
+		return models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/inventory/%s", baseURL, url.PathEscape(clean))
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return apperror.Wrap(apperror.CodeInternal, "failed to create inventory delete request", err)
+	}
+
+	c.setHeaders(req, token, reqID, corrID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV delete inventory item request failed",
+				"service", "owprov",
+				"serial", clean,
+				"error", err,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "failed to reach downstream owprov service")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		return models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+	}
+
+	return nil
 }
 
 func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {

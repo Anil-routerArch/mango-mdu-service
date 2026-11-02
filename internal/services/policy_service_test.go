@@ -10,10 +10,14 @@ import (
 )
 
 type mockProvClient struct {
-	getPolicyFn        func(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error)
-	getRolesByPolicyFn func(ctx context.Context, policyID, token, reqID, corrID string) ([]models.ManagementRole, error)
-	getEntitiesFn      func(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error)
-	getVenuesFn        func(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error)
+	getPolicyFn          func(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error)
+	getRolesByPolicyFn   func(ctx context.Context, policyID, token, reqID, corrID string) ([]models.ManagementRole, error)
+	getEntitiesFn        func(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error)
+	getVenuesFn          func(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error)
+	getInventoryFn       func(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error)
+	getInventoryCountFn  func(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error)
+	getInventorySerialsFn func(ctx context.Context, token, reqID, corrID string) ([]string, error)
+	getInventoryItemFn   func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
 }
 
 func (m *mockProvClient) GetPolicy(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error) {
@@ -42,6 +46,38 @@ func (m *mockProvClient) GetVenues(ctx context.Context, token, reqID, corrID str
 		return m.getVenuesFn(ctx, token, reqID, corrID)
 	}
 	return nil, nil
+}
+
+func (m *mockProvClient) GetInventory(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error) {
+	if m.getInventoryFn != nil {
+		return m.getInventoryFn(ctx, token, reqID, corrID, limit, offset, unassigned)
+	}
+	return []models.InventoryTag{}, nil
+}
+
+func (m *mockProvClient) GetInventoryCount(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error) {
+	if m.getInventoryCountFn != nil {
+		return m.getInventoryCountFn(ctx, token, reqID, corrID, unassigned)
+	}
+	return 0, nil
+}
+
+func (m *mockProvClient) GetInventorySerials(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+	if m.getInventorySerialsFn != nil {
+		return m.getInventorySerialsFn(ctx, token, reqID, corrID)
+	}
+	return nil, nil
+}
+
+func (m *mockProvClient) GetInventoryItem(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+	if m.getInventoryItemFn != nil {
+		return m.getInventoryItemFn(ctx, serial, token, reqID, corrID)
+	}
+	return nil, nil
+}
+
+func (m *mockProvClient) DeleteInventoryItem(ctx context.Context, serial, token, reqID, corrID string) error {
+	return nil
 }
 
 type mockSecClient struct {

@@ -255,3 +255,121 @@ func TestOWProvClient_DownstreamError_Sanitized(t *testing.T) {
 		t.Errorf("expected sanitized message, got %q", apiErr.ErrorDetails)
 	}
 }
+
+func TestOWProvClient_GetInventory_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/inventory" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Errorf("expected Bearer test-jwt-token, got %q", r.Header.Get("Authorization"))
+		}
+		if r.URL.Query().Get("withExtendedInfo") != "true" {
+			t.Errorf("expected withExtendedInfo=true, got %q", r.URL.Query().Get("withExtendedInfo"))
+		}
+		if r.URL.Query().Get("limit") != "10" {
+			t.Errorf("expected limit=10, got %q", r.URL.Query().Get("limit"))
+		}
+		if r.URL.Query().Get("offset") != "0" {
+			t.Errorf("expected offset=0, got %q", r.URL.Query().Get("offset"))
+		}
+
+		resp := models.InventoryTagListResponse{
+			TagList: []models.InventoryTag{
+				{
+					SerialNumber: "60cf84f22290",
+					Name:         "AP-Main-Lobby",
+					DeviceType:   "ap",
+					Entity:       "ent-1",
+					Venue:        "ven-1",
+					ExtendedInfo: &models.InventoryExtendedInfo{
+						Venue: &models.ExtendedVenue{
+							ID:   "ven-1",
+							Name: "Main Building",
+						},
+					},
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	tags, err := client.GetInventory(context.Background(), "test-jwt-token", "req-1", "corr-1", 10, 0, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tags) != 1 {
+		t.Fatalf("expected 1 tag, got %d", len(tags))
+	}
+	if tags[0].SerialNumber != "60cf84f22290" {
+		t.Errorf("expected serial 60cf84f22290, got %s", tags[0].SerialNumber)
+	}
+	if tags[0].ExtendedInfo == nil || tags[0].ExtendedInfo.Venue.Name != "Main Building" {
+		t.Errorf("expected venue name Main Building, got %+v", tags[0].ExtendedInfo)
+	}
+}
+
+func TestOWProvClient_GetInventoryCount_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/inventory" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Errorf("expected Bearer test-jwt-token, got %q", r.Header.Get("Authorization"))
+		}
+		if r.URL.Query().Get("countOnly") != "true" {
+			t.Errorf("expected countOnly=true, got %q", r.URL.Query().Get("countOnly"))
+		}
+
+		resp := models.CountOnlyResponse{
+			Count: 42,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	count, err := client.GetInventoryCount(context.Background(), "test-jwt-token", "req-1", "corr-1", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count != 42 {
+		t.Errorf("expected count 42, got %d", count)
+	}
+}
+
+func TestOWProvClient_GetInventorySerials_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/inventory" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Errorf("expected Bearer test-jwt-token, got %q", r.Header.Get("Authorization"))
+		}
+		if r.URL.Query().Get("serialOnly") != "true" {
+			t.Errorf("expected serialOnly=true, got %q", r.URL.Query().Get("serialOnly"))
+		}
+
+		resp := models.InventorySerialsResponse{
+			SerialNumbers: []string{"24f5a201b1a0", "24f5a201b1a1", "24f5a201b1a2"},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	serials, err := client.GetInventorySerials(context.Background(), "test-jwt-token", "req-1", "corr-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(serials) != 3 {
+		t.Fatalf("expected 3 serials, got %d", len(serials))
+	}
+	if serials[0] != "24f5a201b1a0" || serials[1] != "24f5a201b1a1" || serials[2] != "24f5a201b1a2" {
+		t.Errorf("unexpected serials: %v", serials)
+	}
+}
+
+

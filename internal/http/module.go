@@ -18,14 +18,16 @@ import (
 )
 
 type Dependencies struct {
-	ServerLogger      *slog.Logger
-	ServerConfig      config.ServerConfig
-	SubsystemConfig   subsystemroutes.Config
-	PublicAuthConfig  auth.PublicAuthConfig
-	PrivateAuthConfig auth.InternalAPIKeyConfig
-	TokenValidator    *owsec.SecurityClient
-	AuthEnabled       bool
-	PolicyHandler     *handlers.PolicyHandler
+	ServerLogger        *slog.Logger
+	ServerConfig        config.ServerConfig
+	SubsystemConfig     subsystemroutes.Config
+	PublicAuthConfig    auth.PublicAuthConfig
+	PrivateAuthConfig   auth.InternalAPIKeyConfig
+	TokenValidator      *owsec.SecurityClient
+	AuthEnabled         bool
+	PolicyHandler       *handlers.PolicyHandler
+	DeviceHandler       *handlers.DeviceHandler
+	DeviceEventsHandler *handlers.DeviceEventsHandler
 }
 
 type Module struct {
@@ -47,12 +49,15 @@ func NewModule(deps Dependencies) (*Module, error) {
 	}
 
 	appConfig := fiber.Config{
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout: 10 * time.Second,
+		// WriteTimeout is 0 (unlimited) to support long-lived real-time streaming connections (SSE/events)
 	}
 
 	publicApp := fiber.New(appConfig)
-	privateApp := fiber.New(appConfig)
+	privateApp := fiber.New(fiber.Config{
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
+	})
 
 	// Register CORS policy for external UI calls
 	middleware.RegisterPublicCORS(publicApp)
@@ -63,9 +68,11 @@ func NewModule(deps Dependencies) (*Module, error) {
 
 	// Configure public routes
 	routes.RegisterPublic(publicApp, routes.PublicDeps{
-		AuthHandler:   authMiddleware.GetPublicAuthHandler(),
-		Subsystem:     deps.SubsystemConfig,
-		PolicyHandler: deps.PolicyHandler,
+		AuthHandler:         authMiddleware.GetPublicAuthHandler(),
+		Subsystem:           deps.SubsystemConfig,
+		PolicyHandler:       deps.PolicyHandler,
+		DeviceHandler:       deps.DeviceHandler,
+		DeviceEventsHandler: deps.DeviceEventsHandler,
 	})
 
 	// Configure private routes

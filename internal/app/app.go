@@ -12,6 +12,8 @@ import (
 
 	"github.com/routerarchitects/mango-mdu-service/internal/config"
 	"github.com/routerarchitects/mango-mdu-service/internal/db"
+	"github.com/routerarchitects/mango-mdu-service/internal/events"
+	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owgw"
 	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owprov"
 	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owsec"
 	apphttp "github.com/routerarchitects/mango-mdu-service/internal/http"
@@ -26,11 +28,13 @@ import (
 
 // App encapsulates all application level runtime wiring.
 type App struct {
-	cfg       *config.Config
-	logger    *slog.Logger
-	db        *db.Database
-	discovery *servicediscovery.Discovery
-	httpMod   *apphttp.Module
+	cfg           *config.Config
+	logger        *slog.Logger
+	db            *db.Database
+	discovery     *servicediscovery.Discovery
+	kafkaConsumer *events.KafkaEventConsumer
+	hub           *events.Hub
+	httpMod       *apphttp.Module
 }
 
 // New initializes all dependencies and builds the App.
@@ -161,24 +165,47 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 		Logger:       rootLog,
 	})
 
+	owgwClient := owgw.NewClient(owgw.Config{
+		URLResolver: func() string {
+			if discovery != nil {
+				if inst := discovery.Store().GetServiceInstances("owgw"); inst != nil {
+					return inst.PrivateEndPoint
+				}
+			}
+			return ""
+		},
+		TLSConfig: tlsConfig,
+		Logger:    rootLog,
+	})
+
 	policyService := services.NewPolicyService(owprovClient, owsecClient)
 	policyHandler := handlers.NewPolicyHandler(policyService, rootLog)
 
-	// 7. Assemble Fiber HTTP apps module
+	deviceService := services.NewDeviceService(owprovClient, owgwClient, rootLog)
+	deviceHandler := handlers.NewDeviceHandler(deviceService, rootLog)
+
+	// 7. Initialize Realtime Event Hub and Kafka Consumer
+	hub := events.NewHub(owprovClient, logger.Subsystem("event-hub"))
+	deviceEventsHandler := handlers.NewDeviceEventsHandler(hub, tokenValidator, logger.Subsystem("event-stream"))
+	kafkaConsumer := events.NewKafkaConsumer(cfg.Kafka.Config, hub, logger.Subsystem("kafka-events"))
+
+	// 8. Assemble Fiber HTTP apps module
 	publicAuthConfig := auth.PublicAuthConfig{}
 	privateAuthConfig := auth.InternalAPIKeyConfig{
 		ExpectedAPIKey: instanceKey,
 	}
 
 	module, err := apphttp.NewModule(apphttp.Dependencies{
-		ServerLogger:      logger.Subsystem("server"),
-		ServerConfig:      cfg.Server,
-		SubsystemConfig:   cfg.Subsystem.Config,
-		PublicAuthConfig:  publicAuthConfig,
-		PrivateAuthConfig: privateAuthConfig,
-		TokenValidator:    tokenValidator,
-		AuthEnabled:       cfg.Auth.Enabled,
-		PolicyHandler:     policyHandler,
+		ServerLogger:        logger.Subsystem("server"),
+		ServerConfig:        cfg.Server,
+		SubsystemConfig:     cfg.Subsystem.Config,
+		PublicAuthConfig:    publicAuthConfig,
+		PrivateAuthConfig:   privateAuthConfig,
+		TokenValidator:      tokenValidator,
+		AuthEnabled:         cfg.Auth.Enabled,
+		PolicyHandler:       policyHandler,
+		DeviceHandler:       deviceHandler,
+		DeviceEventsHandler: deviceEventsHandler,
 	})
 	if err != nil {
 		database.Close()
@@ -186,11 +213,13 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 	}
 
 	return &App{
-		cfg:       cfg,
-		logger:    rootLog,
-		db:        database,
-		discovery: discovery,
-		httpMod:   module,
+		cfg:           cfg,
+		logger:        rootLog,
+		db:            database,
+		discovery:     discovery,
+		kafkaConsumer: kafkaConsumer,
+		hub:           hub,
+		httpMod:       module,
 	}, nil
 }
 
@@ -203,11 +232,21 @@ func (a *App) Start(ctx context.Context) (<-chan error, error) {
 		}
 	}
 
+	// Start Kafka event consumer loop
+	if a.kafkaConsumer != nil {
+		if err := a.kafkaConsumer.Start(ctx); err != nil {
+			a.logger.Error("failed to start kafka device event consumer", "error", err)
+		}
+	}
+
 	// Bind HTTP ports and start Fiber apps
 	serverErrCh, err := a.httpMod.Start(ctx)
 	if err != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		if a.kafkaConsumer != nil {
+			_ = a.kafkaConsumer.Stop()
+		}
 		if a.cfg.Discovery.Enabled && a.discovery != nil {
 			_ = a.discovery.Stop(shutdownCtx)
 		}
@@ -224,6 +263,15 @@ func (a *App) Close(ctx context.Context) error {
 	if err := a.httpMod.Shutdown(); err != nil {
 		a.logger.Error("forced HTTP shutdown occurred", "error", err)
 		firstErr = err
+	}
+
+	if a.kafkaConsumer != nil {
+		if err := a.kafkaConsumer.Stop(); err != nil {
+			a.logger.Error("failed to gracefully stop kafka device event consumer", "error", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
 	}
 
 	if a.cfg.Discovery.Enabled && a.discovery != nil {
