@@ -514,6 +514,3 @@ func (s *deviceService) DeleteDevice(ctx context.Context, serial, token, reqID, 
 
 	return nil
 }
-
-
-

@@ -128,7 +128,7 @@ type DeviceFleetItem struct {
 	UptimeSeconds         *int64   `json:"uptimeSeconds,omitempty"`
 	Started               *int64   `json:"started,omitempty"`
 	LastContact           any      `json:"lastContact,omitempty"`
-	LastContactTimestamp   *int64   `json:"lastContactTimestamp,omitempty"`
+	LastContactTimestamp  *int64   `json:"lastContactTimestamp,omitempty"`
 	LastContactText       string   `json:"lastContactText,omitempty"`
 	LastRecordedContact   *int64   `json:"lastRecordedContact,omitempty"`
 	LastFWUpdate          *int64   `json:"lastFWUpdate,omitempty"`
@@ -168,5 +168,3 @@ type PaginatedDevicesResponse struct {
 type InventorySerialsResponse struct {
 	SerialNumbers []string `json:"serialNumbers"`
 }
-
-

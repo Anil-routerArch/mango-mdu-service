@@ -350,4 +350,3 @@ func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {
 		req.Header.Set("X-Correlation-Id", corrID)
 	}
 }
-

@@ -341,4 +341,3 @@ func TestDeviceService_DeviceActions_RBAC(t *testing.T) {
 		t.Errorf("expected 403 Forbidden for Delete on unauthorized device")
 	}
 }
-

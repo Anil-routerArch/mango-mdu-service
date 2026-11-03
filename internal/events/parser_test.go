@@ -184,4 +184,3 @@ func TestParseKafkaMessage_InvalidInputs(t *testing.T) {
 		t.Errorf("expected error for malformed json")
 	}
 }
-

@@ -232,4 +232,3 @@ func TestHub_UnregisterSession(t *testing.T) {
 		t.Errorf("expected session to be closed")
 	}
 }
-

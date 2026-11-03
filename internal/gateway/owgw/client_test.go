@@ -87,4 +87,3 @@ func TestOWGWClient_GetDevicesStatus_Unauthorized(t *testing.T) {
 		t.Errorf("expected 401 ApiError, got %+v", err)
 	}
 }
-

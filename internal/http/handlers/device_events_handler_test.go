@@ -182,5 +182,3 @@ func TestWebSocketHandler_Registered(t *testing.T) {
 		t.Errorf("expected /api/v1/ws GET route to be registered on app")
 	}
 }
-
-
