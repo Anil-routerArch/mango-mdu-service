@@ -157,4 +157,3 @@ func (kc *KafkaEventConsumer) handleKafkaMessage(ctx context.Context, msg *kafka
 	_ = kc.ProcessMessage(msg.Topic, msg.Key, msg.Value)
 	return nil
 }
-

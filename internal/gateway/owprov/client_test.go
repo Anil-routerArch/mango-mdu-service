@@ -371,5 +371,3 @@ func TestOWProvClient_GetInventorySerials_Success(t *testing.T) {
 		t.Errorf("unexpected serials: %v", serials)
 	}
 }
-
-

@@ -10,14 +10,14 @@ import (
 )
 
 type mockProvClient struct {
-	getPolicyFn          func(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error)
-	getRolesByPolicyFn   func(ctx context.Context, policyID, token, reqID, corrID string) ([]models.ManagementRole, error)
-	getEntitiesFn        func(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error)
-	getVenuesFn          func(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error)
-	getInventoryFn       func(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error)
-	getInventoryCountFn  func(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error)
+	getPolicyFn           func(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error)
+	getRolesByPolicyFn    func(ctx context.Context, policyID, token, reqID, corrID string) ([]models.ManagementRole, error)
+	getEntitiesFn         func(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error)
+	getVenuesFn           func(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error)
+	getInventoryFn        func(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error)
+	getInventoryCountFn   func(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error)
 	getInventorySerialsFn func(ctx context.Context, token, reqID, corrID string) ([]string, error)
-	getInventoryItemFn   func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
+	getInventoryItemFn    func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
 }
 
 func (m *mockProvClient) GetPolicy(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error) {

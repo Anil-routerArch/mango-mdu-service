@@ -12,12 +12,12 @@ import (
 )
 
 type mockKafkaConsumer struct {
-	mu           sync.Mutex
-	subscribed   bool
-	closed       bool
-	topics       []string
-	handler      kafka.Handler
-	stopChan     chan struct{}
+	mu         sync.Mutex
+	subscribed bool
+	closed     bool
+	topics     []string
+	handler    kafka.Handler
+	stopChan   chan struct{}
 }
 
 func newMockKafkaConsumer() *mockKafkaConsumer {
@@ -122,4 +122,3 @@ func TestKafkaEventConsumer_StartAndStop(t *testing.T) {
 		t.Fatalf("failed to stop kafka consumer: %v", err)
 	}
 }
-

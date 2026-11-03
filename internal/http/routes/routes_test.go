@@ -226,4 +226,3 @@ func TestQueryTokenAuthPropagation(t *testing.T) {
 		t.Errorf("expected 'Bearer my-secret-token', got %q", capturedAuthHeader)
 	}
 }
-

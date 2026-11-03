@@ -312,4 +312,3 @@ func (h *DeviceEventsHandler) UpdateSubscriptions(c fiber.Ctx) error {
 		"subscribedCount": grantedCount,
 	})
 }
-

@@ -212,4 +212,3 @@ func parseHealthcheckEvent(keySerial string, data []byte) (*DeviceEvent, error) 
 
 	return event, nil
 }
-
