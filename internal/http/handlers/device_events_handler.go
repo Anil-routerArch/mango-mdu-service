@@ -130,9 +130,10 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 
 	// Send Welcome message (matching OWPROV welcome message convention)
 	welcomeMsg, _ := json.Marshal(map[string]interface{}{
-		"success":      "Welcome! Bienvenue! Bienvenidos!",
-		"sessionId":    session.ID,
-		"allowedCount": len(allowedSerials),
+		"success":         "Welcome! Bienvenue! Bienvenidos!",
+		"sessionId":       session.ID,
+		"allowedCount":    len(allowedSerials),
+		"subscribedCount": session.SubscribedCount(),
 	})
 	if err := websocket.Message.Send(ws, string(welcomeMsg)); err != nil {
 		return
@@ -253,9 +254,9 @@ func (h *DeviceEventsHandler) StreamEvents(c fiber.Ctx) error {
 
 	// Extract optional initial viewport serial filter
 	var initialSerials []string
-	if rawSerials := c.Query("serials"); rawSerials != "" {
-		parts := strings.Split(rawSerials, ",")
-		for _, p := range parts {
+	if rawSerials, hasFilter := c.Queries()["serials"]; hasFilter {
+		initialSerials = make([]string, 0)
+		for _, p := range strings.Split(rawSerials, ",") {
 			if s := strings.TrimSpace(p); s != "" {
 				initialSerials = append(initialSerials, s)
 			}
@@ -278,7 +279,7 @@ func (h *DeviceEventsHandler) StreamEvents(c fiber.Ctx) error {
 		handshake, _ := json.Marshal(map[string]interface{}{
 			"sessionId":       session.ID,
 			"allowedCount":    len(session.AllowedSerials),
-			"subscribedCount": len(session.SubscribedSerials),
+			"subscribedCount": session.SubscribedCount(),
 		})
 		_, _ = fmt.Fprintf(w, "event: ready\ndata: %s\n\n", handshake)
 		if err := w.Flush(); err != nil {

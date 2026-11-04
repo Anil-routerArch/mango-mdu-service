@@ -467,3 +467,139 @@ func TestHub_UpdateSubscription_SessionNotFound(t *testing.T) {
 		t.Errorf("expected ErrSessionNotFound, got: %v", err)
 	}
 }
+
+func TestHub_UpdateSubscription_EmptySubscribesZero(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession("token-A", []string{"dev1", "dev2"}, nil)
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	// Initially unrestricted: all allowed devices are indexed
+	if !session.IsUnrestricted() {
+		t.Errorf("expected session to be unrestricted initially")
+	}
+	if session.SubscribedCount() != 2 {
+		t.Errorf("expected subscribedCount=2 initially, got %d", session.SubscribedCount())
+	}
+	if hub.GetSubscribersForSerial("dev1") != 1 || hub.GetSubscribersForSerial("dev2") != 1 {
+		t.Errorf("expected 1 subscriber for each device initially")
+	}
+
+	// Explicitly empty subscription: must subscribe to exactly 0 devices
+	granted, err := hub.UpdateSubscription(session.ID, "token-A", []string{})
+	if err != nil {
+		t.Fatalf("unexpected error updating subscription: %v", err)
+	}
+	if granted != 0 {
+		t.Errorf("expected 0 granted subscriptions for empty list, got %d", granted)
+	}
+	if session.IsUnrestricted() {
+		t.Errorf("expected session to be in filtered mode after UpdateSubscription")
+	}
+	if session.SubscribedCount() != 0 {
+		t.Errorf("expected subscribedCount=0, got %d", session.SubscribedCount())
+	}
+	if hub.GetSubscribersForSerial("dev1") != 0 {
+		t.Errorf("SECURITY/LEAK: expected 0 subscribers for dev1 after empty update, got %d", hub.GetSubscribersForSerial("dev1"))
+	}
+	if hub.GetSubscribersForSerial("dev2") != 0 {
+		t.Errorf("SECURITY/LEAK: expected 0 subscribers for dev2 after empty update, got %d", hub.GetSubscribersForSerial("dev2"))
+	}
+
+	// Broadcast an event for dev1: session must receive NOTHING
+	hub.Broadcast(&events.DeviceEvent{
+		Type:         "state",
+		SerialNumber: "dev1",
+		Timestamp:    100,
+	})
+
+	select {
+	case msg := <-session.Send:
+		t.Fatalf("UNEXPECTED EVENT: session received event after empty subscription: %s", string(msg))
+	case <-time.After(50 * time.Millisecond):
+		// Expected: nothing received
+	}
+}
+
+func TestHub_UpdateSubscription_WildcardRevertsToUnrestricted(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession("token-A", []string{"dev1", "dev2"}, []string{"dev1"})
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	// Initially filtered to dev1
+	if session.IsUnrestricted() {
+		t.Errorf("expected session to be filtered initially")
+	}
+	if session.SubscribedCount() != 1 {
+		t.Errorf("expected subscribedCount=1, got %d", session.SubscribedCount())
+	}
+
+	// Client sends wildcard "*" to re-subscribe to all allowed devices
+	granted, err := hub.UpdateSubscription(session.ID, "token-A", []string{"*"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if granted != 2 {
+		t.Errorf("expected 2 granted for wildcard, got %d", granted)
+	}
+	if !session.IsUnrestricted() {
+		t.Errorf("expected session to revert to unrestricted mode")
+	}
+	if session.SubscribedCount() != 2 {
+		t.Errorf("expected subscribedCount=2, got %d", session.SubscribedCount())
+	}
+	if hub.GetSubscribersForSerial("dev1") != 1 || hub.GetSubscribersForSerial("dev2") != 1 {
+		t.Errorf("expected both dev1 and dev2 to have 1 subscriber")
+	}
+
+	// Broadcast an event for dev2: session must receive it
+	hub.Broadcast(&events.DeviceEvent{
+		Type:         "state",
+		SerialNumber: "dev2",
+		Timestamp:    200,
+	})
+
+	select {
+	case <-session.Send:
+		// Expected
+	case <-time.After(50 * time.Millisecond):
+		t.Errorf("session timed out waiting for dev2 event in unrestricted mode")
+	}
+}
+
+func TestHub_UpdateSubscription_NoGhostIndexes(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession("token-A", []string{"dev1", "dev2"}, nil)
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	// 1. Initial unrestricted: dev1=1, dev2=1
+	if hub.GetSubscribersForSerial("dev1") != 1 || hub.GetSubscribersForSerial("dev2") != 1 {
+		t.Fatalf("step 1 failed")
+	}
+
+	// 2. Filter to dev1: dev1=1, dev2=0 (no ghost index on dev2)
+	hub.UpdateSubscription(session.ID, "token-A", []string{"dev1"})
+	if hub.GetSubscribersForSerial("dev1") != 1 || hub.GetSubscribersForSerial("dev2") != 0 {
+		t.Fatalf("step 2 failed: dev1=%d, dev2=%d", hub.GetSubscribersForSerial("dev1"), hub.GetSubscribersForSerial("dev2"))
+	}
+
+	// 3. Filter to empty: dev1=0, dev2=0 (no ghost index on dev1)
+	hub.UpdateSubscription(session.ID, "token-A", []string{})
+	if hub.GetSubscribersForSerial("dev1") != 0 || hub.GetSubscribersForSerial("dev2") != 0 {
+		t.Fatalf("step 3 failed: dev1=%d, dev2=%d", hub.GetSubscribersForSerial("dev1"), hub.GetSubscribersForSerial("dev2"))
+	}
+
+	// 4. Filter to dev2: dev1=0, dev2=1 (no ghost index on dev1)
+	hub.UpdateSubscription(session.ID, "token-A", []string{"dev2"})
+	if hub.GetSubscribersForSerial("dev1") != 0 || hub.GetSubscribersForSerial("dev2") != 1 {
+		t.Fatalf("step 4 failed: dev1=%d, dev2=%d", hub.GetSubscribersForSerial("dev1"), hub.GetSubscribersForSerial("dev2"))
+	}
+
+	// 5. Unregister: dev1=0, dev2=0
+	hub.UnregisterSession(session.ID)
+	if hub.GetSubscribersForSerial("dev1") != 0 || hub.GetSubscribersForSerial("dev2") != 0 {
+		t.Fatalf("step 5 failed: dev1=%d, dev2=%d", hub.GetSubscribersForSerial("dev1"), hub.GetSubscribersForSerial("dev2"))
+	}
+}

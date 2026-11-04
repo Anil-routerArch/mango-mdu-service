@@ -254,6 +254,74 @@ func TestUpdateSubscriptions_Success(t *testing.T) {
 	}
 }
 
+func TestUpdateSubscriptions_EmptyList_SubscribesZero(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession("token", []string{"dev1", "dev2"}, nil)
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	app, _ := setupEventsApp(hub)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"sessionId": session.ID,
+		"serials":   []string{},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer token")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result["success"] != true {
+		t.Errorf("expected success=true, got %v", result)
+	}
+	if result["subscribedCount"] != float64(0) {
+		t.Errorf("expected subscribedCount=0, got %v", result["subscribedCount"])
+	}
+}
+
+func TestUpdateSubscriptions_Wildcard_SubscribesAll(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession("token", []string{"dev1", "dev2"}, []string{"dev1"})
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	app, _ := setupEventsApp(hub)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"sessionId": session.ID,
+		"serials":   []string{"*"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer token")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result["success"] != true {
+		t.Errorf("expected success=true, got %v", result)
+	}
+	if result["subscribedCount"] != float64(2) {
+		t.Errorf("expected subscribedCount=2 for wildcard, got %v", result["subscribedCount"])
+	}
+}
+
 func TestWebSocketHandler_Registered(t *testing.T) {
 	hub := events.NewHub(nil, nil)
 	app, handler := setupEventsApp(hub)
