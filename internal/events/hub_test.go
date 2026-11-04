@@ -232,3 +232,143 @@ func TestHub_UnregisterSession(t *testing.T) {
 		t.Errorf("expected session to be closed")
 	}
 }
+
+func TestHub_RefreshSessionAuthorization_PruneRevokedDevice(t *testing.T) {
+	currentSerials := []string{"alpha1", "beta1"}
+	mockProv := &mockProvClientForHub{
+		getInventorySerialsFn: func(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+			return currentSerials, nil
+		},
+	}
+
+	hub := events.NewHub(mockProv, nil)
+
+	// User initially authorized and subscribed to alpha1 and beta1
+	session := hub.CreateSession("token-A", currentSerials, []string{"alpha1", "beta1"})
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	if hub.GetSubscribersForSerial("alpha1") != 1 || hub.GetSubscribersForSerial("beta1") != 1 {
+		t.Fatalf("expected 1 subscriber each for alpha1 and beta1")
+	}
+
+	// Deliver alpha1 event: must receive
+	connTrue := true
+	hub.Broadcast(&events.DeviceEvent{
+		Type:         "connection",
+		SerialNumber: "alpha1",
+		Connected:    &connTrue,
+		Timestamp:    100,
+	})
+	select {
+	case <-session.Send:
+		// expected
+	case <-time.After(50 * time.Millisecond):
+		t.Fatalf("timed out waiting for alpha1 event")
+	}
+
+	// Now REVOKE access to alpha1 in OWPROV (e.g. venue access revoked)
+	currentSerials = []string{"beta1"}
+
+	// Refresh session authorization
+	err := hub.RefreshSessionAuthorization(context.Background(), session.ID, "req-refresh", "corr-refresh")
+	if err != nil {
+		t.Fatalf("unexpected error refreshing authorization: %v", err)
+	}
+
+	// alpha1 must be pruned from inverted index
+	if hub.GetSubscribersForSerial("alpha1") != 0 {
+		t.Errorf("expected 0 subscribers for revoked alpha1, got %d", hub.GetSubscribersForSerial("alpha1"))
+	}
+	// beta1 must remain subscribed
+	if hub.GetSubscribersForSerial("beta1") != 1 {
+		t.Errorf("expected 1 subscriber for remaining beta1, got %d", hub.GetSubscribersForSerial("beta1"))
+	}
+
+	// Broadcast alpha1 again: must receive NOTHING
+	hub.Broadcast(&events.DeviceEvent{
+		Type:         "connection",
+		SerialNumber: "alpha1",
+		Connected:    &connTrue,
+		Timestamp:    200,
+	})
+	select {
+	case msg := <-session.Send:
+		t.Fatalf("SECURITY VIOLATION: received event for revoked device alpha1: %s", string(msg))
+	default:
+		// expected: nothing received
+	}
+
+	// Broadcast beta1: must still receive
+	hub.Broadcast(&events.DeviceEvent{
+		Type:         "healthcheck",
+		SerialNumber: "beta1",
+		Timestamp:    300,
+	})
+	select {
+	case <-session.Send:
+		// expected
+	case <-time.After(50 * time.Millisecond):
+		t.Fatalf("timed out waiting for beta1 event")
+	}
+}
+
+func TestHub_RefreshSessionAuthorization_AllRevoked_TerminatesSession(t *testing.T) {
+	currentSerials := []string{"alpha1"}
+	mockProv := &mockProvClientForHub{
+		getInventorySerialsFn: func(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+			return currentSerials, nil
+		},
+	}
+
+	hub := events.NewHub(mockProv, nil)
+	session := hub.CreateSession("token-A", currentSerials, []string{"alpha1"})
+	hub.RegisterSession(session)
+
+	if hub.GetActiveSessionCount() != 1 {
+		t.Fatalf("expected 1 active session")
+	}
+
+	// All device access revoked in OWPROV
+	currentSerials = []string{}
+
+	err := hub.RefreshSessionAuthorization(context.Background(), session.ID, "req-1", "corr-1")
+	if err == nil {
+		t.Fatalf("expected error when all access is revoked")
+	}
+
+	// Session must be closed and unregistered
+	if !session.IsClosed() {
+		t.Errorf("expected session to be closed")
+	}
+	if hub.GetActiveSessionCount() != 0 {
+		t.Errorf("expected 0 active sessions after revocation, got %d", hub.GetActiveSessionCount())
+	}
+	if hub.GetSubscribersForSerial("alpha1") != 0 {
+		t.Errorf("expected 0 subscribers for alpha1, got %d", hub.GetSubscribersForSerial("alpha1"))
+	}
+}
+
+func TestHub_RefreshSessionAuthorization_AuthError_UnregistersSession(t *testing.T) {
+	mockProv := &mockProvClientForHub{
+		getInventorySerialsFn: func(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+			return nil, models.NewApiError(401, "Unauthorized", "token expired")
+		},
+	}
+
+	hub := events.NewHub(mockProv, nil)
+	session := hub.CreateSession("expired-token", []string{"alpha1"}, []string{"alpha1"})
+	hub.RegisterSession(session)
+
+	err := hub.RefreshSessionAuthorization(context.Background(), session.ID, "req-1", "corr-1")
+	if err == nil {
+		t.Fatalf("expected error on downstream 401")
+	}
+
+	if !session.IsClosed() {
+		t.Errorf("expected session to be closed on auth failure")
+	}
+	if hub.GetActiveSessionCount() != 0 {
+		t.Errorf("expected 0 active sessions, got %d", hub.GetActiveSessionCount())
+	}
+}

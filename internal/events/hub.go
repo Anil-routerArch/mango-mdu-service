@@ -197,6 +197,85 @@ func (h *Hub) UpdateSubscription(sessionID string, requestedSerials []string) (i
 	return len(newSubMap), nil
 }
 
+// RefreshSessionAuthorization re-evaluates the session's permitted inventory against OWPROV.
+// It removes any revoked serials from AllowedSerials and SubscribedSerials, updates the inverted index,
+// and terminates/unregisters the session if the token is invalid, access is revoked, or no devices remain accessible.
+func (h *Hub) RefreshSessionAuthorization(ctx context.Context, sessionID, reqID, corrID string) error {
+	h.mu.RLock()
+	session, exists := h.sessions[sessionID]
+	h.mu.RUnlock()
+
+	if !exists || session == nil || session.IsClosed() {
+		return fmt.Errorf("session not found or closed: %s", sessionID)
+	}
+
+	// Fetch fresh allowed inventory from OWPROV using the session's token
+	newSerials, err := h.AuthorizeUser(ctx, session.Token, reqID, corrID)
+	if err != nil {
+		h.logger.Warn("periodic re-authorization failed; unregistering session",
+			"sessionId", sessionID,
+			"error", err,
+		)
+		h.UnregisterSession(sessionID)
+		return fmt.Errorf("re-authorization failed: %w", err)
+	}
+
+	newAllowedMap := make(map[string]struct{}, len(newSerials))
+	for _, s := range newSerials {
+		newAllowedMap[NormalizeSerial(s)] = struct{}{}
+	}
+
+	// If all permissions were revoked, close and evict session
+	if len(newAllowedMap) == 0 {
+		h.logger.Warn("all device access revoked; unregistering session",
+			"sessionId", sessionID,
+		)
+		h.UnregisterSession(sessionID)
+		return fmt.Errorf("all device permissions revoked")
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Re-verify existence under write lock
+	session, exists = h.sessions[sessionID]
+	if !exists || session == nil || session.IsClosed() {
+		return nil
+	}
+
+	// Remove old indexes for this session
+	h.deindexSessionSerials(session)
+
+	session.mu.Lock()
+	session.AllowedSerials = newAllowedMap
+
+	// Prune SubscribedSerials that are no longer allowed
+	prunedSubs := make(map[string]struct{})
+	var revokedCount int
+	for subSerial := range session.SubscribedSerials {
+		if _, allowed := newAllowedMap[subSerial]; allowed {
+			prunedSubs[subSerial] = struct{}{}
+		} else {
+			revokedCount++
+		}
+	}
+	session.SubscribedSerials = prunedSubs
+	session.mu.Unlock()
+
+	// Re-index remaining valid subscriptions
+	h.indexSessionSerials(session)
+
+	if revokedCount > 0 {
+		h.logger.Info("pruned revoked serials from active session subscriptions",
+			"sessionId", sessionID,
+			"revokedCount", revokedCount,
+			"remainingSubscribed", len(prunedSubs),
+		)
+	}
+
+	return nil
+}
+
 // Broadcast distributes a device event to all authorized client sessions in O(1) time.
 // Sessions not subscribed or not authorized to view the device receive nothing.
 func (h *Hub) Broadcast(event *DeviceEvent) int {
