@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"net/http"
@@ -494,22 +495,38 @@ func (s *deviceService) DeleteDevice(ctx context.Context, serial, token, reqID, 
 	}
 	norm := normalizeSerial(serial)
 
-	// Attempt delete in OWGW
+	// 1. Attempt delete in OWGW (best effort cleanup; ignore 404 Not Found since offline/unassigned devices may not be in gateway)
+	var gwErr error
 	if s.gwClient != nil {
 		if err := s.gwClient.DeleteDevice(ctx, norm, token, reqID, corrID); err != nil {
-			if s.logger != nil {
-				s.logger.Warn("failed to delete device from OWGW", "serial", norm, "error", err)
+			var apiErr models.ApiError
+			if errors.As(err, &apiErr) && apiErr.ErrorCode == http.StatusNotFound {
+				if s.logger != nil {
+					s.logger.Debug("device not present in OWGW during deletion", "serial", norm)
+				}
+			} else {
+				gwErr = err
+				if s.logger != nil {
+					s.logger.Warn("failed to delete device from OWGW", "serial", norm, "error", err)
+				}
 			}
 		}
 	}
 
-	// Attempt delete in OWPROV inventory
-	if s.provClient != nil {
-		if err := s.provClient.DeleteInventoryItem(ctx, norm, token, reqID, corrID); err != nil {
-			if s.logger != nil {
-				s.logger.Warn("failed to delete device from OWPROV inventory", "serial", norm, "error", err)
-			}
+	// 2. Authoritative deletion from OWPROV inventory
+	if s.provClient == nil {
+		return models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
+	}
+	if err := s.provClient.DeleteInventoryItem(ctx, norm, token, reqID, corrID); err != nil {
+		if s.logger != nil {
+			s.logger.Error("failed to delete device from OWPROV inventory", "serial", norm, "error", err)
 		}
+		return err
+	}
+
+	// 3. If OWPROV succeeded but OWGW had a non-404 hard failure, return the gateway error so caller knows cleanup was incomplete
+	if gwErr != nil {
+		return gwErr
 	}
 
 	return nil
