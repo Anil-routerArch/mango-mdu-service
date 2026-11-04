@@ -134,12 +134,15 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 		return
 	}
 
-	// 5. Goroutine for sending outbound device events from Hub to WebSocket
+	// 5. Goroutine for sending outbound device events from Hub to WebSocket with periodic auth re-validation
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
+
+		authTicker := time.NewTicker(60 * time.Second)
+		defer authTicker.Stop()
 
 		for {
 			select {
@@ -147,6 +150,25 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 				return
 			case <-session.Done():
 				return
+			case <-authTicker.C:
+				refreshCtx, refreshCancel := context.WithTimeout(ctx, 10*time.Second)
+				if h.tokenValidator != nil {
+					if err := h.tokenValidator.ValidateToken(refreshCtx, rawToken); err != nil {
+						refreshCancel()
+						h.logger.Warn("websocket session token expired or revoked", "sessionId", session.ID, "error", err)
+						_ = websocket.Message.Send(ws, `{"type":"error","error":"Session token expired or revoked. Terminating stream.","code":4401}`)
+						session.Close()
+						return
+					}
+				}
+				if err := h.hub.RefreshSessionAuthorization(refreshCtx, session.ID, reqID, corrID); err != nil {
+					refreshCancel()
+					h.logger.Warn("websocket session authorization refresh failed", "sessionId", session.ID, "error", err)
+					_ = websocket.Message.Send(ws, `{"type":"error","error":"Access revoked or session terminated.","code":4403}`)
+					session.Close()
+					return
+				}
+				refreshCancel()
 			case <-ticker.C:
 				if err := websocket.Message.Send(ws, `{"ping":true}`); err != nil {
 					return
@@ -263,10 +285,35 @@ func (h *DeviceEventsHandler) StreamEvents(c fiber.Ctx) error {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 
+		// Periodic authorization refresh and token-expiration check every 60 seconds
+		authTicker := time.NewTicker(60 * time.Second)
+		defer authTicker.Stop()
+
 		for {
 			select {
 			case <-session.Done():
 				return
+			case <-authTicker.C:
+				refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				if h.tokenValidator != nil {
+					if err := h.tokenValidator.ValidateToken(refreshCtx, token); err != nil {
+						refreshCancel()
+						h.logger.Warn("SSE stream token expired or revoked", "sessionId", session.ID, "error", err)
+						_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", `{"error":"Session token expired or revoked. Terminating stream.","code":4401}`)
+						_ = w.Flush()
+						session.Close()
+						return
+					}
+				}
+				if err := h.hub.RefreshSessionAuthorization(refreshCtx, session.ID, reqID, corrID); err != nil {
+					refreshCancel()
+					h.logger.Warn("SSE stream authorization refresh failed", "sessionId", session.ID, "error", err)
+					_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", `{"error":"Access revoked or session terminated.","code":4403}`)
+					_ = w.Flush()
+					session.Close()
+					return
+				}
+				refreshCancel()
 			case <-ticker.C:
 				_, _ = fmt.Fprintf(w, ": keepalive %d\n\n", time.Now().Unix())
 				if err := w.Flush(); err != nil {
