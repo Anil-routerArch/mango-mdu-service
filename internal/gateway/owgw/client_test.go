@@ -87,3 +87,34 @@ func TestOWGWClient_GetDevicesStatus_Unauthorized(t *testing.T) {
 		t.Errorf("expected 401 ApiError, got %+v", err)
 	}
 }
+
+func TestOWGWClient_DeleteDevice_ExtractsRealReason(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("expected DELETE, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/device/60cf84f22290" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"ErrorCode": 403, "ErrorDescription": "Device is managed by a different entity"}`))
+	}))
+	defer ts.Close()
+
+	client := owgw.NewClient(owgw.Config{URLResolver: func() string { return ts.URL }})
+	err := client.DeleteDevice(context.Background(), "60cf84f22290", "token", "req", "corr")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(models.ApiError)
+	if !ok {
+		t.Fatalf("expected ApiError, got %T: %v", err, err)
+	}
+	if apiErr.ErrorCode != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", apiErr.ErrorCode)
+	}
+	if apiErr.ErrorDescription != "Device is managed by a different entity" {
+		t.Errorf("expected exact error description, got %q", apiErr.ErrorDescription)
+	}
+}

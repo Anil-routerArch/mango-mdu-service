@@ -140,7 +140,7 @@ func (c *client) GetDevicesStatus(ctx context.Context, serialNumbers []string, t
 				"correlation_id", corrID,
 			)
 		}
-		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWGW returned status %d", resp.StatusCode))
+		return nil, models.ParseResponseError(resp, maxErrorBytes)
 	}
 
 	var statusResp models.GatewayDevicesWithStatusResponse
@@ -201,7 +201,7 @@ func (c *client) doJSONRequestWithBody(ctx context.Context, method, endpoint str
 				"correlation_id", corrID,
 			)
 		}
-		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWGW returned status %d", resp.StatusCode))
+		return nil, models.ParseResponseError(resp, maxErrorBytes)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))

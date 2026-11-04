@@ -188,9 +188,6 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
-			_ = body
-			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status",
 					"service", "owprov",
@@ -200,7 +197,7 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 					"correlation_id", corrID,
 				)
 			}
-			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+			return nil, models.ParseResponseError(resp, maxErrorBytes)
 		}
 
 		var roleResp models.ManagementRoleListResponse
@@ -261,9 +258,6 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
-			_ = body
-			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status",
 					"service", "owprov",
@@ -273,7 +267,7 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 					"correlation_id", corrID,
 				)
 			}
-			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+			return nil, models.ParseResponseError(resp, maxErrorBytes)
 		}
 
 		var entityResp models.EntityListResponse
@@ -334,9 +328,6 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
-			_ = body
-			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status",
 					"service", "owprov",
@@ -346,7 +337,7 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 					"correlation_id", corrID,
 				)
 			}
-			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+			return nil, models.ParseResponseError(resp, maxErrorBytes)
 		}
 
 		var venueResp models.VenueListResponse
@@ -425,7 +416,7 @@ func (c *client) GetInventory(ctx context.Context, token, reqID, corrID string, 
 				"correlation_id", corrID,
 			)
 		}
-		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+		return nil, models.ParseResponseError(resp, maxErrorBytes)
 	}
 
 	var tagResp models.InventoryTagListResponse
@@ -485,7 +476,7 @@ func (c *client) GetInventoryCount(ctx context.Context, token, reqID, corrID str
 				"correlation_id", corrID,
 			)
 		}
-		return 0, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+		return 0, models.ParseResponseError(resp, maxErrorBytes)
 	}
 
 	var countResp models.CountOnlyResponse
@@ -538,7 +529,6 @@ func (c *client) GetInventorySerials(ctx context.Context, token, reqID, corrID s
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
 			if c.logger != nil {
 				c.logger.Error("downstream OWPROV returned non-200 status for inventory serials",
 					"service", "owprov",
@@ -548,7 +538,9 @@ func (c *client) GetInventorySerials(ctx context.Context, token, reqID, corrID s
 					"correlation_id", corrID,
 				)
 			}
-			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+			apiErr := models.ParseResponseError(resp, maxErrorBytes)
+			resp.Body.Close()
+			return nil, apiErr
 		}
 
 		var serialsResp models.InventorySerialsResponse
@@ -633,7 +625,7 @@ func (c *client) GetInventoryItem(ctx context.Context, serial, token, reqID, cor
 				"correlation_id", corrID,
 			)
 		}
-		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+		return nil, models.ParseResponseError(resp, maxErrorBytes)
 	}
 
 	var tag models.InventoryTag
@@ -677,19 +669,15 @@ func (c *client) DeleteInventoryItem(ctx context.Context, serial, token, reqID, 
 				"correlation_id", corrID,
 			)
 		}
-		return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "failed to reach downstream owprov service")
+		return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "Service unreachable")
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized {
-		return models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotFound {
+		return nil
 	}
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		return models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
-	}
-
-	return nil
+	return models.ParseResponseError(resp, maxErrorBytes)
 }
 
 func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {
