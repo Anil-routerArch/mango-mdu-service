@@ -35,14 +35,16 @@ type ClientSession struct {
 	done              chan struct{}
 }
 
-// Close gracefully closes the session and its send channel.
+// Close gracefully marks the session as closed and signals the done channel.
+// Notice that session.Send is intentionally NOT closed: in Go, channels with concurrent senders
+// should never be closed to prevent runtime panics ('send on closed channel').
+// The channel and session are safely reclaimed by the garbage collector once unregistered.
 func (s *ClientSession) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.closed {
 		s.closed = true
 		close(s.done)
-		close(s.Send)
 	}
 }
 
@@ -56,6 +58,26 @@ func (s *ClientSession) IsClosed() bool {
 // Done returns the completion notification channel.
 func (s *ClientSession) Done() <-chan struct{} {
 	return s.done
+}
+
+// TrySend attempts a non-blocking delivery of an event payload to the session.
+// It returns delivered=true if queued into the buffer, or closed=true if the session is closed.
+// If both delivered and closed are false, the buffer was full and the event was dropped.
+// Holding s.mu.RLock() guarantees atomicity between checking session closure and channel queuing.
+func (s *ClientSession) TrySend(payload []byte) (delivered bool, closed bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.closed {
+		return false, true
+	}
+
+	select {
+	case s.Send <- payload:
+		return true, false
+	default:
+		return false, false
+	}
 }
 
 // SubscribedCount returns the number of currently subscribed devices.
@@ -450,14 +472,10 @@ func (h *Hub) Broadcast(event *DeviceEvent) int {
 
 	delivered := 0
 	for _, session := range subscribers {
-		if session.IsClosed() {
-			continue
-		}
-
-		select {
-		case session.Send <- payload:
+		deliveredMsg, isClosed := session.TrySend(payload)
+		if deliveredMsg {
 			delivered++
-		default:
+		} else if !isClosed {
 			// Buffer full: drop message for slow client to prevent lagging or head-of-line blocking
 			h.logger.Warn("client buffer full, dropped device event",
 				"sessionId", session.ID,

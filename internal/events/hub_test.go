@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -601,5 +602,98 @@ func TestHub_UpdateSubscription_NoGhostIndexes(t *testing.T) {
 	hub.UnregisterSession(session.ID)
 	if hub.GetSubscribersForSerial("dev1") != 0 || hub.GetSubscribersForSerial("dev2") != 0 {
 		t.Fatalf("step 5 failed: dev1=%d, dev2=%d", hub.GetSubscribersForSerial("dev1"), hub.GetSubscribersForSerial("dev2"))
+	}
+}
+
+func TestHub_ConcurrentBroadcastAndClose_NoPanic(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	serial := "test-device-race"
+
+	const numSessions = 30
+	const numEvents = 300
+
+	sessions := make([]*events.ClientSession, numSessions)
+	for i := 0; i < numSessions; i++ {
+		sess := hub.CreateSession(fmt.Sprintf("token-%d", i), []string{serial}, nil)
+		hub.RegisterSession(sess)
+		sessions[i] = sess
+	}
+
+	var wg sync.WaitGroup
+
+	// Goroutines continuously broadcasting device events to the subscribed serial
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := 0; j < numEvents; j++ {
+				hub.Broadcast(&events.DeviceEvent{
+					Type:         "state",
+					SerialNumber: serial,
+					Timestamp:    time.Now().Unix(),
+				})
+				time.Sleep(50 * time.Microsecond)
+			}
+		}(i)
+	}
+
+	// Goroutines closing sessions and unregistering them concurrently with broadcast
+	for i := 0; i < numSessions; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			time.Sleep(time.Duration((idx%10)+1) * time.Millisecond)
+			// Trigger direct session Close() (simulating token expiry / client disconnect)
+			sessions[idx].Close()
+			// Then unregister from hub
+			hub.UnregisterSession(sessions[idx].ID)
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+func TestClientSession_TrySend(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession("token-test", []string{"dev1"}, nil)
+
+	// 1. Successful delivery to empty buffer
+	delivered, closed := session.TrySend([]byte(`{"test":1}`))
+	if !delivered || closed {
+		t.Fatalf("expected delivered=true, closed=false; got delivered=%v, closed=%v", delivered, closed)
+	}
+
+	// Read message out
+	select {
+	case msg := <-session.Send:
+		if string(msg) != `{"test":1}` {
+			t.Errorf("unexpected message: %s", string(msg))
+		}
+	default:
+		t.Fatalf("expected message in session.Send")
+	}
+
+	// 2. Buffer full condition: fill up buffer (capacity is 256)
+	for i := 0; i < cap(session.Send); i++ {
+		del, cls := session.TrySend([]byte("item"))
+		if !del || cls {
+			t.Fatalf("failed filling buffer at index %d: del=%v, cls=%v", i, del, cls)
+		}
+	}
+	// Next TrySend should hit default (buffer full)
+	del, cls := session.TrySend([]byte("overflow"))
+	if del || cls {
+		t.Fatalf("expected delivered=false, closed=false on full buffer; got del=%v, cls=%v", del, cls)
+	}
+
+	// 3. Closed session condition
+	session.Close()
+	if !session.IsClosed() {
+		t.Fatalf("expected session.IsClosed() == true")
+	}
+
+	del, cls = session.TrySend([]byte("after-close"))
+	if del || !cls {
+		t.Fatalf("expected delivered=false, closed=true on closed session; got del=%v, cls=%v", del, cls)
 	}
 }
