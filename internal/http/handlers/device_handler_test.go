@@ -25,6 +25,7 @@ type mockDeviceService struct {
 	getDeviceFn             func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	updateDeviceFn          func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	getDeviceCapabilitiesFn func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	deleteDeviceFn          func(ctx context.Context, serial, token, reqID, corrID string) error
 }
 
 func (m *mockDeviceService) GetDevices(ctx context.Context, token, reqID, corrID string, pageIndex, pageSize int, unassignedOnly bool) (*models.PaginatedDevicesResponse, error) {
@@ -106,6 +107,9 @@ func (m *mockDeviceService) GetDeviceRtty(ctx context.Context, serial, token, re
 }
 
 func (m *mockDeviceService) DeleteDevice(ctx context.Context, serial, token, reqID, corrID string) error {
+	if m.deleteDeviceFn != nil {
+		return m.deleteDeviceFn(ctx, serial, token, reqID, corrID)
+	}
 	return nil
 }
 
@@ -354,5 +358,80 @@ func TestDeviceHandler_ProxyEndpoints_RBACForbidden(t *testing.T) {
 
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("expected status 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeviceHandler_DeleteDevice_Success(t *testing.T) {
+	svc := &mockDeviceService{
+		deleteDeviceFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			if serial != "60cf84f22290" {
+				t.Errorf("expected serial 60cf84f22290, got %s", serial)
+			}
+			return nil
+		},
+	}
+
+	app := setupDeviceTestApp(svc)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/devices/60cf84f22290", nil)
+	req.Header.Set("Authorization", "Bearer valid-jwt")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result["success"] != true {
+		t.Errorf("expected success: true, got %v", result)
+	}
+}
+
+func TestDeviceHandler_DeleteDevice_DownstreamError(t *testing.T) {
+	svc := &mockDeviceService{
+		deleteDeviceFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "failed to reach downstream owprov service")
+		},
+	}
+
+	app := setupDeviceTestApp(svc)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/devices/60cf84f22290", nil)
+	req.Header.Set("Authorization", "Bearer valid-jwt")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("expected status 502, got %d", resp.StatusCode)
+	}
+
+	var apiErr models.ApiError
+	json.NewDecoder(resp.Body).Decode(&apiErr)
+	if apiErr.ErrorCode != http.StatusBadGateway || apiErr.ErrorDescription != "Bad Gateway" {
+		t.Errorf("unexpected ApiError: %+v", apiErr)
+	}
+}
+
+func TestDeviceHandler_DeleteDevice_MissingAuth(t *testing.T) {
+	svc := &mockDeviceService{}
+	app := setupDeviceTestApp(svc)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/devices/60cf84f22290", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", resp.StatusCode)
 	}
 }

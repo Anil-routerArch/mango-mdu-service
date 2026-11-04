@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/url"
 	"testing"
 
@@ -22,6 +23,7 @@ type mockGWClient struct {
 	getDeviceFn        func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	updateDeviceFn     func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	getCapabilitiesFn  func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	deleteDeviceFn     func(ctx context.Context, serial, token, reqID, corrID string) error
 }
 
 func (m *mockGWClient) GetDevicesStatus(ctx context.Context, serialNumbers []string, token, reqID, corrID string) ([]models.GatewayDeviceStatus, error) {
@@ -103,6 +105,9 @@ func (m *mockGWClient) GetDeviceRtty(ctx context.Context, serial, token, reqID, 
 }
 
 func (m *mockGWClient) DeleteDevice(ctx context.Context, serial, token, reqID, corrID string) error {
+	if m.deleteDeviceFn != nil {
+		return m.deleteDeviceFn(ctx, serial, token, reqID, corrID)
+	}
 	return nil
 }
 
@@ -339,5 +344,82 @@ func TestDeviceService_DeviceActions_RBAC(t *testing.T) {
 	err = unauthSvc.DeleteDevice(context.Background(), "attacker-serial", "jwt", "req", "corr")
 	if err == nil {
 		t.Errorf("expected 403 Forbidden for Delete on unauthorized device")
+	}
+}
+
+func TestDeviceService_DeleteDevice_OWPROVFailure(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
+		},
+		deleteInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			return models.NewApiError(http.StatusInternalServerError, "Internal Server Error", "database error in owprov")
+		},
+	}
+	gw := &mockGWClient{
+		deleteDeviceFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			return nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	err := svc.DeleteDevice(context.Background(), "60cf84f22290", "jwt", "req", "corr")
+	if err == nil {
+		t.Fatalf("expected error when OWPROV delete fails")
+	}
+
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusInternalServerError {
+		t.Errorf("expected 500 ApiError, got: %v", err)
+	}
+}
+
+func TestDeviceService_DeleteDevice_OWGW404_Ignored(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
+		},
+		deleteInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			return nil
+		},
+	}
+	gw := &mockGWClient{
+		deleteDeviceFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			// Device is offline / not in gateway cache
+			return models.NewApiError(http.StatusNotFound, "Not Found", "device not in gateway")
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	err := svc.DeleteDevice(context.Background(), "60cf84f22290", "jwt", "req", "corr")
+	if err != nil {
+		t.Fatalf("expected success when OWGW returns 404 but OWPROV succeeds, got: %v", err)
+	}
+}
+
+func TestDeviceService_DeleteDevice_OWGWFailure_ReturnsError(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
+		},
+		deleteInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			return nil
+		},
+	}
+	gw := &mockGWClient{
+		deleteDeviceFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "gateway unreachable")
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	err := svc.DeleteDevice(context.Background(), "60cf84f22290", "jwt", "req", "corr")
+	if err == nil {
+		t.Fatalf("expected error when OWGW has non-404 hard failure")
+	}
+
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusBadGateway {
+		t.Errorf("expected 502 ApiError, got: %v", err)
 	}
 }

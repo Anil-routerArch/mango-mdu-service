@@ -18,6 +18,7 @@ type mockProvClient struct {
 	getInventoryCountFn   func(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error)
 	getInventorySerialsFn func(ctx context.Context, token, reqID, corrID string) ([]string, error)
 	getInventoryItemFn    func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
+	deleteInventoryItemFn func(ctx context.Context, serial, token, reqID, corrID string) error
 }
 
 func (m *mockProvClient) GetPolicy(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error) {
@@ -77,6 +78,9 @@ func (m *mockProvClient) GetInventoryItem(ctx context.Context, serial, token, re
 }
 
 func (m *mockProvClient) DeleteInventoryItem(ctx context.Context, serial, token, reqID, corrID string) error {
+	if m.deleteInventoryItemFn != nil {
+		return m.deleteInventoryItemFn(ctx, serial, token, reqID, corrID)
+	}
 	return nil
 }
 
