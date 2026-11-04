@@ -457,3 +457,52 @@ func TestOWProvClient_GetInventorySerials_Pagination_FailClosed(t *testing.T) {
 		t.Errorf("expected 2 page requests before aborting, got %d", pageRequests)
 	}
 }
+
+func TestOWProvClient_DeleteInventoryItem_Success(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusNoContent, http.StatusNotFound} {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodDelete {
+				t.Errorf("expected DELETE, got %s", r.Method)
+			}
+			if r.URL.Path != "/api/v1/inventory/60cf84f22290" {
+				t.Errorf("unexpected path: %s", r.URL.Path)
+			}
+			w.WriteHeader(status)
+		}))
+
+		client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+		err := client.DeleteInventoryItem(context.Background(), "60:cf:84:f2:22:90", "token", "req-1", "corr-1")
+		ts.Close()
+		if err != nil {
+			t.Errorf("expected nil error for status %d, got %v", status, err)
+		}
+	}
+}
+
+func TestOWProvClient_DeleteInventoryItem_ExtractsRealReason(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"ErrorCode": 403, "ErrorDescription": "Access denied: insufficient permission to delete inventory item"}`))
+	}))
+	defer ts.Close()
+
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	err := client.DeleteInventoryItem(context.Background(), "60cf84f22290", "token", "req-1", "corr-1")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(models.ApiError)
+	if !ok {
+		t.Fatalf("expected ApiError, got %T: %v", err, err)
+	}
+	if apiErr.ErrorCode != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", apiErr.ErrorCode)
+	}
+	if apiErr.ErrorDescription != "Access denied: insufficient permission to delete inventory item" {
+		t.Errorf("expected exact downstream reason, got %q", apiErr.ErrorDescription)
+	}
+	if strings.Contains(apiErr.Error(), "downstream OWPROV") {
+		t.Errorf("error contains unwanted downstream wrapper: %s", apiErr.Error())
+	}
+}
