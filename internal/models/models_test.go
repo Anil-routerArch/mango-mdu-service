@@ -113,6 +113,18 @@ func TestParseHttpError(t *testing.T) {
 			expectedDesc: "Access denied",
 		},
 		{
+			name:         "OpenWiFi RBAC method name DELETE normalized to Access denied",
+			code:         403,
+			body:         `{"ErrorCode": 403, "ErrorDescription": "DELETE"}`,
+			expectedDesc: "Access denied",
+		},
+		{
+			name:         "Plain text DELETE on 403 normalized to Access denied",
+			code:         403,
+			body:         `DELETE`,
+			expectedDesc: "Access denied",
+		},
+		{
 			name:         "JSON with ErrorDescription and ErrorDetails",
 			code:         400,
 			body:         `{"ErrorDescription": "Device cannot be deleted", "ErrorDetails": "Device is assigned to venue"}`,
@@ -141,7 +153,7 @@ func TestParseHttpError(t *testing.T) {
 			name:         "Empty body fallback to status text",
 			code:         403,
 			body:         ``,
-			expectedDesc: "Forbidden",
+			expectedDesc: "Access denied",
 		},
 		{
 			name:         "HTML body fallback to status text",
