@@ -435,3 +435,54 @@ func TestDeviceHandler_DeleteDevice_MissingAuth(t *testing.T) {
 		t.Errorf("expected status 401, got %d", resp.StatusCode)
 	}
 }
+
+func TestDeviceHandler_DeleteDeviceCommand_Success(t *testing.T) {
+	svc := &mockDeviceService{
+		deleteDeviceCommandFn: func(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error {
+			if serial != "60cf84f22290" || commandUUID != "cmd-uuid-1" {
+				t.Errorf("unexpected params: serial=%s, uuid=%s", serial, commandUUID)
+			}
+			return nil
+		},
+	}
+	app := setupDeviceTestApp(svc)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/devices/60cf84f22290/commands/cmd-uuid-1", nil)
+	req.Header.Set("Authorization", "Bearer jwt")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var res map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&res)
+	if res["success"] != true {
+		t.Errorf("expected success: true, got %v", res)
+	}
+}
+
+func TestDeviceHandler_DeleteDeviceCommand_NotFound(t *testing.T) {
+	svc := &mockDeviceService{
+		deleteDeviceCommandFn: func(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error {
+			return models.NewApiError(http.StatusNotFound, "Not Found", "command not found for this device")
+		},
+	}
+	app := setupDeviceTestApp(svc)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/devices/60cf84f22290/commands/cmd-victim-999", nil)
+	req.Header.Set("Authorization", "Bearer jwt")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}

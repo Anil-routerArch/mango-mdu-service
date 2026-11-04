@@ -118,3 +118,31 @@ func TestOWGWClient_DeleteDevice_ExtractsRealReason(t *testing.T) {
 		t.Errorf("expected exact error description, got %q", apiErr.ErrorDescription)
 	}
 }
+
+func TestOWGWClient_GetCommand_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/command/cmd-uuid-123" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"UUID":"cmd-uuid-123","serialNumber":"60cf84f22290","status":"completed"}`))
+	}))
+	defer ts.Close()
+
+	client := owgw.NewClient(owgw.Config{URLResolver: func() string { return ts.URL }})
+	raw, err := client.GetCommand(context.Background(), "cmd-uuid-123", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if parsed["serialNumber"] != "60cf84f22290" {
+		t.Errorf("expected serial 60cf84f22290, got %v", parsed["serialNumber"])
+	}
+}
