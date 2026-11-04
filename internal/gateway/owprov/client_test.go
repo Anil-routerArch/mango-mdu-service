@@ -3,6 +3,7 @@ package owprov_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -369,5 +370,90 @@ func TestOWProvClient_GetInventorySerials_Success(t *testing.T) {
 	}
 	if serials[0] != "24f5a201b1a0" || serials[1] != "24f5a201b1a1" || serials[2] != "24f5a201b1a2" {
 		t.Errorf("unexpected serials: %v", serials)
+	}
+}
+
+func TestOWProvClient_GetInventorySerials_Pagination_Exhaustive(t *testing.T) {
+	pageRequests := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pageRequests++
+		offset := r.URL.Query().Get("offset")
+		limit := r.URL.Query().Get("limit")
+
+		if limit != "500" {
+			t.Errorf("expected limit=500, got %s", limit)
+		}
+
+		var serials []string
+		if offset == "0" {
+			// Page 1: full page of 500 serials
+			serials = make([]string, 500)
+			for i := 0; i < 500; i++ {
+				serials[i] = fmt.Sprintf("serial-page1-%03d", i)
+			}
+		} else if offset == "500" {
+			// Page 2: remaining 150 serials (< 500 terminates loop)
+			serials = make([]string, 150)
+			for i := 0; i < 150; i++ {
+				serials[i] = fmt.Sprintf("serial-page2-%03d", i)
+			}
+		} else {
+			t.Errorf("unexpected offset: %s", offset)
+		}
+
+		resp := models.InventorySerialsResponse{
+			SerialNumbers: serials,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	serials, err := client.GetInventorySerials(context.Background(), "test-jwt-token", "req-1", "corr-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pageRequests != 2 {
+		t.Errorf("expected 2 page requests, got %d", pageRequests)
+	}
+	if len(serials) != 650 {
+		t.Fatalf("expected 650 serials across pages, got %d", len(serials))
+	}
+	if serials[0] != "serial-page1-000" || serials[499] != "serial-page1-499" || serials[500] != "serial-page2-000" || serials[649] != "serial-page2-149" {
+		t.Errorf("serials boundary elements mismatch")
+	}
+}
+
+func TestOWProvClient_GetInventorySerials_Pagination_FailClosed(t *testing.T) {
+	pageRequests := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pageRequests++
+		offset := r.URL.Query().Get("offset")
+
+		if offset == "0" {
+			// Page 1 succeeds with 500 serials
+			serials := make([]string, 500)
+			for i := 0; i < 500; i++ {
+				serials[i] = fmt.Sprintf("serial-%03d", i)
+			}
+			json.NewEncoder(w).Encode(models.InventorySerialsResponse{SerialNumbers: serials})
+		} else {
+			// Page 2 fails with 500 internal server error
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"error": "internal error"}`))
+		}
+	}))
+	defer ts.Close()
+
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	serials, err := client.GetInventorySerials(context.Background(), "test-jwt-token", "req-1", "corr-1")
+	if err == nil {
+		t.Fatalf("expected error on downstream failure, got nil error with %d serials", len(serials))
+	}
+	if serials != nil {
+		t.Errorf("expected nil serials on fail-closed error, got %v", serials)
+	}
+	if pageRequests != 2 {
+		t.Errorf("expected 2 page requests before aborting, got %d", pageRequests)
 	}
 }

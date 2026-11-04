@@ -503,54 +503,74 @@ func (c *client) GetInventorySerials(ctx context.Context, token, reqID, corrID s
 		return nil, err
 	}
 
-	endpoint := fmt.Sprintf("%s/api/v1/inventory?serialOnly=true", baseURL)
+	var allSerials []string
+	offset := 0
+	pages := 0
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create inventory serials request", err)
-	}
+	for {
+		pages++
+		endpoint := fmt.Sprintf("%s/api/v1/inventory?serialOnly=true&limit=%d&offset=%d", baseURL, pageSize, offset)
 
-	c.setHeaders(req, token, reqID, corrID)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		if c.logger != nil {
-			c.logger.Error("downstream OWPROV inventory serials request failed",
-				"service", "owprov",
-				"error", err,
-				"endpoint", req.URL.Path,
-				"request_id", reqID,
-				"correlation_id", corrID,
-			)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, apperror.Wrap(apperror.CodeInternal, "failed to create inventory serials request", err)
 		}
-		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
-	}
+		c.setHeaders(req, token, reqID, corrID)
 
-	if resp.StatusCode != http.StatusOK {
-		if c.logger != nil {
-			c.logger.Error("downstream OWPROV returned non-200 status for inventory serials",
-				"service", "owprov",
-				"status", resp.StatusCode,
-				"endpoint", req.URL.Path,
-				"request_id", reqID,
-				"correlation_id", corrID,
-			)
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if c.logger != nil {
+				c.logger.Error("downstream OWPROV inventory serials request failed",
+					"service", "owprov",
+					"error", err,
+					"endpoint", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
 		}
-		return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			resp.Body.Close()
+			return nil, models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			if c.logger != nil {
+				c.logger.Error("downstream OWPROV returned non-200 status for inventory serials",
+					"service", "owprov",
+					"status", resp.StatusCode,
+					"endpoint", req.URL.Path,
+					"request_id", reqID,
+					"correlation_id", corrID,
+				)
+			}
+			return nil, models.NewApiError(resp.StatusCode, "Downstream Error", fmt.Sprintf("downstream OWPROV returned status %d", resp.StatusCode))
+		}
+
+		var serialsResp models.InventorySerialsResponse
+		limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+		err = json.NewDecoder(limitedReader).Decode(&serialsResp)
+		resp.Body.Close()
+		if err != nil {
+			return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse inventory serials response", err)
+		}
+
+		allSerials = append(allSerials, serialsResp.SerialNumbers...)
+
+		if len(serialsResp.SerialNumbers) < pageSize || pages >= maxPages {
+			if len(serialsResp.SerialNumbers) == pageSize && pages >= maxPages && c.logger != nil {
+				c.logger.Warn("pagination reached maximum allowed pages", "service", "owprov", "endpoint", "inventory", "max_pages", maxPages, "total_records", len(allSerials))
+			}
+			break
+		}
+		offset += pageSize
 	}
 
-	var serialsResp models.InventorySerialsResponse
-	limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
-	if err := json.NewDecoder(limitedReader).Decode(&serialsResp); err != nil {
-		return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse inventory serials response", err)
-	}
-
-	return serialsResp.SerialNumbers, nil
+	return allSerials, nil
 }
 
 func normalizeSerial(s string) string {
