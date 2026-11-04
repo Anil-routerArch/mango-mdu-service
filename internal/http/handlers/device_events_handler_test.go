@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -49,9 +50,13 @@ func (m *mockProvForEventsHandler) DeleteInventoryItem(ctx context.Context, seri
 	return nil
 }
 
-func setupEventsApp(hub *events.Hub) (*fiber.App, *handlers.DeviceEventsHandler) {
+func setupEventsApp(hub *events.Hub, validator ...handlers.TokenValidator) (*fiber.App, *handlers.DeviceEventsHandler) {
 	app := fiber.New()
-	handler := handlers.NewDeviceEventsHandler(hub, nil)
+	var val handlers.TokenValidator
+	if len(validator) > 0 {
+		val = validator[0]
+	}
+	handler := handlers.NewDeviceEventsHandler(hub, val)
 	app.Get("/api/v1/ws", handler.HandleWebSocket)
 	app.Get("/api/v1/devices/events", handler.StreamEvents)
 	app.Post("/api/v1/devices/events/subscriptions", handler.UpdateSubscriptions)
@@ -94,12 +99,44 @@ func TestStreamEvents_AuthFailure(t *testing.T) {
 	}
 }
 
+type mockTokenValidator struct {
+	validateFn func(ctx context.Context, rawToken string) error
+}
+
+func (m *mockTokenValidator) ValidateToken(ctx context.Context, rawToken string) error {
+	if m.validateFn != nil {
+		return m.validateFn(ctx, rawToken)
+	}
+	return nil
+}
+
+func TestUpdateSubscriptions_MissingToken(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	app, _ := setupEventsApp(hub)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"sessionId": "some-session",
+		"serials":   []string{"dev1"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected status 401 Unauthorized when missing token, got %d", resp.StatusCode)
+	}
+}
+
 func TestUpdateSubscriptions_InvalidBody(t *testing.T) {
 	hub := events.NewHub(nil, nil)
 	app, _ := setupEventsApp(hub)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBufferString(`{invalid`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer valid-token")
 	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -120,6 +157,7 @@ func TestUpdateSubscriptions_SessionNotFound(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer valid-token")
 	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -127,6 +165,58 @@ func TestUpdateSubscriptions_SessionNotFound(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateSubscriptions_OwnershipMismatch_Forbidden(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession("alice-token", []string{"dev1", "dev2"}, nil)
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	app, _ := setupEventsApp(hub)
+
+	// Attacker Bob attempts to update Alice's session
+	body, _ := json.Marshal(map[string]interface{}{
+		"sessionId": session.ID,
+		"serials":   []string{"dev1"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer bob-attacker-token")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("expected status 403 Forbidden for ownership mismatch, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateSubscriptions_TokenValidator_Error(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	validator := &mockTokenValidator{
+		validateFn: func(ctx context.Context, rawToken string) error {
+			return errors.New("token expired or revoked")
+		},
+	}
+	app, _ := setupEventsApp(hub, validator)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"sessionId": "any-session",
+		"serials":   []string{"dev1"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer expired-token")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected status 401 Unauthorized on failed token validation, got %d", resp.StatusCode)
 	}
 }
 
@@ -144,6 +234,7 @@ func TestUpdateSubscriptions_Success(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer token")
 	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
