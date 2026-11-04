@@ -163,6 +163,7 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 						h.logger.Warn("websocket session token expired or revoked", "sessionId", session.ID, "error", err)
 						_ = websocket.Message.Send(ws, `{"type":"error","error":"Session token expired or revoked. Terminating stream.","code":4401}`)
 						session.Close()
+						_ = ws.Close()
 						return
 					}
 				}
@@ -171,6 +172,7 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 					h.logger.Warn("websocket session authorization refresh failed", "sessionId", session.ID, "error", err)
 					_ = websocket.Message.Send(ws, `{"type":"error","error":"Access revoked or session terminated.","code":4403}`)
 					session.Close()
+					_ = ws.Close()
 					return
 				}
 				refreshCancel()
