@@ -15,6 +15,7 @@ import (
 type mockGWClient struct {
 	getDevicesStatusFn func(ctx context.Context, serialNumbers []string, token, reqID, corrID string) ([]models.GatewayDeviceStatus, error)
 	getCommandsFn      func(ctx context.Context, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
+	getCommandFn       func(ctx context.Context, commandUUID, token, reqID, corrID string) (json.RawMessage, error)
 	deleteCommandFn    func(ctx context.Context, commandUUID, token, reqID, corrID string) error
 	getHealthChecksFn  func(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
 	getLogsFn          func(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
@@ -66,6 +67,13 @@ func (m *mockGWClient) GetCommands(ctx context.Context, queryParams url.Values, 
 		return m.getCommandsFn(ctx, queryParams, token, reqID, corrID)
 	}
 	return json.RawMessage(`{"commands":[]}`), nil
+}
+
+func (m *mockGWClient) GetCommand(ctx context.Context, commandUUID, token, reqID, corrID string) (json.RawMessage, error) {
+	if m.getCommandFn != nil {
+		return m.getCommandFn(ctx, commandUUID, token, reqID, corrID)
+	}
+	return json.RawMessage(`{"UUID":"` + commandUUID + `","serialNumber":"60cf84f22290"}`), nil
 }
 
 func (m *mockGWClient) DeleteCommand(ctx context.Context, commandUUID, token, reqID, corrID string) error {
@@ -421,5 +429,122 @@ func TestDeviceService_DeleteDevice_OWGWFailure_ReturnsError(t *testing.T) {
 	var apiErr models.ApiError
 	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusBadGateway {
 		t.Errorf("expected 502 ApiError, got: %v", err)
+	}
+}
+
+func TestDeviceService_DeleteDeviceCommand_Success(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
+		},
+	}
+	deleteCalled := false
+	gw := &mockGWClient{
+		getCommandFn: func(ctx context.Context, commandUUID, token, reqID, corrID string) (json.RawMessage, error) {
+			if commandUUID != "cmd-123" {
+				t.Errorf("expected cmd-123, got %s", commandUUID)
+			}
+			return json.RawMessage(`{"UUID":"cmd-123","serialNumber":"60cf84f22290"}`), nil
+		},
+		deleteCommandFn: func(ctx context.Context, commandUUID, token, reqID, corrID string) error {
+			deleteCalled = true
+			return nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	err := svc.DeleteDeviceCommand(context.Background(), "60:cf:84:f2:22:90", "cmd-123", "jwt", "req", "corr")
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !deleteCalled {
+		t.Errorf("expected deleteCommand to be invoked")
+	}
+}
+
+func TestDeviceService_DeleteDeviceCommand_MismatchSerial_CrossTenantAttackRejected(t *testing.T) {
+	// Attacker has access to Device A (60cf84f22290)
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
+		},
+	}
+	deleteCalled := false
+	gw := &mockGWClient{
+		getCommandFn: func(ctx context.Context, commandUUID, token, reqID, corrID string) (json.RawMessage, error) {
+			// Command actually belongs to Victim Device B (24f5a201b1a0)
+			return json.RawMessage(`{"UUID":"cmd-victim-999","serialNumber":"24f5a201b1a0"}`), nil
+		},
+		deleteCommandFn: func(ctx context.Context, commandUUID, token, reqID, corrID string) error {
+			deleteCalled = true
+			return nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	// Attacker attempts to delete victim's command through Device A's authorized path
+	err := svc.DeleteDeviceCommand(context.Background(), "60cf84f22290", "cmd-victim-999", "jwt", "req", "corr")
+	if err == nil {
+		t.Fatalf("expected error on cross-device command deletion attempt, got nil")
+	}
+
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusNotFound {
+		t.Errorf("expected 404 Not Found, got: %v", err)
+	}
+	if deleteCalled {
+		t.Errorf("SECURITY FAILURE: deleteCommand was called for another device's command!")
+	}
+}
+
+func TestDeviceService_DeleteDeviceCommand_CommandNotFoundInGW(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
+		},
+	}
+	deleteCalled := false
+	gw := &mockGWClient{
+		getCommandFn: func(ctx context.Context, commandUUID, token, reqID, corrID string) (json.RawMessage, error) {
+			return nil, models.NewApiError(http.StatusNotFound, "Not Found", "command not found")
+		},
+		deleteCommandFn: func(ctx context.Context, commandUUID, token, reqID, corrID string) error {
+			deleteCalled = true
+			return nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	err := svc.DeleteDeviceCommand(context.Background(), "60cf84f22290", "nonexistent-cmd", "jwt", "req", "corr")
+	if err == nil {
+		t.Fatalf("expected error when command is not found in gateway, got nil")
+	}
+
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusNotFound {
+		t.Errorf("expected 404 Not Found, got: %v", err)
+	}
+	if deleteCalled {
+		t.Errorf("deleteCommand should not be called when command is not found")
+	}
+}
+
+func TestDeviceService_DeleteDeviceCommand_DeviceUnauthorized(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			return nil, models.NewApiError(http.StatusForbidden, "Forbidden", "access denied")
+		},
+	}
+	gw := &mockGWClient{}
+
+	svc := services.NewDeviceService(prov, gw)
+	err := svc.DeleteDeviceCommand(context.Background(), "unauthorized-serial", "cmd-1", "jwt", "req", "corr")
+	if err == nil {
+		t.Fatalf("expected error for unauthorized device access, got nil")
+	}
+
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden, got: %v", err)
 	}
 }
