@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -88,6 +89,9 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 		return
 	}
 	rawToken := strings.TrimSpace(tokens[1])
+	rawToken = strings.TrimPrefix(rawToken, "Bearer ")
+	rawToken = strings.TrimPrefix(rawToken, "bearer ")
+	rawToken = strings.TrimSpace(rawToken)
 
 	// 2. Validate token with OWSEC if validator configured
 	if h.tokenValidator != nil {
@@ -200,7 +204,7 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 			Serials []string `json:"serials"`
 		}
 		if err := json.Unmarshal([]byte(trimmed), &cmd); err == nil && len(cmd.Serials) > 0 {
-			granted, _ := h.hub.UpdateSubscription(session.ID, cmd.Serials)
+			granted, _ := h.hub.UpdateSubscription(session.ID, session.Token, cmd.Serials)
 			ack, _ := json.Marshal(map[string]interface{}{
 				"type":            "subscription_ack",
 				"subscribedCount": granted,
@@ -334,7 +338,38 @@ func (h *DeviceEventsHandler) StreamEvents(c fiber.Ctx) error {
 
 // UpdateSubscriptions handles POST /api/v1/devices/events/subscriptions.
 // Clients update their active viewport serials as they paginate or filter their fleet table.
+// It verifies the caller's authorization token and confirms session ownership before applying updates.
 func (h *DeviceEventsHandler) UpdateSubscriptions(c fiber.Ctx) error {
+	callerToken := c.Get("Authorization")
+	if callerToken == "" {
+		callerToken = c.Query("token")
+	}
+	callerToken = strings.TrimPrefix(callerToken, "Bearer ")
+	callerToken = strings.TrimPrefix(callerToken, "bearer ")
+	callerToken = strings.TrimSpace(callerToken)
+
+	if callerToken == "" {
+		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
+			http.StatusUnauthorized,
+			"Unauthorized",
+			"authorization token is required via Authorization header or token query parameter",
+		))
+	}
+
+	if h.tokenValidator != nil {
+		valCtx, valCancel := context.WithTimeout(c.Context(), 5*time.Second)
+		err := h.tokenValidator.ValidateToken(valCtx, callerToken)
+		valCancel()
+		if err != nil {
+			h.logger.Warn("subscription update token validation failed", "error", err)
+			return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
+				http.StatusUnauthorized,
+				"Unauthorized",
+				"invalid or expired authorization token",
+			))
+		}
+	}
+
 	var req SubscriptionUpdateRequest
 	if err := c.Bind().Body(&req); err != nil || req.SessionID == "" {
 		return c.Status(http.StatusBadRequest).JSON(models.NewApiError(
@@ -344,8 +379,19 @@ func (h *DeviceEventsHandler) UpdateSubscriptions(c fiber.Ctx) error {
 		))
 	}
 
-	grantedCount, err := h.hub.UpdateSubscription(req.SessionID, req.Serials)
+	grantedCount, err := h.hub.UpdateSubscription(req.SessionID, callerToken, req.Serials)
 	if err != nil {
+		if errors.Is(err, events.ErrSessionOwnershipMismatch) {
+			h.logger.Warn("unauthorized session subscription update attempt",
+				"sessionId", req.SessionID,
+				"error", err,
+			)
+			return c.Status(http.StatusForbidden).JSON(models.NewApiError(
+				http.StatusForbidden,
+				"Forbidden",
+				"caller does not own this session",
+			))
+		}
 		return c.Status(http.StatusNotFound).JSON(models.NewApiError(
 			http.StatusNotFound,
 			"Not Found",

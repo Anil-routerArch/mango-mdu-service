@@ -2,13 +2,23 @@ package events
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
 	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owprov"
+)
+
+var (
+	// ErrSessionNotFound indicates that a referenced session ID does not exist in the hub.
+	ErrSessionNotFound = errors.New("session not found")
+	// ErrSessionOwnershipMismatch indicates that the caller's identity/token does not own the session.
+	ErrSessionOwnershipMismatch = errors.New("caller does not own this session")
 )
 
 // ClientSession represents an active client event stream connection.
@@ -44,6 +54,74 @@ func (s *ClientSession) IsClosed() bool {
 // Done returns the completion notification channel.
 func (s *ClientSession) Done() <-chan struct{} {
 	return s.done
+}
+
+func normalizeToken(t string) string {
+	t = strings.TrimPrefix(t, "Bearer ")
+	t = strings.TrimPrefix(t, "bearer ")
+	return strings.TrimSpace(t)
+}
+
+// ExtractUserIdentity extracts the user identity (user, username, email, or sub claim) from a JWT token.
+// If the token is not a JWT or has no recognizable user claim, it returns an empty string.
+func ExtractUserIdentity(token string) string {
+	token = normalizeToken(token)
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		User     string `json:"user"`
+		Username string `json:"username"`
+		Email    string `json:"email"`
+		Sub      string `json:"sub"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	if claims.User != "" {
+		return claims.User
+	}
+	if claims.Username != "" {
+		return claims.Username
+	}
+	if claims.Email != "" {
+		return claims.Email
+	}
+	return claims.Sub
+}
+
+// VerifyOwnership checks whether callerToken has permission to modify this session.
+// It returns true if callerToken matches session.Token directly or corresponds to the same user identity.
+func (s *ClientSession) VerifyOwnership(callerToken string) bool {
+	s.mu.RLock()
+	sessionToken := normalizeToken(s.Token)
+	s.mu.RUnlock()
+
+	callerToken = normalizeToken(callerToken)
+
+	// In test environments where session was created without a token, allow access
+	if sessionToken == "" {
+		return true
+	}
+	if callerToken == "" {
+		return false
+	}
+	if sessionToken == callerToken {
+		return true
+	}
+
+	userSession := ExtractUserIdentity(sessionToken)
+	userCaller := ExtractUserIdentity(callerToken)
+	if userSession != "" && userCaller != "" && userSession == userCaller {
+		return true
+	}
+
+	return false
 }
 
 // Hub manages active client sessions and implements the inverted index for O(1) multi-tenant event routing.
@@ -159,15 +237,21 @@ func (h *Hub) UnregisterSession(sessionID string) {
 }
 
 // UpdateSubscription modifies the active viewport serials for an existing session.
+// It verifies caller ownership against session.Token / user identity before applying changes.
 // CRITICAL SECURITY GUARANTEE: Serials are strictly intersected with session.AllowedSerials.
 // Any serial requested that is not in the user's permitted inventory is discarded.
-func (h *Hub) UpdateSubscription(sessionID string, requestedSerials []string) (int, error) {
+func (h *Hub) UpdateSubscription(sessionID, callerToken string, requestedSerials []string) (int, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	session, exists := h.sessions[sessionID]
-	if !exists {
-		return 0, fmt.Errorf("session not found: %s", sessionID)
+	if !exists || session == nil || session.IsClosed() {
+		return 0, fmt.Errorf("session not found: %s: %w", sessionID, ErrSessionNotFound)
+	}
+
+	// Verify session ownership
+	if !session.VerifyOwnership(callerToken) {
+		return 0, fmt.Errorf("session ownership verification failed for session %s: %w", sessionID, ErrSessionOwnershipMismatch)
 	}
 
 	// Remove old indexes for this session
@@ -175,6 +259,9 @@ func (h *Hub) UpdateSubscription(sessionID string, requestedSerials []string) (i
 
 	// Filter requested serials against allowed inventory
 	session.mu.Lock()
+	if normCaller := normalizeToken(callerToken); normCaller != "" {
+		session.Token = normCaller
+	}
 	newSubMap := make(map[string]struct{})
 	for _, s := range requestedSerials {
 		norm := NormalizeSerial(s)

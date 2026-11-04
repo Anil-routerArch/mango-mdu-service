@@ -2,7 +2,10 @@ package events_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -160,7 +163,7 @@ func TestHub_MultiTenantIsolation(t *testing.T) {
 	}
 
 	// 3. User B attempts PRIVILEGE ESCALATION: explicitly requests subscription to alpha1!
-	granted, err := hub.UpdateSubscription(sessionB.ID, []string{"alpha1", "beta1"})
+	granted, err := hub.UpdateSubscription(sessionB.ID, "token-B", []string{"alpha1", "beta1"})
 	if err != nil {
 		t.Fatalf("unexpected error updating subscription: %v", err)
 	}
@@ -370,5 +373,97 @@ func TestHub_RefreshSessionAuthorization_AuthError_UnregistersSession(t *testing
 	}
 	if hub.GetActiveSessionCount() != 0 {
 		t.Errorf("expected 0 active sessions, got %d", hub.GetActiveSessionCount())
+	}
+}
+
+func createTestJWT(claims map[string]interface{}) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
+	payloadBytes, _ := json.Marshal(claims)
+	payload := base64.RawURLEncoding.EncodeToString(payloadBytes)
+	signature := base64.RawURLEncoding.EncodeToString([]byte(`sig`))
+	return fmt.Sprintf("%s.%s.%s", header, payload, signature)
+}
+
+func TestHub_UpdateSubscription_OwnershipMismatch_Forbidden(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession("owner-token", []string{"dev1", "dev2"}, nil)
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	// Attacker tries to update owner's session subscriptions
+	_, err := hub.UpdateSubscription(session.ID, "attacker-token", []string{"dev1"})
+	if err == nil {
+		t.Fatalf("expected error when caller token does not match session owner")
+	}
+	if !errors.Is(err, events.ErrSessionOwnershipMismatch) {
+		t.Errorf("expected ErrSessionOwnershipMismatch, got: %v", err)
+	}
+
+	// Owner with matching token succeeds
+	granted, err := hub.UpdateSubscription(session.ID, "owner-token", []string{"dev1"})
+	if err != nil {
+		t.Fatalf("unexpected error for legitimate owner: %v", err)
+	}
+	if granted != 1 {
+		t.Errorf("expected 1 granted subscription, got %d", granted)
+	}
+}
+
+func TestHub_UpdateSubscription_Ownership_SameUserJWT(t *testing.T) {
+	jwt1 := createTestJWT(map[string]interface{}{
+		"user": "alice@example.com",
+		"iat":  1700000000,
+	})
+	jwt2 := createTestJWT(map[string]interface{}{
+		"user": "alice@example.com",
+		"iat":  1700003600, // refreshed token
+	})
+
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession(jwt1, []string{"dev1", "dev2"}, nil)
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	// Alice using refreshed JWT updates her session
+	granted, err := hub.UpdateSubscription(session.ID, jwt2, []string{"dev1"})
+	if err != nil {
+		t.Fatalf("expected update to succeed for refreshed token of same user, got: %v", err)
+	}
+	if granted != 1 {
+		t.Errorf("expected 1 granted subscription, got %d", granted)
+	}
+}
+
+func TestHub_UpdateSubscription_Ownership_DifferentUserJWT_Forbidden(t *testing.T) {
+	jwtAlice := createTestJWT(map[string]interface{}{
+		"user": "alice@example.com",
+	})
+	jwtBob := createTestJWT(map[string]interface{}{
+		"user": "bob@example.com",
+	})
+
+	hub := events.NewHub(nil, nil)
+	session := hub.CreateSession(jwtAlice, []string{"dev1", "dev2"}, nil)
+	hub.RegisterSession(session)
+	defer hub.UnregisterSession(session.ID)
+
+	// Bob attempts to modify Alice's session
+	_, err := hub.UpdateSubscription(session.ID, jwtBob, []string{"dev1"})
+	if err == nil {
+		t.Fatalf("expected ownership check failure for different user JWT")
+	}
+	if !errors.Is(err, events.ErrSessionOwnershipMismatch) {
+		t.Errorf("expected ErrSessionOwnershipMismatch, got: %v", err)
+	}
+}
+
+func TestHub_UpdateSubscription_SessionNotFound(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	_, err := hub.UpdateSubscription("non-existent-id", "some-token", []string{"dev1"})
+	if err == nil {
+		t.Fatalf("expected error for non-existent session")
+	}
+	if !errors.Is(err, events.ErrSessionNotFound) {
+		t.Errorf("expected ErrSessionNotFound, got: %v", err)
 	}
 }
