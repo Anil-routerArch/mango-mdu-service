@@ -62,7 +62,7 @@ func normalizeToken(t string) string {
 	return strings.TrimSpace(t)
 }
 
-// ExtractUserIdentity extracts the user identity (user, username, email, or sub claim) from a JWT token.
+// ExtractUserIdentity extracts the user identity (id, userId, user, username, email, or sub claim) from a JWT token.
 // If the token is not a JWT or has no recognizable user claim, it returns an empty string.
 func ExtractUserIdentity(token string) string {
 	token = normalizeToken(token)
@@ -75,6 +75,8 @@ func ExtractUserIdentity(token string) string {
 		return ""
 	}
 	var claims struct {
+		ID       string `json:"id"`
+		UserID   string `json:"userId"`
 		User     string `json:"user"`
 		Username string `json:"username"`
 		Email    string `json:"email"`
@@ -82,6 +84,12 @@ func ExtractUserIdentity(token string) string {
 	}
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		return ""
+	}
+	if claims.ID != "" {
+		return claims.ID
+	}
+	if claims.UserID != "" {
+		return claims.UserID
 	}
 	if claims.User != "" {
 		return claims.User
