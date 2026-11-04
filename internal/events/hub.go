@@ -28,6 +28,8 @@ type ClientSession struct {
 	Send              chan []byte
 	AllowedSerials    map[string]struct{}
 	SubscribedSerials map[string]struct{}
+	indexedSerials    map[string]struct{}
+	unrestricted      bool
 	mu                sync.RWMutex
 	closed            bool
 	done              chan struct{}
@@ -54,6 +56,24 @@ func (s *ClientSession) IsClosed() bool {
 // Done returns the completion notification channel.
 func (s *ClientSession) Done() <-chan struct{} {
 	return s.done
+}
+
+// SubscribedCount returns the number of currently subscribed devices.
+// In unrestricted mode, this equals the count of permitted devices (AllowedSerials).
+func (s *ClientSession) SubscribedCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.unrestricted {
+		return len(s.AllowedSerials)
+	}
+	return len(s.SubscribedSerials)
+}
+
+// IsUnrestricted reports whether the session receives events for all permitted devices without filtering.
+func (s *ClientSession) IsUnrestricted() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.unrestricted
 }
 
 func normalizeToken(t string) string {
@@ -178,17 +198,22 @@ func (h *Hub) AuthorizeUser(ctx context.Context, token, reqID, corrID string) ([
 }
 
 // CreateSession creates and configures a new ClientSession.
+// If initialSerials is nil, the session operates in unrestricted mode (fleet-wide listener).
+// If initialSerials is non-nil (even if empty), the session operates in filtered viewport mode.
 func (h *Hub) CreateSession(token string, allowedSerials []string, initialSerials []string) *ClientSession {
 	allowedMap := make(map[string]struct{}, len(allowedSerials))
 	for _, s := range allowedSerials {
 		allowedMap[NormalizeSerial(s)] = struct{}{}
 	}
 
+	unrestricted := (initialSerials == nil)
 	subMap := make(map[string]struct{})
-	for _, s := range initialSerials {
-		norm := NormalizeSerial(s)
-		if _, ok := allowedMap[norm]; ok {
-			subMap[norm] = struct{}{}
+	if !unrestricted {
+		for _, s := range initialSerials {
+			norm := NormalizeSerial(s)
+			if _, ok := allowedMap[norm]; ok {
+				subMap[norm] = struct{}{}
+			}
 		}
 	}
 
@@ -198,6 +223,8 @@ func (h *Hub) CreateSession(token string, allowedSerials []string, initialSerial
 		Send:              make(chan []byte, 256),
 		AllowedSerials:    allowedMap,
 		SubscribedSerials: subMap,
+		indexedSerials:    make(map[string]struct{}),
+		unrestricted:      unrestricted,
 		done:              make(chan struct{}),
 	}
 }
@@ -217,7 +244,8 @@ func (h *Hub) RegisterSession(session *ClientSession) {
 	h.logger.Debug("registered client session",
 		"sessionId", session.ID,
 		"allowedCount", len(session.AllowedSerials),
-		"subscribedCount", len(session.SubscribedSerials),
+		"subscribedCount", session.SubscribedCount(),
+		"unrestricted", session.IsUnrestricted(),
 		"totalSessions", len(h.sessions),
 	)
 }
@@ -248,6 +276,8 @@ func (h *Hub) UnregisterSession(sessionID string) {
 // It verifies caller ownership against session.Token / user identity before applying changes.
 // CRITICAL SECURITY GUARANTEE: Serials are strictly intersected with session.AllowedSerials.
 // Any serial requested that is not in the user's permitted inventory is discarded.
+// If requestedSerials contains "*", the session reverts to unrestricted mode (all permitted devices).
+// If requestedSerials is empty or contains no permitted serials, zero devices are subscribed.
 func (h *Hub) UpdateSubscription(sessionID, callerToken string, requestedSerials []string) (int, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -265,19 +295,37 @@ func (h *Hub) UpdateSubscription(sessionID, callerToken string, requestedSerials
 	// Remove old indexes for this session
 	h.deindexSessionSerials(session)
 
-	// Filter requested serials against allowed inventory
+	// Filter requested serials against allowed inventory or check for wildcard
 	session.mu.Lock()
 	if normCaller := normalizeToken(callerToken); normCaller != "" {
 		session.Token = normCaller
 	}
-	newSubMap := make(map[string]struct{})
+
+	isWildcard := false
 	for _, s := range requestedSerials {
-		norm := NormalizeSerial(s)
-		if _, allowed := session.AllowedSerials[norm]; allowed {
-			newSubMap[norm] = struct{}{}
+		if strings.TrimSpace(s) == "*" {
+			isWildcard = true
+			break
 		}
 	}
-	session.SubscribedSerials = newSubMap
+
+	var grantedCount int
+	if isWildcard {
+		session.unrestricted = true
+		session.SubscribedSerials = make(map[string]struct{})
+		grantedCount = len(session.AllowedSerials)
+	} else {
+		session.unrestricted = false
+		newSubMap := make(map[string]struct{})
+		for _, s := range requestedSerials {
+			norm := NormalizeSerial(s)
+			if _, allowed := session.AllowedSerials[norm]; allowed {
+				newSubMap[norm] = struct{}{}
+			}
+		}
+		session.SubscribedSerials = newSubMap
+		grantedCount = len(newSubMap)
+	}
 	session.mu.Unlock()
 
 	// Re-index new subscriptions
@@ -286,10 +334,11 @@ func (h *Hub) UpdateSubscription(sessionID, callerToken string, requestedSerials
 	h.logger.Debug("updated session subscriptions",
 		"sessionId", sessionID,
 		"requested", len(requestedSerials),
-		"granted", len(newSubMap),
+		"granted", grantedCount,
+		"unrestricted", isWildcard,
 	)
 
-	return len(newSubMap), nil
+	return grantedCount, nil
 }
 
 // RefreshSessionAuthorization re-evaluates the session's permitted inventory against OWPROV.
@@ -344,17 +393,19 @@ func (h *Hub) RefreshSessionAuthorization(ctx context.Context, sessionID, reqID,
 	session.mu.Lock()
 	session.AllowedSerials = newAllowedMap
 
-	// Prune SubscribedSerials that are no longer allowed
-	prunedSubs := make(map[string]struct{})
 	var revokedCount int
-	for subSerial := range session.SubscribedSerials {
-		if _, allowed := newAllowedMap[subSerial]; allowed {
-			prunedSubs[subSerial] = struct{}{}
-		} else {
-			revokedCount++
+	if !session.unrestricted {
+		// Prune SubscribedSerials that are no longer allowed
+		prunedSubs := make(map[string]struct{})
+		for subSerial := range session.SubscribedSerials {
+			if _, allowed := newAllowedMap[subSerial]; allowed {
+				prunedSubs[subSerial] = struct{}{}
+			} else {
+				revokedCount++
+			}
 		}
+		session.SubscribedSerials = prunedSubs
 	}
-	session.SubscribedSerials = prunedSubs
 	session.mu.Unlock()
 
 	// Re-index remaining valid subscriptions
@@ -364,7 +415,7 @@ func (h *Hub) RefreshSessionAuthorization(ctx context.Context, sessionID, reqID,
 		h.logger.Info("pruned revoked serials from active session subscriptions",
 			"sessionId", sessionID,
 			"revokedCount", revokedCount,
-			"remainingSubscribed", len(prunedSubs),
+			"remainingSubscribed", session.SubscribedCount(),
 		)
 	}
 
@@ -437,39 +488,35 @@ func (h *Hub) GetSubscribersForSerial(serial string) int {
 }
 
 func (h *Hub) indexSessionSerials(session *ClientSession) {
-	session.mu.RLock()
-	defer session.mu.RUnlock()
+	session.mu.Lock()
+	defer session.mu.Unlock()
 
-	// If viewport subscriptions are specified, index those
-	if len(session.SubscribedSerials) > 0 {
-		for serial := range session.SubscribedSerials {
-			if _, ok := h.serialToSessions[serial]; !ok {
-				h.serialToSessions[serial] = make(map[string]*ClientSession)
-			}
-			h.serialToSessions[serial][session.ID] = session
-		}
-		return
+	if session.indexedSerials == nil {
+		session.indexedSerials = make(map[string]struct{})
 	}
 
-	// Otherwise, index all allowed serials
-	for serial := range session.AllowedSerials {
+	// Determine target serials to index based on subscription mode
+	var target map[string]struct{}
+	if session.unrestricted {
+		target = session.AllowedSerials
+	} else {
+		target = session.SubscribedSerials
+	}
+
+	for serial := range target {
 		if _, ok := h.serialToSessions[serial]; !ok {
 			h.serialToSessions[serial] = make(map[string]*ClientSession)
 		}
 		h.serialToSessions[serial][session.ID] = session
+		session.indexedSerials[serial] = struct{}{}
 	}
 }
 
 func (h *Hub) deindexSessionSerials(session *ClientSession) {
-	session.mu.RLock()
-	defer session.mu.RUnlock()
+	session.mu.Lock()
+	defer session.mu.Unlock()
 
-	targetSerials := session.SubscribedSerials
-	if len(targetSerials) == 0 {
-		targetSerials = session.AllowedSerials
-	}
-
-	for serial := range targetSerials {
+	for serial := range session.indexedSerials {
 		if subs, ok := h.serialToSessions[serial]; ok {
 			delete(subs, session.ID)
 			if len(subs) == 0 {
@@ -477,4 +524,5 @@ func (h *Hub) deindexSessionSerials(session *ClientSession) {
 			}
 		}
 	}
+	session.indexedSerials = make(map[string]struct{})
 }
