@@ -66,6 +66,18 @@ func ParseHttpError(statusCode int, body []byte) ApiError {
 				}
 			}
 
+			// Normalize OpenWiFi RBAC method names (e.g., "DELETE", "CREATE", "UPDATE", "READ") on 403 Forbidden
+			if statusCode == http.StatusForbidden {
+				switch strings.ToUpper(desc) {
+				case "DELETE", "CREATE", "UPDATE", "READ", "GET", "POST", "PUT", "PATCH", "FORBIDDEN", "":
+					desc = "Access denied"
+				}
+				switch strings.ToUpper(details) {
+				case "DELETE", "CREATE", "UPDATE", "READ", "GET", "POST", "PUT", "PATCH", "FORBIDDEN", "":
+					details = ""
+				}
+			}
+
 			if desc != "" && details != "" && desc != details {
 				return NewApiError(statusCode, desc, details)
 			}
@@ -80,6 +92,12 @@ func ParseHttpError(statusCode int, body []byte) ApiError {
 		// Not JSON, check if it's plain text (not HTML)
 		str := string(trimmed)
 		if !strings.HasPrefix(str, "<") && len(str) < 500 {
+			if statusCode == http.StatusForbidden {
+				switch strings.ToUpper(str) {
+				case "DELETE", "CREATE", "UPDATE", "READ", "GET", "POST", "PUT", "PATCH", "FORBIDDEN":
+					return NewApiError(statusCode, "Access denied")
+				}
+			}
 			return NewApiError(statusCode, str)
 		}
 	}
@@ -88,6 +106,9 @@ func ParseHttpError(statusCode int, body []byte) ApiError {
 	statusText := http.StatusText(statusCode)
 	if statusText == "" {
 		statusText = fmt.Sprintf("HTTP %d", statusCode)
+	}
+	if statusCode == http.StatusForbidden {
+		statusText = "Access denied"
 	}
 	return NewApiError(statusCode, statusText)
 }
