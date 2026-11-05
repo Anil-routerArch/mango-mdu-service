@@ -2,7 +2,6 @@ package events_test
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -377,22 +376,81 @@ func TestHub_RefreshSessionAuthorization_AuthError_UnregistersSession(t *testing
 	}
 }
 
-func createTestJWT(claims map[string]interface{}) string {
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
-	payloadBytes, _ := json.Marshal(claims)
-	payload := base64.RawURLEncoding.EncodeToString(payloadBytes)
-	signature := base64.RawURLEncoding.EncodeToString([]byte(`sig`))
-	return fmt.Sprintf("%s.%s.%s", header, payload, signature)
+func TestClientSession_VerifyOwnership(t *testing.T) {
+	const validToken = "278e32562c4cd14df17aabc9d6c41e1db9d47a181c443b13e4f15c5e89846284"
+	const diffToken = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+	tests := []struct {
+		name         string
+		sessionToken string
+		callerToken  string
+		expected     bool
+	}{
+		{
+			name:         "matching tokens",
+			sessionToken: validToken,
+			callerToken:  validToken,
+			expected:     true,
+		},
+		{
+			name:         "matching tokens with Bearer prefix",
+			sessionToken: "Bearer " + validToken,
+			callerToken:  validToken,
+			expected:     true,
+		},
+		{
+			name:         "mismatched tokens",
+			sessionToken: validToken,
+			callerToken:  diffToken,
+			expected:     false,
+		},
+		{
+			name:         "empty caller token rejected",
+			sessionToken: validToken,
+			callerToken:  "",
+			expected:     false,
+		},
+		{
+			name:         "empty session token rejected",
+			sessionToken: "",
+			callerToken:  validToken,
+			expected:     false,
+		},
+		{
+			name:         "both tokens empty rejected",
+			sessionToken: "",
+			callerToken:  "",
+			expected:     false,
+		},
+		{
+			name:         "whitespace caller token rejected",
+			sessionToken: validToken,
+			callerToken:  "   ",
+			expected:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &events.ClientSession{
+				Token: tc.sessionToken,
+			}
+			actual := s.VerifyOwnership(tc.callerToken)
+			if actual != tc.expected {
+				t.Errorf("expected VerifyOwnership to return %v, got %v", tc.expected, actual)
+			}
+		})
+	}
 }
 
 func TestHub_UpdateSubscription_OwnershipMismatch_Forbidden(t *testing.T) {
 	hub := events.NewHub(nil, nil)
-	session := hub.CreateSession("owner-token", []string{"dev1", "dev2"}, nil)
+	session := hub.CreateSession("owner-token-1234", []string{"dev1", "dev2"}, nil)
 	hub.RegisterSession(session)
 	defer hub.UnregisterSession(session.ID)
 
-	// Attacker tries to update owner's session subscriptions
-	_, err := hub.UpdateSubscription(session.ID, "attacker-token", []string{"dev1"})
+	// Attacker tries to update owner's session subscriptions with mismatched token
+	_, err := hub.UpdateSubscription(session.ID, "attacker-token-9999", []string{"dev1"})
 	if err == nil {
 		t.Fatalf("expected error when caller token does not match session owner")
 	}
@@ -401,7 +459,7 @@ func TestHub_UpdateSubscription_OwnershipMismatch_Forbidden(t *testing.T) {
 	}
 
 	// Owner with matching token succeeds
-	granted, err := hub.UpdateSubscription(session.ID, "owner-token", []string{"dev1"})
+	granted, err := hub.UpdateSubscription(session.ID, "owner-token-1234", []string{"dev1"})
 	if err != nil {
 		t.Fatalf("unexpected error for legitimate owner: %v", err)
 	}
@@ -410,51 +468,24 @@ func TestHub_UpdateSubscription_OwnershipMismatch_Forbidden(t *testing.T) {
 	}
 }
 
-func TestHub_UpdateSubscription_Ownership_SameUserJWT(t *testing.T) {
-	jwt1 := createTestJWT(map[string]interface{}{
-		"user": "alice@example.com",
-		"iat":  1700000000,
-	})
-	jwt2 := createTestJWT(map[string]interface{}{
-		"user": "alice@example.com",
-		"iat":  1700003600, // refreshed token
-	})
-
+func TestHub_UpdateSubscription_TokenImmutable(t *testing.T) {
+	const initialToken = "initial-owsec-token-abc123"
 	hub := events.NewHub(nil, nil)
-	session := hub.CreateSession(jwt1, []string{"dev1", "dev2"}, nil)
+	session := hub.CreateSession(initialToken, []string{"dev1", "dev2"}, nil)
 	hub.RegisterSession(session)
 	defer hub.UnregisterSession(session.ID)
 
-	// Alice using refreshed JWT updates her session
-	granted, err := hub.UpdateSubscription(session.ID, jwt2, []string{"dev1"})
+	granted, err := hub.UpdateSubscription(session.ID, initialToken, []string{"dev1"})
 	if err != nil {
-		t.Fatalf("expected update to succeed for refreshed token of same user, got: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if granted != 1 {
-		t.Errorf("expected 1 granted subscription, got %d", granted)
+		t.Errorf("expected 1 granted, got %d", granted)
 	}
-}
 
-func TestHub_UpdateSubscription_Ownership_DifferentUserJWT_Forbidden(t *testing.T) {
-	jwtAlice := createTestJWT(map[string]interface{}{
-		"user": "alice@example.com",
-	})
-	jwtBob := createTestJWT(map[string]interface{}{
-		"user": "bob@example.com",
-	})
-
-	hub := events.NewHub(nil, nil)
-	session := hub.CreateSession(jwtAlice, []string{"dev1", "dev2"}, nil)
-	hub.RegisterSession(session)
-	defer hub.UnregisterSession(session.ID)
-
-	// Bob attempts to modify Alice's session
-	_, err := hub.UpdateSubscription(session.ID, jwtBob, []string{"dev1"})
-	if err == nil {
-		t.Fatalf("expected ownership check failure for different user JWT")
-	}
-	if !errors.Is(err, events.ErrSessionOwnershipMismatch) {
-		t.Errorf("expected ErrSessionOwnershipMismatch, got: %v", err)
+	// Verify session token was not mutated or cleared
+	if session.Token != initialToken {
+		t.Errorf("expected session.Token to remain %q, got %q", initialToken, session.Token)
 	}
 }
 

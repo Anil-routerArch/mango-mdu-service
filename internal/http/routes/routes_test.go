@@ -152,11 +152,11 @@ func TestRouteVisibility(t *testing.T) {
 	if !hasDevicesRoute {
 		t.Errorf("expected public app to register /api/v1/devices route, but it did not")
 	}
-	if !hasEventsRoute {
-		t.Errorf("expected public app to register /api/v1/devices/events route, but it did not")
+	if hasEventsRoute {
+		t.Errorf("expected public app NOT to register deprecated /api/v1/devices/events SSE route")
 	}
-	if !hasSubscriptionsRoute {
-		t.Errorf("expected public app to register /api/v1/devices/events/subscriptions route, but it did not")
+	if hasSubscriptionsRoute {
+		t.Errorf("expected public app NOT to register /api/v1/devices/events/subscriptions route")
 	}
 	if !hasWsRoute {
 		t.Errorf("expected public app to register /api/v1/ws route, but it did not")
@@ -210,7 +210,7 @@ func TestCORSPreflight_TC_POL_008(t *testing.T) {
 	}
 }
 
-func TestQueryTokenAuthPropagation(t *testing.T) {
+func TestQueryTokenNotPromoted(t *testing.T) {
 	app := fiber.New()
 	var capturedAuthHeader string
 
@@ -234,7 +234,7 @@ func TestQueryTokenAuthPropagation(t *testing.T) {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	if capturedAuthHeader != "Bearer my-secret-token" {
-		t.Errorf("expected 'Bearer my-secret-token', got %q", capturedAuthHeader)
+	if capturedAuthHeader != "" {
+		t.Errorf("expected empty Authorization header, got %q (query ?token= must never be promoted to Authorization header)", capturedAuthHeader)
 	}
 }

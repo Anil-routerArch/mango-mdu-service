@@ -189,6 +189,9 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 	// 7. Initialize Realtime Event Hub and Kafka Consumer
 	hub := events.NewHub(owprovClient, logger.Subsystem("event-hub"))
 	deviceEventsHandler := handlers.NewDeviceEventsHandler(hub, tokenValidator, logger.Subsystem("event-stream"))
+	if cfg.Server.WSWriteTimeout > 0 {
+		deviceEventsHandler.SetWriteTimeout(cfg.Server.WSWriteTimeout)
+	}
 	kafkaConsumer := events.NewKafkaConsumer(cfg.Kafka.Config, hub, logger.Subsystem("kafka-events"))
 
 	// 8. Assemble Fiber HTTP apps module

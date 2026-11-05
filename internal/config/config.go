@@ -1,6 +1,8 @@
 package config
 
 import (
+	"time"
+
 	"github.com/caarlos0/env/v11"
 	subsystem "github.com/routerarchitects/ow-common-mods/fiber/system-routes"
 	"github.com/routerarchitects/ow-common-mods/servicediscovery"
@@ -9,11 +11,12 @@ import (
 )
 
 type ServerConfig struct {
-	HTTPPort    int    `env:"HTTP_PORT" envDefault:"16010"`
-	PrivatePort int    `env:"PRIVATE_HTTP_PORT" envDefault:"17010"`
-	TLS_CERT    string `env:"INTERNAL_RESTAPI_HOST_CERT"`
-	TLS_KEY     string `env:"INTERNAL_RESTAPI_HOST_KEY"`
-	TLS_ROOTCA  string `env:"INTERNAL_RESTAPI_HOST_ROOTCA"`
+	HTTPPort       int           `env:"HTTP_PORT" envDefault:"16010"`
+	PrivatePort    int           `env:"PRIVATE_HTTP_PORT" envDefault:"17010"`
+	TLS_CERT       string        `env:"INTERNAL_RESTAPI_HOST_CERT"`
+	TLS_KEY        string        `env:"INTERNAL_RESTAPI_HOST_KEY"`
+	TLS_ROOTCA     string        `env:"INTERNAL_RESTAPI_HOST_ROOTCA"`
+	WSWriteTimeout time.Duration `env:"WS_WRITE_TIMEOUT" envDefault:"10s"`
 }
 
 type PostgresConfig struct {

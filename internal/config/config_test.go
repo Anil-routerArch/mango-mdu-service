@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -24,6 +25,10 @@ func TestLoadDefaults(t *testing.T) {
 
 	if cfg.Server.PrivatePort != 17010 {
 		t.Errorf("expected default PrivatePort to be 17010, got: %d", cfg.Server.PrivatePort)
+	}
+
+	if cfg.Server.WSWriteTimeout != 10*time.Second {
+		t.Errorf("expected default WSWriteTimeout to be 10s, got: %v", cfg.Server.WSWriteTimeout)
 	}
 
 	if cfg.Database.Port != 5432 {

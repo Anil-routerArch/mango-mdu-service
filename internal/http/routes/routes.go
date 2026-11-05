@@ -29,17 +29,6 @@ func RegisterPublic(app *fiber.App, deps PublicDeps) {
 		app.Get("/ws", deps.DeviceEventsHandler.HandleWebSocket)
 	}
 
-	// Propagate ?token= query parameter to Authorization header for clients that cannot
-	// pass custom headers (e.g. browser EventSource for Server-Sent Events).
-	app.Use(func(c fiber.Ctx) error {
-		if c.Get("Authorization") == "" {
-			if token := c.Query("token"); token != "" {
-				c.Request().Header.Set("Authorization", "Bearer "+token)
-			}
-		}
-		return c.Next()
-	})
-
 	// Create authenticated route group
 	group := app.Group("", deps.AuthHandler)
 
@@ -49,12 +38,6 @@ func RegisterPublic(app *fiber.App, deps PublicDeps) {
 	// Register policy overview route
 	if deps.PolicyHandler != nil {
 		group.Get("/api/v1/policy/:id/overview", deps.PolicyHandler.GetOverview)
-	}
-
-	// Register real-time device event routes (register before /devices/:serial parameter wildcard)
-	if deps.DeviceEventsHandler != nil {
-		group.Get("/api/v1/devices/events", deps.DeviceEventsHandler.StreamEvents)
-		group.Post("/api/v1/devices/events/subscriptions", deps.DeviceEventsHandler.UpdateSubscriptions)
 	}
 
 	// Register device routes

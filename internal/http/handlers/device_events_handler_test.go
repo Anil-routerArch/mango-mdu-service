@@ -1,18 +1,18 @@
 package handlers_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/routerarchitects/mango-mdu-service/internal/events"
 	"github.com/routerarchitects/mango-mdu-service/internal/http/handlers"
 	"github.com/routerarchitects/mango-mdu-service/internal/models"
+	"golang.org/x/net/websocket"
 )
 
 type mockProvForEventsHandler struct {
@@ -50,55 +50,6 @@ func (m *mockProvForEventsHandler) DeleteInventoryItem(ctx context.Context, seri
 	return nil
 }
 
-func setupEventsApp(hub *events.Hub, validator ...handlers.TokenValidator) (*fiber.App, *handlers.DeviceEventsHandler) {
-	app := fiber.New()
-	var val handlers.TokenValidator
-	if len(validator) > 0 {
-		val = validator[0]
-	}
-	handler := handlers.NewDeviceEventsHandler(hub, val)
-	app.Get("/api/v1/ws", handler.HandleWebSocket)
-	app.Get("/api/v1/devices/events", handler.StreamEvents)
-	app.Post("/api/v1/devices/events/subscriptions", handler.UpdateSubscriptions)
-	return app, handler
-}
-
-func TestStreamEvents_MissingToken(t *testing.T) {
-	hub := events.NewHub(nil, nil)
-	app, _ := setupEventsApp(hub)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/devices/events", nil)
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("expected status 401, got %d", resp.StatusCode)
-	}
-}
-
-func TestStreamEvents_AuthFailure(t *testing.T) {
-	mockProv := &mockProvForEventsHandler{
-		getSerialsFn: func(ctx context.Context, token, reqID, corrID string) ([]string, error) {
-			return nil, models.NewApiError(401, "Unauthorized", "bad token")
-		},
-	}
-	hub := events.NewHub(mockProv, nil)
-	app, _ := setupEventsApp(hub)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/devices/events", nil)
-	req.Header.Set("Authorization", "Bearer bad-token")
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("expected status 401, got %d", resp.StatusCode)
-	}
-}
-
 type mockTokenValidator struct {
 	validateFn func(ctx context.Context, rawToken string) error
 }
@@ -110,224 +61,300 @@ func (m *mockTokenValidator) ValidateToken(ctx context.Context, rawToken string)
 	return nil
 }
 
-func TestUpdateSubscriptions_MissingToken(t *testing.T) {
-	hub := events.NewHub(nil, nil)
-	app, _ := setupEventsApp(hub)
+func setupWSServer(t *testing.T, handler *handlers.DeviceEventsHandler) (*httptest.Server, string) {
+	s := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) {
+		defer ws.Close()
+		handler.ServeWebSocket(ws, "test-req-id", "test-corr-id")
+	}))
+	wsURL := "ws://" + s.Listener.Addr().String()
+	return s, wsURL
+}
 
-	body, _ := json.Marshal(map[string]interface{}{
-		"sessionId": "some-session",
-		"serials":   []string{"dev1"},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req)
+func TestWebSocket_InvalidAuthFrameFormat(t *testing.T) {
+	hub := events.NewHub(nil, nil)
+	handler := handlers.NewDeviceEventsHandler(hub, nil)
+	server, wsURL := setupWSServer(t, handler)
+	defer server.Close()
+
+	ws, err := websocket.Dial(wsURL, "", "http://localhost")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer ws.Close()
+
+	// Send frame without "token:" prefix
+	if err := websocket.Message.Send(ws, "some-random-data"); err != nil {
+		t.Fatalf("failed to send frame: %v", err)
 	}
 
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("expected status 401 Unauthorized when missing token, got %d", resp.StatusCode)
+	var response string
+	if err := websocket.Message.Receive(ws, &response); err != nil {
+		t.Fatalf("failed to receive error frame: %v", err)
+	}
+
+	if response != `{"error":"Invalid token format. Closing connection."}` {
+		t.Errorf("unexpected response: %s", response)
+	}
+
+	// Verify server closes connection
+	var next string
+	if err := websocket.Message.Receive(ws, &next); err == nil {
+		t.Errorf("expected connection to be closed, but received: %s", next)
 	}
 }
 
-func TestUpdateSubscriptions_InvalidBody(t *testing.T) {
-	hub := events.NewHub(nil, nil)
-	app, _ := setupEventsApp(hub)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBufferString(`{invalid`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer valid-token")
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", resp.StatusCode)
-	}
-}
-
-func TestUpdateSubscriptions_SessionNotFound(t *testing.T) {
-	hub := events.NewHub(nil, nil)
-	app, _ := setupEventsApp(hub)
-
-	body, _ := json.Marshal(map[string]interface{}{
-		"sessionId": "non-existent-session",
-		"serials":   []string{"dev1"},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer valid-token")
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected status 404, got %d", resp.StatusCode)
-	}
-}
-
-func TestUpdateSubscriptions_OwnershipMismatch_Forbidden(t *testing.T) {
-	hub := events.NewHub(nil, nil)
-	session := hub.CreateSession("alice-token", []string{"dev1", "dev2"}, nil)
-	hub.RegisterSession(session)
-	defer hub.UnregisterSession(session.ID)
-
-	app, _ := setupEventsApp(hub)
-
-	// Attacker Bob attempts to update Alice's session
-	body, _ := json.Marshal(map[string]interface{}{
-		"sessionId": session.ID,
-		"serials":   []string{"dev1"},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer bob-attacker-token")
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("expected status 403 Forbidden for ownership mismatch, got %d", resp.StatusCode)
-	}
-}
-
-func TestUpdateSubscriptions_TokenValidator_Error(t *testing.T) {
-	hub := events.NewHub(nil, nil)
+func TestWebSocket_TokenValidationFailure(t *testing.T) {
 	validator := &mockTokenValidator{
 		validateFn: func(ctx context.Context, rawToken string) error {
-			return errors.New("token expired or revoked")
+			return errors.New("revoked token")
 		},
 	}
-	app, _ := setupEventsApp(hub, validator)
+	hub := events.NewHub(nil, nil)
+	handler := handlers.NewDeviceEventsHandler(hub, validator)
+	server, wsURL := setupWSServer(t, handler)
+	defer server.Close()
 
-	body, _ := json.Marshal(map[string]interface{}{
-		"sessionId": "any-session",
-		"serials":   []string{"dev1"},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer expired-token")
-	resp, err := app.Test(req)
+	ws, err := websocket.Dial(wsURL, "", "http://localhost")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer ws.Close()
+
+	if err := websocket.Message.Send(ws, "token:revoked-token"); err != nil {
+		t.Fatalf("failed to send frame: %v", err)
 	}
 
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("expected status 401 Unauthorized on failed token validation, got %d", resp.StatusCode)
+	var response string
+	if err := websocket.Message.Receive(ws, &response); err != nil {
+		t.Fatalf("failed to receive error frame: %v", err)
+	}
+
+	if response != `{"error":"Invalid token. Closing connection."}` {
+		t.Errorf("unexpected response: %s", response)
 	}
 }
 
-func TestUpdateSubscriptions_Success(t *testing.T) {
-	hub := events.NewHub(nil, nil)
-	session := hub.CreateSession("token", []string{"dev1", "dev2"}, nil)
-	hub.RegisterSession(session)
-	defer hub.UnregisterSession(session.ID)
+func TestWebSocket_InventoryAuthorizationFailure(t *testing.T) {
+	mockProv := &mockProvForEventsHandler{
+		getSerialsFn: func(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+			return nil, errors.New("owprov down")
+		},
+	}
+	hub := events.NewHub(mockProv, nil)
+	handler := handlers.NewDeviceEventsHandler(hub, nil)
+	server, wsURL := setupWSServer(t, handler)
+	defer server.Close()
 
-	app, _ := setupEventsApp(hub)
-
-	body, _ := json.Marshal(map[string]interface{}{
-		"sessionId": session.ID,
-		"serials":   []string{"dev1"},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer token")
-	resp, err := app.Test(req)
+	ws, err := websocket.Dial(wsURL, "", "http://localhost")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer ws.Close()
+
+	if err := websocket.Message.Send(ws, "token:valid-token"); err != nil {
+		t.Fatalf("failed to send frame: %v", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	var response string
+	if err := websocket.Message.Receive(ws, &response); err != nil {
+		t.Fatalf("failed to receive error frame: %v", err)
 	}
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	if result["success"] != true {
-		t.Errorf("expected success=true, got %v", result)
-	}
-	if result["subscribedCount"] != float64(1) {
-		t.Errorf("expected subscribedCount=1, got %v", result["subscribedCount"])
+	if response != `{"error":"Failed to authorize inventory. Closing connection."}` {
+		t.Errorf("unexpected response: %s", response)
 	}
 }
 
-func TestUpdateSubscriptions_EmptyList_SubscribesZero(t *testing.T) {
-	hub := events.NewHub(nil, nil)
-	session := hub.CreateSession("token", []string{"dev1", "dev2"}, nil)
-	hub.RegisterSession(session)
-	defer hub.UnregisterSession(session.ID)
+func TestWebSocket_AuthenticationAndWelcomeHandshake(t *testing.T) {
+	mockProv := &mockProvForEventsHandler{
+		getSerialsFn: func(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+			return []string{"24f5a201b1a0", "24f5a201b1a1"}, nil
+		},
+	}
+	hub := events.NewHub(mockProv, nil)
+	handler := handlers.NewDeviceEventsHandler(hub, nil)
+	server, wsURL := setupWSServer(t, handler)
+	defer server.Close()
 
-	app, _ := setupEventsApp(hub)
-
-	body, _ := json.Marshal(map[string]interface{}{
-		"sessionId": session.ID,
-		"serials":   []string{},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer token")
-	resp, err := app.Test(req)
+	ws, err := websocket.Dial(wsURL, "", "http://localhost")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer ws.Close()
+
+	if err := websocket.Message.Send(ws, "token:my-owsec-token"); err != nil {
+		t.Fatalf("failed to send token: %v", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	var welcome string
+	if err := websocket.Message.Receive(ws, &welcome); err != nil {
+		t.Fatalf("failed to receive welcome frame: %v", err)
 	}
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	if result["success"] != true {
-		t.Errorf("expected success=true, got %v", result)
+	var msg map[string]interface{}
+	if err := json.Unmarshal([]byte(welcome), &msg); err != nil {
+		t.Fatalf("failed to parse welcome JSON: %v", err)
 	}
-	if result["subscribedCount"] != float64(0) {
-		t.Errorf("expected subscribedCount=0, got %v", result["subscribedCount"])
+
+	if msg["success"] != "Welcome! Bienvenue! Bienvenidos!" {
+		t.Errorf("unexpected welcome message: %v", msg["success"])
+	}
+	if msg["allowedCount"] != float64(2) {
+		t.Errorf("expected allowedCount=2, got %v", msg["allowedCount"])
+	}
+	if msg["sessionId"] == "" {
+		t.Errorf("expected valid non-empty sessionId")
 	}
 }
 
-func TestUpdateSubscriptions_Wildcard_SubscribesAll(t *testing.T) {
-	hub := events.NewHub(nil, nil)
-	session := hub.CreateSession("token", []string{"dev1", "dev2"}, []string{"dev1"})
-	hub.RegisterSession(session)
-	defer hub.UnregisterSession(session.ID)
+func TestWebSocket_InBandSubscriptionUpdate(t *testing.T) {
+	mockProv := &mockProvForEventsHandler{
+		getSerialsFn: func(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+			return []string{"24f5a201b1a0", "24f5a201b1a1"}, nil
+		},
+	}
+	hub := events.NewHub(mockProv, nil)
+	handler := handlers.NewDeviceEventsHandler(hub, nil)
+	server, wsURL := setupWSServer(t, handler)
+	defer server.Close()
 
-	app, _ := setupEventsApp(hub)
-
-	body, _ := json.Marshal(map[string]interface{}{
-		"sessionId": session.ID,
-		"serials":   []string{"*"},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/events/subscriptions", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer token")
-	resp, err := app.Test(req)
+	ws, err := websocket.Dial(wsURL, "", "http://localhost")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer ws.Close()
+
+	// Authenticate
+	if err := websocket.Message.Send(ws, "token:my-owsec-token"); err != nil {
+		t.Fatalf("failed to send token: %v", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	var welcome string
+	if err := websocket.Message.Receive(ws, &welcome); err != nil {
+		t.Fatalf("failed to receive welcome frame: %v", err)
 	}
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	if result["success"] != true {
-		t.Errorf("expected success=true, got %v", result)
+	// Update subscription to 1 serial
+	subReq, _ := json.Marshal(map[string]interface{}{
+		"serials": []string{"24f5a201b1a0"},
+	})
+	if err := websocket.Message.Send(ws, string(subReq)); err != nil {
+		t.Fatalf("failed to send subscription: %v", err)
 	}
-	if result["subscribedCount"] != float64(2) {
-		t.Errorf("expected subscribedCount=2 for wildcard, got %v", result["subscribedCount"])
+
+	var ackStr string
+	if err := websocket.Message.Receive(ws, &ackStr); err != nil {
+		t.Fatalf("failed to receive subscription ack: %v", err)
+	}
+
+	var ack map[string]interface{}
+	if err := json.Unmarshal([]byte(ackStr), &ack); err != nil {
+		t.Fatalf("failed to unmarshal ack JSON: %v", err)
+	}
+
+	if ack["type"] != "subscription_ack" {
+		t.Errorf("expected type=subscription_ack, got %v", ack["type"])
+	}
+	if ack["subscribedCount"] != float64(1) {
+		t.Errorf("expected subscribedCount=1, got %v", ack["subscribedCount"])
+	}
+
+	// Update subscription to empty list
+	emptyReq, _ := json.Marshal(map[string]interface{}{
+		"serials": []string{},
+	})
+	if err := websocket.Message.Send(ws, string(emptyReq)); err != nil {
+		t.Fatalf("failed to send empty subscription: %v", err)
+	}
+
+	if err := websocket.Message.Receive(ws, &ackStr); err != nil {
+		t.Fatalf("failed to receive empty subscription ack: %v", err)
+	}
+
+	if err := json.Unmarshal([]byte(ackStr), &ack); err != nil {
+		t.Fatalf("failed to unmarshal empty ack JSON: %v", err)
+	}
+	if ack["subscribedCount"] != float64(0) {
+		t.Errorf("expected subscribedCount=0, got %v", ack["subscribedCount"])
+	}
+}
+
+func TestWebSocket_OutboundEventDelivery(t *testing.T) {
+	mockProv := &mockProvForEventsHandler{
+		getSerialsFn: func(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+			return []string{"24f5a201b1a0"}, nil
+		},
+	}
+	hub := events.NewHub(mockProv, nil)
+	handler := handlers.NewDeviceEventsHandler(hub, nil)
+	server, wsURL := setupWSServer(t, handler)
+	defer server.Close()
+
+	ws, err := websocket.Dial(wsURL, "", "http://localhost")
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer ws.Close()
+
+	// Authenticate
+	if err := websocket.Message.Send(ws, "token:my-owsec-token"); err != nil {
+		t.Fatalf("failed to send token: %v", err)
+	}
+
+	var welcome string
+	if err := websocket.Message.Receive(ws, &welcome); err != nil {
+		t.Fatalf("failed to receive welcome frame: %v", err)
+	}
+
+	// Subscribe to the serial
+	subReq, _ := json.Marshal(map[string]interface{}{
+		"serials": []string{"24f5a201b1a0"},
+	})
+	if err := websocket.Message.Send(ws, string(subReq)); err != nil {
+		t.Fatalf("failed to send subscription: %v", err)
+	}
+
+	var ackStr string
+	if err := websocket.Message.Receive(ws, &ackStr); err != nil {
+		t.Fatalf("failed to receive subscription ack: %v", err)
+	}
+
+	// Broadcast event from Hub
+	connTrue := true
+	hub.Broadcast(&events.DeviceEvent{
+		SerialNumber: "24f5a201b1a0",
+		Connected:    &connTrue,
+		ConnectionIP: "192.168.1.50",
+		Firmware:     "OpenWrt-21.02",
+		Timestamp:    1729850000,
+	})
+
+	var eventStr string
+	if err := websocket.Message.Receive(ws, &eventStr); err != nil {
+		t.Fatalf("failed to receive broadcast event: %v", err)
+	}
+
+	var ev map[string]interface{}
+	if err := json.Unmarshal([]byte(eventStr), &ev); err != nil {
+		t.Fatalf("failed to unmarshal event JSON: %v", err)
+	}
+
+	if ev["serialNumber"] != "24f5a201b1a0" {
+		t.Errorf("expected serialNumber 24f5a201b1a0, got %v", ev["serialNumber"])
+	}
+	if ev["connected"] != true {
+		t.Errorf("expected connected=true, got %v", ev["connected"])
+	}
+	if ev["connectionIp"] != "192.168.1.50" {
+		t.Errorf("expected connectionIp 192.168.1.50, got %v", ev["connectionIp"])
 	}
 }
 
 func TestWebSocketHandler_Registered(t *testing.T) {
+	app := fiber.New()
 	hub := events.NewHub(nil, nil)
-	app, handler := setupEventsApp(hub)
-	if handler == nil {
-		t.Fatal("expected handler not to be nil")
-	}
+	handler := handlers.NewDeviceEventsHandler(hub, nil)
+	app.Get("/api/v1/ws", handler.HandleWebSocket)
 
 	routes := app.GetRoutes()
 	hasWs := false
@@ -339,5 +366,23 @@ func TestWebSocketHandler_Registered(t *testing.T) {
 	}
 	if !hasWs {
 		t.Errorf("expected /api/v1/ws GET route to be registered on app")
+	}
+}
+
+func TestDeviceEventsHandler_WriteTimeoutConfiguration(t *testing.T) {
+	handler := handlers.NewDeviceEventsHandler(nil, nil)
+	if handler.WriteTimeout() != 10*time.Second {
+		t.Errorf("expected default write timeout 10s, got %v", handler.WriteTimeout())
+	}
+
+	handler.SetWriteTimeout(5 * time.Second)
+	if handler.WriteTimeout() != 5*time.Second {
+		t.Errorf("expected write timeout 5s, got %v", handler.WriteTimeout())
+	}
+
+	// Non-positive timeout should be ignored
+	handler.SetWriteTimeout(0)
+	if handler.WriteTimeout() != 5*time.Second {
+		t.Errorf("expected write timeout to remain 5s, got %v", handler.WriteTimeout())
 	}
 }
