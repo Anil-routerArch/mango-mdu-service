@@ -50,7 +50,7 @@ func NewModule(deps Dependencies) (*Module, error) {
 
 	appConfig := fiber.Config{
 		ReadTimeout: 10 * time.Second,
-		// WriteTimeout is 0 (unlimited) to support long-lived real-time streaming connections (SSE/events)
+		// WriteTimeout is 0 (unlimited) to support long-lived real-time streaming connections (WebSocket)
 	}
 
 	publicApp := fiber.New(appConfig)

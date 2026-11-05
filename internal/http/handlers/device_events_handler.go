@@ -1,21 +1,23 @@
 package handlers
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/routerarchitects/mango-mdu-service/internal/events"
-	"github.com/routerarchitects/mango-mdu-service/internal/models"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"golang.org/x/net/websocket"
+)
+
+const (
+	// defaultWSWriteTimeout defines the maximum duration allowed for an outbound WebSocket write before timing out.
+	defaultWSWriteTimeout = 10 * time.Second
 )
 
 // TokenValidator defines the contract for validating tokens against auth services.
@@ -27,6 +29,7 @@ type TokenValidator interface {
 type DeviceEventsHandler struct {
 	hub            *events.Hub
 	tokenValidator TokenValidator
+	writeTimeout   time.Duration
 	logger         *slog.Logger
 }
 
@@ -41,14 +44,51 @@ func NewDeviceEventsHandler(hub *events.Hub, tokenValidator TokenValidator, logg
 	return &DeviceEventsHandler{
 		hub:            hub,
 		tokenValidator: tokenValidator,
+		writeTimeout:   defaultWSWriteTimeout,
 		logger:         l,
 	}
 }
 
-// SubscriptionUpdateRequest represents the payload for POST /api/v1/devices/events/subscriptions.
-type SubscriptionUpdateRequest struct {
-	SessionID string   `json:"sessionId"`
-	Serials   []string `json:"serials"`
+// SetWriteTimeout configures the timeout for outbound WebSocket writes.
+func (h *DeviceEventsHandler) SetWriteTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		h.writeTimeout = timeout
+	}
+}
+
+// WriteTimeout returns the configured outbound WebSocket write timeout.
+func (h *DeviceEventsHandler) WriteTimeout() time.Duration {
+	if h.writeTimeout <= 0 {
+		return defaultWSWriteTimeout
+	}
+	return h.writeTimeout
+}
+
+// wsWriter provides thread-safe writing to a WebSocket connection with a strict write deadline.
+type wsWriter struct {
+	ws      *websocket.Conn
+	timeout time.Duration
+	mu      sync.Mutex
+}
+
+func newWSWriter(ws *websocket.Conn, timeout time.Duration) *wsWriter {
+	if timeout <= 0 {
+		timeout = defaultWSWriteTimeout
+	}
+	return &wsWriter{
+		ws:      ws,
+		timeout: timeout,
+	}
+}
+
+// Write sets the write deadline on the underlying connection and sends the message frame.
+func (w *wsWriter) Write(msg string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.ws.SetWriteDeadline(time.Now().Add(w.timeout)); err != nil {
+		return err
+	}
+	return websocket.Message.Send(w.ws, msg)
 }
 
 // HandleWebSocket handles GET /api/v1/ws and /ws (matching OpenWiFi production pattern).
@@ -61,7 +101,7 @@ func (h *DeviceEventsHandler) HandleWebSocket(c fiber.Ctx) error {
 		},
 		Handler: websocket.Handler(func(ws *websocket.Conn) {
 			defer ws.Close()
-			h.serveWebSocket(ws, c.Get("X-Request-Id"), c.Get("X-Correlation-Id"))
+			h.ServeWebSocket(ws, c.Get("X-Request-Id"), c.Get("X-Correlation-Id"))
 		}),
 	}
 
@@ -70,9 +110,13 @@ func (h *DeviceEventsHandler) HandleWebSocket(c fiber.Ctx) error {
 	return nil
 }
 
-func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID string) {
+// ServeWebSocket serves an upgraded WebSocket connection through its complete lifecycle:
+// in-band token authentication, RBAC authorization, event streaming, write deadlines, and viewport subscription.
+func (h *DeviceEventsHandler) ServeWebSocket(ws *websocket.Conn, reqID, corrID string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	writer := newWSWriter(ws, h.WriteTimeout())
 
 	// 1. First frame must be "token:<token>" within 10 seconds
 	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
@@ -85,7 +129,7 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 	tokens := strings.SplitN(authFrame, ":", 2)
 	if len(tokens) != 2 || strings.TrimSpace(tokens[0]) != "token" || strings.TrimSpace(tokens[1]) == "" {
 		h.logger.Warn("invalid websocket auth frame format")
-		_ = websocket.Message.Send(ws, `{"error":"Invalid token format. Closing connection."}`)
+		_ = writer.Write(`{"error":"Invalid token format. Closing connection."}`)
 		return
 	}
 	rawToken := strings.TrimSpace(tokens[1])
@@ -100,7 +144,7 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 		valCancel()
 		if err != nil {
 			h.logger.Warn("websocket token validation failed with owsec", "error", err)
-			_ = websocket.Message.Send(ws, `{"error":"Invalid token. Closing connection."}`)
+			_ = writer.Write(`{"error":"Invalid token. Closing connection."}`)
 			return
 		}
 	}
@@ -111,7 +155,7 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 	authCancel()
 	if err != nil {
 		h.logger.Warn("websocket inventory authorization failed with owprov", "error", err)
-		_ = websocket.Message.Send(ws, `{"error":"Failed to authorize inventory. Closing connection."}`)
+		_ = writer.Write(`{"error":"Failed to authorize inventory. Closing connection."}`)
 		return
 	}
 
@@ -121,7 +165,11 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 	// 4. Create and register client session in Hub
 	session := h.hub.CreateSession(rawToken, allowedSerials, nil)
 	h.hub.RegisterSession(session)
-	defer h.hub.UnregisterSession(session.ID)
+	defer func() {
+		session.Close()
+		_ = ws.Close()
+		h.hub.UnregisterSession(session.ID)
+	}()
 
 	h.logger.Info("websocket client authenticated successfully",
 		"sessionId", session.ID,
@@ -135,7 +183,8 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 		"allowedCount":    len(allowedSerials),
 		"subscribedCount": session.SubscribedCount(),
 	})
-	if err := websocket.Message.Send(ws, string(welcomeMsg)); err != nil {
+	if err := writer.Write(string(welcomeMsg)); err != nil {
+		h.logger.Warn("failed to send websocket welcome message", "sessionId", session.ID, "error", err)
 		return
 	}
 
@@ -161,7 +210,7 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 					if err := h.tokenValidator.ValidateToken(refreshCtx, rawToken); err != nil {
 						refreshCancel()
 						h.logger.Warn("websocket session token expired or revoked", "sessionId", session.ID, "error", err)
-						_ = websocket.Message.Send(ws, `{"type":"error","error":"Session token expired or revoked. Terminating stream.","code":4401}`)
+						_ = writer.Write(`{"type":"error","error":"Session token expired or revoked. Terminating stream.","code":4401}`)
 						session.Close()
 						_ = ws.Close()
 						return
@@ -170,21 +219,27 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 				if err := h.hub.RefreshSessionAuthorization(refreshCtx, session.ID, reqID, corrID); err != nil {
 					refreshCancel()
 					h.logger.Warn("websocket session authorization refresh failed", "sessionId", session.ID, "error", err)
-					_ = websocket.Message.Send(ws, `{"type":"error","error":"Access revoked or session terminated.","code":4403}`)
+					_ = writer.Write(`{"type":"error","error":"Access revoked or session terminated.","code":4403}`)
 					session.Close()
 					_ = ws.Close()
 					return
 				}
 				refreshCancel()
 			case <-ticker.C:
-				if err := websocket.Message.Send(ws, `{"ping":true}`); err != nil {
+				if err := writer.Write(`{"ping":true}`); err != nil {
+					h.logger.Warn("websocket ping write failed or timed out", "sessionId", session.ID, "error", err)
+					session.Close()
+					_ = ws.Close()
 					return
 				}
 			case msg, ok := <-session.Send:
 				if !ok {
 					return
 				}
-				if err := websocket.Message.Send(ws, string(msg)); err != nil {
+				if err := writer.Write(string(msg)); err != nil {
+					h.logger.Warn("websocket event write failed or timed out", "sessionId", session.ID, "error", err)
+					session.Close()
+					_ = ws.Close()
 					return
 				}
 			}
@@ -206,205 +261,23 @@ func (h *DeviceEventsHandler) serveWebSocket(ws *websocket.Conn, reqID, corrID s
 		var cmd struct {
 			Serials []string `json:"serials"`
 		}
-		if err := json.Unmarshal([]byte(trimmed), &cmd); err == nil && len(cmd.Serials) > 0 {
+		if err := json.Unmarshal([]byte(trimmed), &cmd); err == nil && cmd.Serials != nil {
 			granted, _ := h.hub.UpdateSubscription(session.ID, session.Token, cmd.Serials)
 			ack, _ := json.Marshal(map[string]interface{}{
 				"type":            "subscription_ack",
 				"subscribedCount": granted,
 			})
-			_ = websocket.Message.Send(ws, string(ack))
+			if err := writer.Write(string(ack)); err != nil {
+				h.logger.Warn("websocket subscription ack write failed or timed out", "sessionId", session.ID, "error", err)
+				session.Close()
+				_ = ws.Close()
+				break
+			}
 		}
 	}
 
 	cancel()
+	session.Close()
+	_ = ws.Close()
 	<-writerDone
-}
-
-// StreamEvents handles GET /api/v1/devices/events.
-// It establishes a Server-Sent Events (SSE) connection scoped to the caller's authorized devices.
-func (h *DeviceEventsHandler) StreamEvents(c fiber.Ctx) error {
-	// Extract token from Authorization header or ?token= query parameter (for standard EventSource)
-	token := c.Get("Authorization")
-	if token == "" {
-		token = c.Query("token")
-	}
-	token = strings.TrimPrefix(token, "Bearer ")
-	token = strings.TrimPrefix(token, "bearer ")
-	token = strings.TrimSpace(token)
-
-	if token == "" {
-		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
-			http.StatusUnauthorized,
-			"Unauthorized",
-			"authorization token is required via Authorization header or token query parameter",
-		))
-	}
-
-	reqID := c.Get("X-Request-Id")
-	corrID := c.Get("X-Correlation-Id")
-
-	// Authorize user with OWPROV to obtain allowed serials under RBAC
-	allowedSerials, err := h.hub.AuthorizeUser(c.Context(), token, reqID, corrID)
-	if err != nil {
-		h.logger.Warn("user authorization failed for device events stream", "error", err)
-		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
-			http.StatusUnauthorized,
-			"Unauthorized",
-			"failed to authorize access to device inventory",
-		))
-	}
-
-	// Extract optional initial viewport serial filter
-	var initialSerials []string
-	if rawSerials, hasFilter := c.Queries()["serials"]; hasFilter {
-		initialSerials = make([]string, 0)
-		for _, p := range strings.Split(rawSerials, ",") {
-			if s := strings.TrimSpace(p); s != "" {
-				initialSerials = append(initialSerials, s)
-			}
-		}
-	}
-
-	session := h.hub.CreateSession(token, allowedSerials, initialSerials)
-	h.hub.RegisterSession(session)
-
-	c.Set("Content-Type", "text/event-stream")
-	c.Set("Cache-Control", "no-cache")
-	c.Set("Connection", "keep-alive")
-	c.Set("Transfer-Encoding", "chunked")
-	c.Set("X-Accel-Buffering", "no")
-
-	return c.SendStreamWriter(func(w *bufio.Writer) {
-		defer h.hub.UnregisterSession(session.ID)
-
-		// Send initial ready handshake frame
-		handshake, _ := json.Marshal(map[string]interface{}{
-			"sessionId":       session.ID,
-			"allowedCount":    len(session.AllowedSerials),
-			"subscribedCount": session.SubscribedCount(),
-		})
-		_, _ = fmt.Fprintf(w, "event: ready\ndata: %s\n\n", handshake)
-		if err := w.Flush(); err != nil {
-			return
-		}
-
-		// Keepalive ticker every 15 seconds
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
-
-		// Periodic authorization refresh and token-expiration check every 60 seconds
-		authTicker := time.NewTicker(60 * time.Second)
-		defer authTicker.Stop()
-
-		for {
-			select {
-			case <-session.Done():
-				return
-			case <-authTicker.C:
-				refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 10*time.Second)
-				if h.tokenValidator != nil {
-					if err := h.tokenValidator.ValidateToken(refreshCtx, token); err != nil {
-						refreshCancel()
-						h.logger.Warn("SSE stream token expired or revoked", "sessionId", session.ID, "error", err)
-						_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", `{"error":"Session token expired or revoked. Terminating stream.","code":4401}`)
-						_ = w.Flush()
-						session.Close()
-						return
-					}
-				}
-				if err := h.hub.RefreshSessionAuthorization(refreshCtx, session.ID, reqID, corrID); err != nil {
-					refreshCancel()
-					h.logger.Warn("SSE stream authorization refresh failed", "sessionId", session.ID, "error", err)
-					_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", `{"error":"Access revoked or session terminated.","code":4403}`)
-					_ = w.Flush()
-					session.Close()
-					return
-				}
-				refreshCancel()
-			case <-ticker.C:
-				_, _ = fmt.Fprintf(w, ": keepalive %d\n\n", time.Now().Unix())
-				if err := w.Flush(); err != nil {
-					return
-				}
-			case msg, ok := <-session.Send:
-				if !ok {
-					return
-				}
-				_, _ = fmt.Fprintf(w, "event: device_event\ndata: %s\n\n", msg)
-				if err := w.Flush(); err != nil {
-					return
-				}
-			}
-		}
-	})
-}
-
-// UpdateSubscriptions handles POST /api/v1/devices/events/subscriptions.
-// Clients update their active viewport serials as they paginate or filter their fleet table.
-// It verifies the caller's authorization token and confirms session ownership before applying updates.
-func (h *DeviceEventsHandler) UpdateSubscriptions(c fiber.Ctx) error {
-	callerToken := c.Get("Authorization")
-	if callerToken == "" {
-		callerToken = c.Query("token")
-	}
-	callerToken = strings.TrimPrefix(callerToken, "Bearer ")
-	callerToken = strings.TrimPrefix(callerToken, "bearer ")
-	callerToken = strings.TrimSpace(callerToken)
-
-	if callerToken == "" {
-		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
-			http.StatusUnauthorized,
-			"Unauthorized",
-			"authorization token is required via Authorization header or token query parameter",
-		))
-	}
-
-	if h.tokenValidator != nil {
-		valCtx, valCancel := context.WithTimeout(c.Context(), 5*time.Second)
-		err := h.tokenValidator.ValidateToken(valCtx, callerToken)
-		valCancel()
-		if err != nil {
-			h.logger.Warn("subscription update token validation failed", "error", err)
-			return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
-				http.StatusUnauthorized,
-				"Unauthorized",
-				"invalid or expired authorization token",
-			))
-		}
-	}
-
-	var req SubscriptionUpdateRequest
-	if err := c.Bind().Body(&req); err != nil || req.SessionID == "" {
-		return c.Status(http.StatusBadRequest).JSON(models.NewApiError(
-			http.StatusBadRequest,
-			"Bad Request",
-			"valid sessionId and serials array are required",
-		))
-	}
-
-	grantedCount, err := h.hub.UpdateSubscription(req.SessionID, callerToken, req.Serials)
-	if err != nil {
-		if errors.Is(err, events.ErrSessionOwnershipMismatch) {
-			h.logger.Warn("unauthorized session subscription update attempt",
-				"sessionId", req.SessionID,
-				"error", err,
-			)
-			return c.Status(http.StatusForbidden).JSON(models.NewApiError(
-				http.StatusForbidden,
-				"Forbidden",
-				"caller does not own this session",
-			))
-		}
-		return c.Status(http.StatusNotFound).JSON(models.NewApiError(
-			http.StatusNotFound,
-			"Not Found",
-			err.Error(),
-		))
-	}
-
-	return c.JSON(fiber.Map{
-		"success":         true,
-		"sessionId":       req.SessionID,
-		"subscribedCount": grantedCount,
-	})
 }

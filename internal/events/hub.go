@@ -2,7 +2,6 @@ package events
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -104,74 +103,18 @@ func normalizeToken(t string) string {
 	return strings.TrimSpace(t)
 }
 
-// ExtractUserIdentity extracts the user identity (id, userId, user, username, email, or sub claim) from a JWT token.
-// If the token is not a JWT or has no recognizable user claim, it returns an empty string.
-func ExtractUserIdentity(token string) string {
-	token = normalizeToken(token)
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return ""
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
-	if err != nil {
-		return ""
-	}
-	var claims struct {
-		ID       string `json:"id"`
-		UserID   string `json:"userId"`
-		User     string `json:"user"`
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Sub      string `json:"sub"`
-	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return ""
-	}
-	if claims.ID != "" {
-		return claims.ID
-	}
-	if claims.UserID != "" {
-		return claims.UserID
-	}
-	if claims.User != "" {
-		return claims.User
-	}
-	if claims.Username != "" {
-		return claims.Username
-	}
-	if claims.Email != "" {
-		return claims.Email
-	}
-	return claims.Sub
-}
-
 // VerifyOwnership checks whether callerToken has permission to modify this session.
-// It returns true if callerToken matches session.Token directly or corresponds to the same user identity.
+// It allows access only when callerToken non-emptily matches session.Token directly.
 func (s *ClientSession) VerifyOwnership(callerToken string) bool {
 	s.mu.RLock()
 	sessionToken := normalizeToken(s.Token)
 	s.mu.RUnlock()
 
 	callerToken = normalizeToken(callerToken)
-
-	// In test environments where session was created without a token, allow access
-	if sessionToken == "" {
-		return true
-	}
-	if callerToken == "" {
+	if sessionToken == "" || callerToken == "" {
 		return false
 	}
-	if sessionToken == callerToken {
-		return true
-	}
-
-	userSession := ExtractUserIdentity(sessionToken)
-	userCaller := ExtractUserIdentity(callerToken)
-	if userSession != "" && userCaller != "" && userSession == userCaller {
-		return true
-	}
-
-	return false
+	return sessionToken == callerToken
 }
 
 // Hub manages active client sessions and implements the inverted index for O(1) multi-tenant event routing.
@@ -319,9 +262,6 @@ func (h *Hub) UpdateSubscription(sessionID, callerToken string, requestedSerials
 
 	// Filter requested serials against allowed inventory or check for wildcard
 	session.mu.Lock()
-	if normCaller := normalizeToken(callerToken); normCaller != "" {
-		session.Token = normCaller
-	}
 
 	isWildcard := false
 	for _, s := range requestedSerials {

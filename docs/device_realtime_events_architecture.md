@@ -50,14 +50,11 @@ The message key in Kafka is the device serial number (`string(msg.Key)`). MDU st
 ## 3. User Authorization & Permission Resolution via OWPROV
 
 ### How MDU Knows Which Devices a User Can See
-1. When a UI client connects to MDU with their Bearer JWT:
-   ```http
-   GET /api/v1/devices/events?token=<user_jwt>
-   ```
-2. MDU forwards the user's JWT to `owprov`:
+1. When a UI client connects to MDU via WebSocket (`/api/v1/ws`) and authenticates with `token:<token>`:
+2. MDU forwards the user's token to `owprov`:
    ```http
    GET /api/v1/inventory?serialOnly=true
-   Authorization: Bearer <user_jwt>
+   Authorization: Bearer <user_token>
    ```
 3. `owprov` evaluates:
    * Caller role (`root`, `admin`, `operator`, etc.).
@@ -124,7 +121,7 @@ flowchart TD
    * Only sessions belonging to Tenant A are present in `serialToSessions["alpha1"]`.
    * When an update for `alpha1` arrives, lookup `serialToSessions["alpha1"]` directly retrieves Tenant A sessions. Tenant B sessions never receive the event.
 2. **Privilege Escalation Prevention**:
-   * If a client explicitly requests to subscribe to `alpha1` via `POST /api/v1/devices/events/subscriptions`, MDU performs strict set intersection:
+   * If a client explicitly requests to subscribe to `alpha1` via WebSocket `{"serials": ["alpha1"]}`, MDU performs strict set intersection:
      $$\text{Granted} = \text{RequestedSerials} \cap \text{session.AllowedSerials}$$
    * Unauthorized serials are stripped before indexing.
 3. **Low Memory Overhead**:
@@ -221,26 +218,15 @@ sequenceDiagram
 * **Authentication**: In-band first-frame: `token:<token>`.
 * **Client to Server Commands**:
   * Viewport update: `{"serials": ["24f5a201b1a0", "24f5a201b1a1"]}`
+  * Viewport clear / unsubscribe: `{"serials": []}`
 * **Server to Client Messages**:
-  * Welcome: `{"success":"Welcome! Bienvenue! Bienvenidos!","sessionId":"..."}`
+  * Welcome: `{"success":"Welcome! Bienvenue! Bienvenidos!","sessionId":"...","allowedCount":2,"subscribedCount":0}`
+  * Subscription Ack: `{"type":"subscription_ack","subscribedCount":1}`
   * Device update: `{"type":"connection","serialNumber":"24f5a201b1a0","connected":true,...}`
-  * Keepalive: `:keepalive 1729850015`
+  * Keepalive: `{"ping":true}`
 
-### 2. `GET /api/v1/devices/events` (Fallback SSE)
-* **Protocol**: Server-Sent Events (SSE, `text/event-stream`).
-* **Authentication**: `Authorization: Bearer <token>` or `?token=<token>`.
-* **Query Parameters**:
-  * `serials` (optional): Comma-separated list of viewport serial numbers.
-
-### 3. `POST /api/v1/devices/events/subscriptions`
-* **Purpose**: Updates viewport subscriptions for HTTP/SSE clients.
-* **Request**:
-  ```json
-  {
-    "sessionId": "3c1a8e9...",
-    "serials": ["24f5a201b1a0", "24f5a201b1a1"]
-  }
-  ```
+> [!NOTE]
+> Fallback Server-Sent Events (SSE) and global query-parameter token promotion (`?token=`) have been completely removed. Real-time streaming relies exclusively on WebSocket with in-band OWSEC token authentication, completely avoiding URL token exposure in logs or browser history.
 
 ---
 
