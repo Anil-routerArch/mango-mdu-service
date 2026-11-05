@@ -187,4 +187,3 @@ type AddBlacklistRequest struct {
 	SerialNumber string `json:"serialNumber,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 }
-

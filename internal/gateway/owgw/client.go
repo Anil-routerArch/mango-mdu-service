@@ -392,7 +392,6 @@ func (c *client) DeleteBlacklistDevice(ctx context.Context, serial, token, reqID
 	return err
 }
 
-
 func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {
 	if token != "" {
 		if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
