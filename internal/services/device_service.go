@@ -666,4 +666,3 @@ func (s *deviceService) DeleteBlacklistDevice(ctx context.Context, serial, token
 
 	return s.gwClient.DeleteBlacklistDevice(ctx, norm, token, reqID, corrID)
 }
-
