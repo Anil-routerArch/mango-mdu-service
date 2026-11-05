@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -447,4 +448,110 @@ func (h *DeviceHandler) GetDeviceRtty(c fiber.Ctx) error {
 
 	c.Set("Content-Type", "application/json")
 	return c.Status(http.StatusOK).Send(data)
+}
+
+// GetBlacklist handles GET /api/v1/devices/blacklist.
+func (h *DeviceHandler) GetBlacklist(c fiber.Ctx) error {
+	token := c.Get("Authorization")
+	reqID := c.Get("X-Request-Id")
+	corrID := c.Get("X-Correlation-Id")
+
+	if token == "" {
+		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
+			http.StatusUnauthorized, "Unauthorized", "Authorization header is required",
+		))
+	}
+
+	devices, err := h.svc.GetBlacklist(c.Context(), token, reqID, corrID)
+	if err != nil {
+		var apiErr models.ApiError
+		if errors.As(err, &apiErr) {
+			return c.Status(apiErr.ErrorCode).JSON(apiErr)
+		}
+		return c.Status(http.StatusInternalServerError).JSON(models.NewApiError(
+			http.StatusInternalServerError, "Internal Server Error", err.Error(),
+		))
+	}
+
+	return c.Status(http.StatusOK).JSON(models.BlacklistListResponse{Devices: devices})
+}
+
+// AddBlacklistDevice handles POST /api/v1/devices/blacklist and POST /api/v1/devices/:serial/blacklist.
+func (h *DeviceHandler) AddBlacklistDevice(c fiber.Ctx) error {
+	token := c.Get("Authorization")
+	reqID := c.Get("X-Request-Id")
+	corrID := c.Get("X-Correlation-Id")
+
+	if token == "" {
+		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
+			http.StatusUnauthorized, "Unauthorized", "Authorization header is required",
+		))
+	}
+
+	var req models.AddBlacklistRequest
+	if len(c.Body()) > 0 {
+		_ = json.Unmarshal(c.Body(), &req)
+	}
+
+	serial := c.Params("serial")
+	if serial == "" {
+		serial = req.SerialNumber
+	}
+	if serial == "" {
+		return c.Status(http.StatusBadRequest).JSON(models.NewApiError(
+			http.StatusBadRequest, "Bad Request", "serial number is required",
+		))
+	}
+
+	reason := req.Reason
+	if reason == "" {
+		reason = "Blocked by security operator"
+	}
+
+	data, err := h.svc.AddBlacklistDevice(c.Context(), serial, reason, token, reqID, corrID)
+	if err != nil {
+		var apiErr models.ApiError
+		if errors.As(err, &apiErr) {
+			return c.Status(apiErr.ErrorCode).JSON(apiErr)
+		}
+		return c.Status(http.StatusInternalServerError).JSON(models.NewApiError(
+			http.StatusInternalServerError, "Internal Server Error", err.Error(),
+		))
+	}
+
+	c.Set("Content-Type", "application/json")
+	return c.Status(http.StatusOK).Send(data)
+}
+
+// DeleteBlacklistDevice handles DELETE /api/v1/devices/blacklist/:serial and DELETE /api/v1/devices/:serial/blacklist.
+func (h *DeviceHandler) DeleteBlacklistDevice(c fiber.Ctx) error {
+	token := c.Get("Authorization")
+	reqID := c.Get("X-Request-Id")
+	corrID := c.Get("X-Correlation-Id")
+	serial := c.Params("serial")
+
+	if token == "" {
+		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
+			http.StatusUnauthorized, "Unauthorized", "Authorization header is required",
+		))
+	}
+
+	if serial == "" {
+		return c.Status(http.StatusBadRequest).JSON(models.NewApiError(
+			http.StatusBadRequest, "Bad Request", "serial number is required",
+		))
+	}
+
+	err := h.svc.DeleteBlacklistDevice(c.Context(), serial, token, reqID, corrID)
+	if err != nil {
+		var apiErr models.ApiError
+		if errors.As(err, &apiErr) {
+			return c.Status(apiErr.ErrorCode).JSON(apiErr)
+		}
+		return c.Status(http.StatusInternalServerError).JSON(models.NewApiError(
+			http.StatusInternalServerError, "Internal Server Error", err.Error(),
+		))
+	}
+
+	return c.Status(http.StatusOK).JSON(fiber.Map{"success": true})
 }

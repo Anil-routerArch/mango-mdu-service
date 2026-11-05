@@ -168,3 +168,23 @@ type PaginatedDevicesResponse struct {
 type InventorySerialsResponse struct {
 	SerialNumbers []string `json:"serialNumbers"`
 }
+
+// BlacklistDevice represents a blacklisted device entry.
+type BlacklistDevice struct {
+	SerialNumber string `json:"serialNumber"`
+	Reason       string `json:"reason"`
+	Author       string `json:"author,omitempty"`
+	Created      uint64 `json:"created,omitempty"`
+}
+
+// BlacklistListResponse represents the list envelope from OWGW or MDU for blacklist.
+type BlacklistListResponse struct {
+	Devices []BlacklistDevice `json:"devices"`
+}
+
+// AddBlacklistRequest represents payload to add a device to blacklist.
+type AddBlacklistRequest struct {
+	SerialNumber string `json:"serialNumber,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+}
+
