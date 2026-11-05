@@ -76,6 +76,18 @@ func (d *dummyDeviceService) DeleteDevice(ctx context.Context, serial, token, re
 	return nil
 }
 
+func (d *dummyDeviceService) GetBlacklist(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error) {
+	return []models.BlacklistDevice{}, nil
+}
+
+func (d *dummyDeviceService) AddBlacklistDevice(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error) {
+	return json.RawMessage(`{"serialNumber":"` + serial + `"}`), nil
+}
+
+func (d *dummyDeviceService) DeleteBlacklistDevice(ctx context.Context, serial, token, reqID, corrID string) error {
+	return nil
+}
+
 func TestRouteVisibility(t *testing.T) {
 	policyHdlr := handlers.NewPolicyHandler(&dummyPolicyService{})
 	deviceHdlr := handlers.NewDeviceHandler(&dummyDeviceService{})

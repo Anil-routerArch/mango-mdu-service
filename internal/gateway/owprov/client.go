@@ -55,7 +55,7 @@ type Config struct {
 func NewClient(cfg Config) Client {
 	timeout := cfg.Timeout
 	if timeout <= 0 {
-		timeout = 10 * time.Second
+		timeout = 60 * time.Second
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()

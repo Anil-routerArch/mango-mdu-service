@@ -128,6 +128,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 			}
 			return ""
 		},
+		Timeout:   60 * time.Second,
 		TLSConfig: tlsConfig,
 		Logger:    rootLog,
 	})
@@ -174,6 +175,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 			}
 			return ""
 		},
+		Timeout:   120 * time.Second,
 		TLSConfig: tlsConfig,
 		Logger:    rootLog,
 	})

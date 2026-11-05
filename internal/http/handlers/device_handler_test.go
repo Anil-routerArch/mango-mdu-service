@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
@@ -26,6 +27,9 @@ type mockDeviceService struct {
 	updateDeviceFn          func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	getDeviceCapabilitiesFn func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	deleteDeviceFn          func(ctx context.Context, serial, token, reqID, corrID string) error
+	getBlacklistFn          func(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
+	addBlacklistFn          func(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
+	deleteBlacklistFn       func(ctx context.Context, serial, token, reqID, corrID string) error
 }
 
 func (m *mockDeviceService) GetDevices(ctx context.Context, token, reqID, corrID string, pageIndex, pageSize int, unassignedOnly bool) (*models.PaginatedDevicesResponse, error) {
@@ -113,9 +117,35 @@ func (m *mockDeviceService) DeleteDevice(ctx context.Context, serial, token, req
 	return nil
 }
 
+func (m *mockDeviceService) GetBlacklist(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error) {
+	if m.getBlacklistFn != nil {
+		return m.getBlacklistFn(ctx, token, reqID, corrID)
+	}
+	return []models.BlacklistDevice{}, nil
+}
+
+func (m *mockDeviceService) AddBlacklistDevice(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error) {
+	if m.addBlacklistFn != nil {
+		return m.addBlacklistFn(ctx, serial, reason, token, reqID, corrID)
+	}
+	return json.RawMessage(`{"serialNumber":"` + serial + `","reason":"` + reason + `"}`), nil
+}
+
+func (m *mockDeviceService) DeleteBlacklistDevice(ctx context.Context, serial, token, reqID, corrID string) error {
+	if m.deleteBlacklistFn != nil {
+		return m.deleteBlacklistFn(ctx, serial, token, reqID, corrID)
+	}
+	return nil
+}
+
 func setupDeviceTestApp(svc *mockDeviceService) *fiber.App {
 	app := fiber.New()
 	handler := handlers.NewDeviceHandler(svc)
+	app.Get("/api/v1/devices/blacklist", handler.GetBlacklist)
+	app.Post("/api/v1/devices/blacklist", handler.AddBlacklistDevice)
+	app.Delete("/api/v1/devices/blacklist/:serial", handler.DeleteBlacklistDevice)
+	app.Post("/api/v1/devices/:serial/blacklist", handler.AddBlacklistDevice)
+	app.Delete("/api/v1/devices/:serial/blacklist", handler.DeleteBlacklistDevice)
 	app.Get("/api/v1/devices", handler.GetDevices)
 	app.Get("/api/v1/devices/:serial/commands", handler.GetDeviceCommands)
 	app.Delete("/api/v1/devices/:serial/commands/:uuid", handler.DeleteDeviceCommand)
@@ -484,5 +514,86 @@ func TestDeviceHandler_DeleteDeviceCommand_NotFound(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeviceHandler_GetBlacklist_Success(t *testing.T) {
+	svc := &mockDeviceService{
+		getBlacklistFn: func(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error) {
+			return []models.BlacklistDevice{
+				{SerialNumber: "60cf84f22290", Reason: "Security rogue"},
+			}, nil
+		},
+	}
+	app := setupDeviceTestApp(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/devices/blacklist", nil)
+	req.Header.Set("Authorization", "Bearer jwt")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var res models.BlacklistListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		t.Fatalf("failed to decode json: %v", err)
+	}
+	if len(res.Devices) != 1 || res.Devices[0].SerialNumber != "60cf84f22290" {
+		t.Errorf("unexpected blacklist response: %+v", res)
+	}
+}
+
+func TestDeviceHandler_AddBlacklistDevice_Success(t *testing.T) {
+	svc := &mockDeviceService{
+		addBlacklistFn: func(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error) {
+			if serial != "60cf84f22290" {
+				t.Errorf("expected serial 60cf84f22290, got %s", serial)
+			}
+			return json.RawMessage(`{"serialNumber":"60cf84f22290","reason":"` + reason + `"}`), nil
+		},
+	}
+	app := setupDeviceTestApp(svc)
+
+	body := strings.NewReader(`{"serialNumber":"60cf84f22290","reason":"Blocked reason"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/blacklist", body)
+	req.Header.Set("Authorization", "Bearer jwt")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeviceHandler_DeleteBlacklistDevice_Success(t *testing.T) {
+	svc := &mockDeviceService{
+		deleteBlacklistFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			if serial != "60cf84f22290" {
+				t.Errorf("expected serial 60cf84f22290, got %s", serial)
+			}
+			return nil
+		},
+	}
+	app := setupDeviceTestApp(svc)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/devices/blacklist/60cf84f22290", nil)
+	req.Header.Set("Authorization", "Bearer jwt")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
 }

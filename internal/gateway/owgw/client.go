@@ -39,6 +39,9 @@ type Client interface {
 	ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	GetDeviceRtty(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	DeleteDevice(ctx context.Context, serial, token, reqID, corrID string) error
+	GetBlacklist(ctx context.Context, limit, offset int, token, reqID, corrID string) ([]models.BlacklistDevice, error)
+	AddBlacklistDevice(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
+	DeleteBlacklistDevice(ctx context.Context, serial, token, reqID, corrID string) error
 }
 
 type client struct {
@@ -59,7 +62,7 @@ type Config struct {
 func NewClient(cfg Config) Client {
 	timeout := cfg.Timeout
 	if timeout <= 0 {
-		timeout = 10 * time.Second
+		timeout = 120 * time.Second
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -344,6 +347,51 @@ func (c *client) DeleteDevice(ctx context.Context, serial, token, reqID, corrID 
 	_, err = c.doJSONRequest(ctx, http.MethodDelete, endpoint, token, reqID, corrID)
 	return err
 }
+
+// GetBlacklist retrieves blacklisted devices from OWGW: GET /api/v1/blacklist.
+func (c *client) GetBlacklist(ctx context.Context, limit, offset int, token, reqID, corrID string) ([]models.BlacklistDevice, error) {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	endpoint := fmt.Sprintf("%s/api/v1/blacklist?limit=%d&offset=%d", baseURL, limit, offset)
+	raw, err := c.doJSONRequest(ctx, http.MethodGet, endpoint, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp models.BlacklistListResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse gateway blacklist response", err)
+	}
+
+	return resp.Devices, nil
+}
+
+// AddBlacklistDevice adds a device to OWGW blacklist: POST /api/v1/blacklist/{serial}.
+func (c *client) AddBlacklistDevice(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return nil, err
+	}
+	endpoint := fmt.Sprintf("%s/api/v1/blacklist/%s", baseURL, url.PathEscape(serial))
+	return c.doJSONRequestWithBody(ctx, http.MethodPost, endpoint, body, token, reqID, corrID)
+}
+
+// DeleteBlacklistDevice deletes a device from OWGW blacklist: DELETE /api/v1/blacklist/{serial}.
+func (c *client) DeleteBlacklistDevice(ctx context.Context, serial, token, reqID, corrID string) error {
+	baseURL, err := c.getBaseURL()
+	if err != nil {
+		return err
+	}
+	endpoint := fmt.Sprintf("%s/api/v1/blacklist/%s", baseURL, url.PathEscape(serial))
+	_, err = c.doJSONRequest(ctx, http.MethodDelete, endpoint, token, reqID, corrID)
+	return err
+}
+
 
 func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {
 	if token != "" {

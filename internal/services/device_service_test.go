@@ -25,6 +25,9 @@ type mockGWClient struct {
 	updateDeviceFn     func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	getCapabilitiesFn  func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	deleteDeviceFn     func(ctx context.Context, serial, token, reqID, corrID string) error
+	getBlacklistFn     func(ctx context.Context, limit, offset int, token, reqID, corrID string) ([]models.BlacklistDevice, error)
+	addBlacklistFn     func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
+	deleteBlacklistFn  func(ctx context.Context, serial, token, reqID, corrID string) error
 }
 
 func (m *mockGWClient) GetDevicesStatus(ctx context.Context, serialNumbers []string, token, reqID, corrID string) ([]models.GatewayDeviceStatus, error) {
@@ -115,6 +118,27 @@ func (m *mockGWClient) GetDeviceRtty(ctx context.Context, serial, token, reqID, 
 func (m *mockGWClient) DeleteDevice(ctx context.Context, serial, token, reqID, corrID string) error {
 	if m.deleteDeviceFn != nil {
 		return m.deleteDeviceFn(ctx, serial, token, reqID, corrID)
+	}
+	return nil
+}
+
+func (m *mockGWClient) GetBlacklist(ctx context.Context, limit, offset int, token, reqID, corrID string) ([]models.BlacklistDevice, error) {
+	if m.getBlacklistFn != nil {
+		return m.getBlacklistFn(ctx, limit, offset, token, reqID, corrID)
+	}
+	return []models.BlacklistDevice{}, nil
+}
+
+func (m *mockGWClient) AddBlacklistDevice(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
+	if m.addBlacklistFn != nil {
+		return m.addBlacklistFn(ctx, serial, body, token, reqID, corrID)
+	}
+	return json.RawMessage(`{"serialNumber":"` + serial + `","reason":"test"}`), nil
+}
+
+func (m *mockGWClient) DeleteBlacklistDevice(ctx context.Context, serial, token, reqID, corrID string) error {
+	if m.deleteBlacklistFn != nil {
+		return m.deleteBlacklistFn(ctx, serial, token, reqID, corrID)
 	}
 	return nil
 }
@@ -546,5 +570,121 @@ func TestDeviceService_DeleteDeviceCommand_DeviceUnauthorized(t *testing.T) {
 	var apiErr models.ApiError
 	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusForbidden {
 		t.Errorf("expected 403 Forbidden, got: %v", err)
+	}
+}
+
+func TestDeviceService_GetBlacklist_ScopesToUserInventory(t *testing.T) {
+	prov := &mockProvClient{
+		getInventorySerialsFn: func(ctx context.Context, token, reqID, corrID string) ([]string, error) {
+			return []string{"60cf84f22290"}, nil
+		},
+	}
+	gw := &mockGWClient{
+		getBlacklistFn: func(ctx context.Context, limit, offset int, token, reqID, corrID string) ([]models.BlacklistDevice, error) {
+			return []models.BlacklistDevice{
+				{SerialNumber: "60cf84f22290", Reason: "Tenant AP rogue", Author: "tenant@example.com"},
+				{SerialNumber: "aabbccddeeff", Reason: "Other tenant AP", Author: "other@example.com"},
+			}, nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	devices, err := svc.GetBlacklist(context.Background(), "jwt", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(devices) != 1 {
+		t.Fatalf("expected 1 scoped blacklist device, got %d", len(devices))
+	}
+	if devices[0].SerialNumber != "60cf84f22290" {
+		t.Errorf("expected serial 60cf84f22290, got %s", devices[0].SerialNumber)
+	}
+}
+
+func TestDeviceService_AddBlacklistDevice_AuthorizedAndUnauthorized(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			if serial == "60cf84f22290" {
+				return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
+			}
+			return nil, models.NewApiError(http.StatusNotFound, "Not Found", "device not in inventory")
+		},
+	}
+	addCalled := false
+	gw := &mockGWClient{
+		addBlacklistFn: func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
+			addCalled = true
+			return json.RawMessage(`{"serialNumber":"` + serial + `"}`), nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+
+	// 1. Unauthorized device - should be blocked with 403 Forbidden
+	_, err := svc.AddBlacklistDevice(context.Background(), "unauthorized-dev", "test reason", "jwt", "req", "corr")
+	if err == nil {
+		t.Fatalf("expected error for unauthorized device, got nil")
+	}
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden, got: %v", err)
+	}
+	if addCalled {
+		t.Errorf("AddBlacklistDevice in gateway should NOT have been called for unauthorized device")
+	}
+
+	// 2. Authorized device - should succeed
+	res, err := svc.AddBlacklistDevice(context.Background(), "60cf84f22290", "test reason", "jwt", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error for authorized device: %v", err)
+	}
+	if !addCalled {
+		t.Errorf("AddBlacklistDevice in gateway should have been called")
+	}
+	if len(res) == 0 {
+		t.Errorf("expected non-empty response")
+	}
+}
+
+func TestDeviceService_DeleteBlacklistDevice_AuthorizedAndUnauthorized(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			if serial == "60cf84f22290" {
+				return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
+			}
+			return nil, models.NewApiError(http.StatusNotFound, "Not Found", "device not in inventory")
+		},
+	}
+	deleteCalled := false
+	gw := &mockGWClient{
+		deleteBlacklistFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			deleteCalled = true
+			return nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+
+	// 1. Unauthorized device - should be blocked with 403 Forbidden
+	err := svc.DeleteBlacklistDevice(context.Background(), "unauthorized-dev", "jwt", "req", "corr")
+	if err == nil {
+		t.Fatalf("expected error for unauthorized device, got nil")
+	}
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden, got: %v", err)
+	}
+	if deleteCalled {
+		t.Errorf("DeleteBlacklistDevice in gateway should NOT have been called for unauthorized device")
+	}
+
+	// 2. Authorized device - should succeed
+	err = svc.DeleteBlacklistDevice(context.Background(), "60cf84f22290", "jwt", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error for authorized device: %v", err)
+	}
+	if !deleteCalled {
+		t.Errorf("DeleteBlacklistDevice in gateway should have been called")
 	}
 }

@@ -146,3 +146,74 @@ func TestOWGWClient_GetCommand_Success(t *testing.T) {
 		t.Errorf("expected serial 60cf84f22290, got %v", parsed["serialNumber"])
 	}
 }
+
+func TestOWGWClient_GetBlacklist_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/blacklist" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "500" {
+			t.Errorf("expected limit=500, got %s", r.URL.Query().Get("limit"))
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"devices":[{"serialNumber":"60cf84f22290","reason":"Blocked test","author":"admin@test.com","created":1700000000}]}`))
+	}))
+	defer ts.Close()
+
+	client := owgw.NewClient(owgw.Config{URLResolver: func() string { return ts.URL }})
+	devices, err := client.GetBlacklist(context.Background(), 500, 0, "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("expected 1 blacklist device, got %d", len(devices))
+	}
+	if devices[0].SerialNumber != "60cf84f22290" {
+		t.Errorf("expected serial 60cf84f22290, got %s", devices[0].SerialNumber)
+	}
+}
+
+func TestOWGWClient_AddBlacklistDevice_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/blacklist/60cf84f22290" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"serialNumber":"60cf84f22290","reason":"Blocked test"}`))
+	}))
+	defer ts.Close()
+
+	client := owgw.NewClient(owgw.Config{URLResolver: func() string { return ts.URL }})
+	res, err := client.AddBlacklistDevice(context.Background(), "60cf84f22290", []byte(`{"serialNumber":"60cf84f22290"}`), "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res) == 0 {
+		t.Errorf("expected response body, got empty")
+	}
+}
+
+func TestOWGWClient_DeleteBlacklistDevice_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("expected DELETE, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/blacklist/60cf84f22290" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	client := owgw.NewClient(owgw.Config{URLResolver: func() string { return ts.URL }})
+	err := client.DeleteBlacklistDevice(context.Background(), "60cf84f22290", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

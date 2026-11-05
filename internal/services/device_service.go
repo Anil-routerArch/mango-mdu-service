@@ -33,6 +33,9 @@ type DeviceService interface {
 	ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	GetDeviceRtty(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	DeleteDevice(ctx context.Context, serial, token, reqID, corrID string) error
+	GetBlacklist(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
+	AddBlacklistDevice(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
+	DeleteBlacklistDevice(ctx context.Context, serial, token, reqID, corrID string) error
 }
 
 type deviceService struct {
@@ -571,3 +574,96 @@ func (s *deviceService) DeleteDevice(ctx context.Context, serial, token, reqID, 
 
 	return nil
 }
+
+// GetBlacklist returns blacklisted devices filtered by caller's inventory scope.
+func (s *deviceService) GetBlacklist(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error) {
+	if s.gwClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
+	}
+
+	// 1. Fetch blacklisted devices from OWGW
+	gwDevices, err := s.gwClient.GetBlacklist(ctx, 500, 0, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(gwDevices) == 0 {
+		return []models.BlacklistDevice{}, nil
+	}
+
+	// 2. Fetch accessible inventory serial numbers for caller to enforce tenant scoping
+	if s.provClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
+	}
+
+	accessibleSerials, err := s.provClient.GetInventorySerials(ctx, token, reqID, corrID)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("failed to fetch user inventory serials for blacklist scoping", "error", err)
+		}
+		return nil, err
+	}
+
+	allowed := make(map[string]bool, len(accessibleSerials))
+	for _, sn := range accessibleSerials {
+		allowed[normalizeSerial(sn)] = true
+	}
+
+	// 3. Filter only devices that belong to the caller's inventory
+	scoped := make([]models.BlacklistDevice, 0, len(gwDevices))
+	for _, dev := range gwDevices {
+		if allowed[normalizeSerial(dev.SerialNumber)] {
+			scoped = append(scoped, dev)
+		}
+	}
+
+	return scoped, nil
+}
+
+// AddBlacklistDevice verifies device inventory access before adding it to OWGW blacklist.
+func (s *deviceService) AddBlacklistDevice(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error) {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+
+	// Authorize device against user's inventory in OWPROV
+	if err := s.verifyDeviceAccess(ctx, norm, token, reqID, corrID); err != nil {
+		return nil, err
+	}
+
+	if s.gwClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
+	}
+
+	payload := map[string]string{
+		"serialNumber": norm,
+		"reason":       reason,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, models.NewApiError(http.StatusInternalServerError, "Internal Server Error", "failed to serialize blacklist payload: "+err.Error())
+	}
+
+	return s.gwClient.AddBlacklistDevice(ctx, norm, body, token, reqID, corrID)
+}
+
+// DeleteBlacklistDevice verifies device inventory access before removing it from OWGW blacklist.
+func (s *deviceService) DeleteBlacklistDevice(ctx context.Context, serial, token, reqID, corrID string) error {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+
+	// Authorize device against user's inventory in OWPROV
+	if err := s.verifyDeviceAccess(ctx, norm, token, reqID, corrID); err != nil {
+		return err
+	}
+
+	if s.gwClient == nil {
+		return models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
+	}
+
+	return s.gwClient.DeleteBlacklistDevice(ctx, norm, token, reqID, corrID)
+}
+
