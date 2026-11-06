@@ -117,14 +117,14 @@ type DeviceFleetItem struct {
 	DeviceGroup           string   `json:"deviceGroup"`
 	DeviceType            string   `json:"deviceType"`
 	Connected             bool     `json:"connected"`
-	Sanity                float64  `json:"sanity"`
+	Sanity                *float64 `json:"sanity,omitempty"`
 	IPAddress             string   `json:"ipAddress"`
 	MacAddress            string   `json:"macAddress,omitempty"`
 	Locale                string   `json:"locale,omitempty"`
 	MemoryUsedPct         *float64 `json:"memoryUsedPct,omitempty"`
 	Load                  *float64 `json:"load,omitempty"`
 	Temperature           *float64 `json:"temperature,omitempty"`
-	Firmware              string   `json:"firmware"`
+	Firmware              string   `json:"firmware,omitempty"`
 	UptimeSeconds         *int64   `json:"uptimeSeconds,omitempty"`
 	Started               *int64   `json:"started,omitempty"`
 	LastContact           any      `json:"lastContact,omitempty"`

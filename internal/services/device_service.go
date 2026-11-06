@@ -212,8 +212,6 @@ func (s *deviceService) GetDevices(ctx context.Context, token, reqID, corrID str
 			DeviceGroup:  platformType,
 			DeviceType:   platformType,
 			IPAddress:    "-",
-			Firmware:     "TIP-v4.2",
-			Sanity:       0,
 		}
 
 		if item.Name == "" {
@@ -256,11 +254,7 @@ func (s *deviceService) GetDevices(ctx context.Context, token, reqID, corrID str
 		// Gateway live metrics merge
 		if hasGw {
 			item.Connected = liveGw.Connected
-			if liveGw.Sanity != nil {
-				item.Sanity = *liveGw.Sanity
-			} else if liveGw.Connected {
-				item.Sanity = 100
-			}
+			item.Sanity = liveGw.Sanity
 
 			if liveGw.IPAddress != "" {
 				item.IPAddress = liveGw.IPAddress
