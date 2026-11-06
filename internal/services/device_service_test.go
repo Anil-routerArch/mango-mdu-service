@@ -461,6 +461,7 @@ func TestDeviceService_DeviceActions_RBAC(t *testing.T) {
 }
 
 func TestDeviceService_DeleteDevice_OWPROVFailure(t *testing.T) {
+	gwDeleteCalled := false
 	prov := &mockProvClient{
 		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
 			return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
@@ -471,6 +472,7 @@ func TestDeviceService_DeleteDevice_OWPROVFailure(t *testing.T) {
 	}
 	gw := &mockGWClient{
 		deleteDeviceFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			gwDeleteCalled = true
 			return nil
 		},
 	}
@@ -484,6 +486,43 @@ func TestDeviceService_DeleteDevice_OWPROVFailure(t *testing.T) {
 	var apiErr models.ApiError
 	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusInternalServerError {
 		t.Errorf("expected 500 ApiError, got: %v", err)
+	}
+	if gwDeleteCalled {
+		t.Errorf("OWGW DeleteDevice must NOT be called when OWPROV inventory deletion fails")
+	}
+}
+
+func TestDeviceService_DeleteDevice_OWPROVUnauthorized_DoesNotDeleteFromOWGW(t *testing.T) {
+	gwDeleteCalled := false
+	prov := &mockProvClient{
+		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+			// Pre-flight READ access passes
+			return &models.InventoryTag{SerialNumber: "60cf84f22290"}, nil
+		},
+		deleteInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			// Caller only has READ permission, OWPROV rejects DELETE
+			return models.NewApiError(http.StatusForbidden, "Forbidden", "delete inventory not permitted")
+		},
+	}
+	gw := &mockGWClient{
+		deleteDeviceFn: func(ctx context.Context, serial, token, reqID, corrID string) error {
+			gwDeleteCalled = true
+			return nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	err := svc.DeleteDevice(context.Background(), "60cf84f22290", "jwt", "req", "corr")
+	if err == nil {
+		t.Fatalf("expected 403 Forbidden error when OWPROV rejects delete")
+	}
+
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusForbidden {
+		t.Errorf("expected 403 ApiError, got: %v", err)
+	}
+	if gwDeleteCalled {
+		t.Errorf("SECURITY VULNERABILITY: OWGW DeleteDevice was called before OWPROV deletion authorization!")
 	}
 }
 
