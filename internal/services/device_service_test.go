@@ -208,8 +208,8 @@ func TestDeviceService_GetDevices_Success(t *testing.T) {
 	if !d.Connected {
 		t.Errorf("expected connected=true")
 	}
-	if d.Sanity != 98.5 {
-		t.Errorf("expected sanity 98.5, got %f", d.Sanity)
+	if d.Sanity == nil || *d.Sanity != 98.5 {
+		t.Errorf("expected sanity 98.5, got %v", d.Sanity)
 	}
 	if d.IPAddress != "192.168.1.50" {
 		t.Errorf("expected IP 192.168.1.50, got %s", d.IPAddress)
@@ -254,6 +254,87 @@ func TestDeviceService_GetDevices_GatewayGracefulDegradation(t *testing.T) {
 	}
 	if res.Devices[0].Connected {
 		t.Errorf("expected connected=false during degradation, got true")
+	}
+}
+
+// TestDeviceService_GetDevices_NoSanityWhenConnectedButUnmeasured asserts that a connected
+// device whose gateway status carries no sanity measurement returns nil (omitted) rather than
+// a fabricated value such as 100.
+func TestDeviceService_GetDevices_NoSanityWhenConnectedButUnmeasured(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryFn: func(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error) {
+			return []models.InventoryTag{
+				{SerialNumber: "aabbccddeeff", DeviceType: "ap"},
+			}, nil
+		},
+		getInventoryCountFn: func(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error) {
+			return 1, nil
+		},
+	}
+	gw := &mockGWClient{
+		getDevicesStatusFn: func(ctx context.Context, serialNumbers []string, token, reqID, corrID string) ([]models.GatewayDeviceStatus, error) {
+			return []models.GatewayDeviceStatus{
+				{
+					SerialNumber: "aabbccddeeff",
+					Connected:    true,
+					Sanity:       nil, // gateway reports no sanity measurement
+				},
+			}, nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	res, err := svc.GetDevices(context.Background(), "jwt", "req", "corr", 0, 10, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Devices) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(res.Devices))
+	}
+	d := res.Devices[0]
+	if !d.Connected {
+		t.Errorf("expected connected=true")
+	}
+	if d.Sanity != nil {
+		t.Errorf("expected nil sanity for connected-but-unmeasured device, got %v", *d.Sanity)
+	}
+}
+
+// TestDeviceService_GetDevices_GatewayUnavailable_NoFakeFirmware asserts that when a device
+// has no gateway data the Firmware field is empty (omitted in JSON) rather than the former
+// placeholder value "TIP-v4.2".
+func TestDeviceService_GetDevices_GatewayUnavailable_NoFakeFirmware(t *testing.T) {
+	prov := &mockProvClient{
+		getInventoryFn: func(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error) {
+			return []models.InventoryTag{
+				{SerialNumber: "112233445566", DeviceType: "ap"},
+			}, nil
+		},
+		getInventoryCountFn: func(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error) {
+			return 1, nil
+		},
+	}
+	gw := &mockGWClient{
+		getDevicesStatusFn: func(ctx context.Context, serialNumbers []string, token, reqID, corrID string) ([]models.GatewayDeviceStatus, error) {
+			// Gateway returns empty slice — device not known to GW yet
+			return []models.GatewayDeviceStatus{}, nil
+		},
+	}
+
+	svc := services.NewDeviceService(prov, gw)
+	res, err := svc.GetDevices(context.Background(), "jwt", "req", "corr", 0, 10, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Devices) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(res.Devices))
+	}
+	d := res.Devices[0]
+	if d.Firmware != "" {
+		t.Errorf("expected empty firmware when gateway data unavailable, got %q", d.Firmware)
+	}
+	if d.Sanity != nil {
+		t.Errorf("expected nil sanity when gateway data unavailable, got %v", *d.Sanity)
 	}
 }
 
