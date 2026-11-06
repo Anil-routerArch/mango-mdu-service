@@ -525,32 +525,18 @@ func (s *deviceService) GetDeviceRtty(ctx context.Context, serial, token, reqID,
 	return s.gwClient.GetDeviceRtty(ctx, norm, token, reqID, corrID)
 }
 
-// DeleteDevice deletes a device from OWGW and OWPROV inventory after verifying authorization.
+// DeleteDevice deletes a device from OWPROV inventory and OWGW after verifying authorization.
 func (s *deviceService) DeleteDevice(ctx context.Context, serial, token, reqID, corrID string) error {
 	if err := s.verifyDeviceAccess(ctx, serial, token, reqID, corrID); err != nil {
 		return err
 	}
 	norm := normalizeSerial(serial)
 
-	// 1. Attempt delete in OWGW (best effort cleanup; ignore 404 Not Found since offline/unassigned devices may not be in gateway)
-	var gwErr error
-	if s.gwClient != nil {
-		if err := s.gwClient.DeleteDevice(ctx, norm, token, reqID, corrID); err != nil {
-			var apiErr models.ApiError
-			if errors.As(err, &apiErr) && apiErr.ErrorCode == http.StatusNotFound {
-				if s.logger != nil {
-					s.logger.Debug("device not present in OWGW during deletion", "serial", norm)
-				}
-			} else {
-				gwErr = err
-				if s.logger != nil {
-					s.logger.Warn("failed to delete device from OWGW", "serial", norm, "error", err)
-				}
-			}
-		}
-	}
-
-	// 2. Authoritative deletion from OWPROV inventory
+	// 1. Authoritative deletion from OWPROV inventory FIRST.
+	// OWPROV is the authoritative source of truth for device existence and deletion authorization.
+	// If OWPROV rejects the deletion (e.g. 403 Forbidden, 404 Not Found, 500 Server Error),
+	// we must abort immediately without touching OWGW to avoid deleting devices from the gateway
+	// when the caller lacks inventory deletion authorization.
 	if s.provClient == nil {
 		return models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
 	}
@@ -561,9 +547,22 @@ func (s *deviceService) DeleteDevice(ctx context.Context, serial, token, reqID, 
 		return err
 	}
 
-	// 3. If OWPROV succeeded but OWGW had a non-404 hard failure, return the gateway error so caller knows cleanup was incomplete
-	if gwErr != nil {
-		return gwErr
+	// 2. Best-effort cleanup in OWGW after authoritative inventory deletion has succeeded.
+	// Ignore 404 Not Found since offline/unassigned devices may not be present in the gateway.
+	if s.gwClient != nil {
+		if err := s.gwClient.DeleteDevice(ctx, norm, token, reqID, corrID); err != nil {
+			var apiErr models.ApiError
+			if errors.As(err, &apiErr) && apiErr.ErrorCode == http.StatusNotFound {
+				if s.logger != nil {
+					s.logger.Debug("device not present in OWGW during deletion cleanup", "serial", norm)
+				}
+			} else {
+				if s.logger != nil {
+					s.logger.Warn("failed to delete device from OWGW during cleanup", "serial", norm, "error", err)
+				}
+				return err
+			}
+		}
 	}
 
 	return nil
