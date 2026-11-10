@@ -97,3 +97,84 @@ func TestApiError(t *testing.T) {
 		t.Errorf("unexpected parsed ApiError: %+v", parsed)
 	}
 }
+
+func TestParseHttpError(t *testing.T) {
+	tests := []struct {
+		name         string
+		code         int
+		body         string
+		expectedDesc string
+		expectedDet  string
+	}{
+		{
+			name:         "JSON with ErrorDescription",
+			code:         403,
+			body:         `{"ErrorCode": 403, "ErrorDescription": "Access denied"}`,
+			expectedDesc: "Access denied",
+		},
+		{
+			name:         "OpenWiFi RBAC method name DELETE normalized to Access denied",
+			code:         403,
+			body:         `{"ErrorCode": 403, "ErrorDescription": "DELETE"}`,
+			expectedDesc: "Access denied",
+		},
+		{
+			name:         "Plain text DELETE on 403 normalized to Access denied",
+			code:         403,
+			body:         `DELETE`,
+			expectedDesc: "Access denied",
+		},
+		{
+			name:         "JSON with ErrorDescription and ErrorDetails",
+			code:         400,
+			body:         `{"ErrorDescription": "Device cannot be deleted", "ErrorDetails": "Device is assigned to venue"}`,
+			expectedDesc: "Device cannot be deleted",
+			expectedDet:  "Device is assigned to venue",
+		},
+		{
+			name:         "JSON with ErrorText",
+			code:         403,
+			body:         `{"ErrorText": "User has insufficient permissions"}`,
+			expectedDesc: "User has insufficient permissions",
+		},
+		{
+			name:         "JSON with error and message",
+			code:         500,
+			body:         `{"error": "Database error", "message": "Connection refused"}`,
+			expectedDesc: "Database error",
+		},
+		{
+			name:         "Plain text error message",
+			code:         403,
+			body:         `Access denied: invalid role`,
+			expectedDesc: "Access denied: invalid role",
+		},
+		{
+			name:         "Empty body fallback to status text",
+			code:         403,
+			body:         ``,
+			expectedDesc: "Access denied",
+		},
+		{
+			name:         "HTML body fallback to status text",
+			code:         502,
+			body:         `<html><body>502 Bad Gateway nginx</body></html>`,
+			expectedDesc: "Bad Gateway",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			apiErr := models.ParseHttpError(tc.code, []byte(tc.body))
+			if apiErr.ErrorCode != tc.code {
+				t.Errorf("expected code %d, got %d", tc.code, apiErr.ErrorCode)
+			}
+			if apiErr.ErrorDescription != tc.expectedDesc {
+				t.Errorf("expected desc %q, got %q", tc.expectedDesc, apiErr.ErrorDescription)
+			}
+			if apiErr.ErrorDetails != tc.expectedDet {
+				t.Errorf("expected details %q, got %q", tc.expectedDet, apiErr.ErrorDetails)
+			}
+		})
+	}
+}
