@@ -90,13 +90,18 @@ func (kc *KafkaEventConsumer) Start(parent context.Context) error {
 
 	kc.started = true
 
+	// Capture consumer and ctx locally so the goroutine does not read
+	// kc.consumer after Stop() may have set it to nil.
+	consumer := kc.consumer
+	ctx := kc.ctx
+
 	kc.wg.Add(1)
 	go func() {
 		defer kc.wg.Done()
 		kc.logger.Info("starting kafka device event consumer loop", "topics", kc.topics)
 
 		opts := kafka.DefaultSubscribeOptions()
-		err := kc.consumer.SubscribeMultiple(kc.ctx, kc.topics, kc.handleKafkaMessage, opts)
+		err := consumer.SubscribeMultiple(ctx, kc.topics, kc.handleKafkaMessage, opts)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			kc.logger.Error("kafka consumer subscription terminated with error", "error", err)
 		}
