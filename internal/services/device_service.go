@@ -502,7 +502,25 @@ func (s *deviceService) UpdateDevice(ctx context.Context, serial string, body []
 	return s.gwClient.UpdateDevice(ctx, norm, body, token, reqID, corrID)
 }
 
-// AuthorizeDeviceCommand verifies whether the caller is authorized to execute a device command via OWPROV.
+// canonicalDeviceCommandAction mirrors OWPROV's supported commands and aliases.
+func canonicalDeviceCommandAction(action string) string {
+	switch strings.ToUpper(action) {
+	case "REBOOT", "CONFIGURE", "TELEMETRY", "UPGRADE", "TRACE", "RTTY", "SCRIPT":
+		return strings.ToUpper(action)
+	case "BLINK", "LEDS":
+		return "BLINK"
+	case "WIFI_SCAN", "WIFISCAN":
+		return "WIFI_SCAN"
+	case "FACTORY_RESET", "FACTORY", "FACTORYRESET":
+		return "FACTORY_RESET"
+	case "RE_ENROLL", "REENROLL":
+		return "RE_ENROLL"
+	default:
+		return ""
+	}
+}
+
+// AuthorizeDeviceCommand verifies the decision applies to the requested device and command.
 func (s *deviceService) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
 	norm := normalizeSerial(serial)
 	if norm == "" {
@@ -516,7 +534,21 @@ func (s *deviceService) AuthorizeDeviceCommand(ctx context.Context, serial, acti
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
 	}
 
-	return s.provClient.AuthorizeDeviceCommand(ctx, norm, action, token, reqID, corrID)
+	result, err := s.provClient.AuthorizeDeviceCommand(ctx, norm, action, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWPROV returned an empty authorization decision")
+	}
+	if result.Allowed {
+		expectedAction := canonicalDeviceCommandAction(action)
+		if result.Resource != "deviceCommand" || normalizeSerial(result.SerialNumber) != norm ||
+			expectedAction == "" || canonicalDeviceCommandAction(result.Action) != expectedAction {
+			return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWPROV authorization decision does not match the requested device command")
+		}
+	}
+	return result, nil
 }
 
 // ExecuteDeviceCommand forwards a device command to OWGW after pre-flight RBAC verification against OWPROV.
@@ -531,7 +563,7 @@ func (s *deviceService) ExecuteDeviceCommand(ctx context.Context, serial, comman
 	}
 
 	// 1. Authoritative pre-flight RBAC verification against OWPROV
-	authRes, err := s.provClient.AuthorizeDeviceCommand(ctx, norm, command, token, reqID, corrID)
+	authRes, err := s.AuthorizeDeviceCommand(ctx, norm, command, token, reqID, corrID)
 	if err != nil {
 		if s.logger != nil {
 			s.logger.Error("failed to authorize device command with OWPROV",
@@ -584,7 +616,7 @@ func (s *deviceService) GetDeviceRtty(ctx context.Context, serial, token, reqID,
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
 	}
 
-	authRes, err := s.provClient.AuthorizeDeviceCommand(ctx, norm, "rtty", token, reqID, corrID)
+	authRes, err := s.AuthorizeDeviceCommand(ctx, norm, "rtty", token, reqID, corrID)
 	if err != nil {
 		return nil, err
 	}

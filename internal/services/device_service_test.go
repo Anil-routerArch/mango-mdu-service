@@ -876,7 +876,10 @@ func TestDeviceService_CommandAuthorizationEnforcement(t *testing.T) {
 								return nil, tc.authErr
 							}
 							authorized = tc.allowed
-							return &models.DeviceCommandAuthResult{Allowed: tc.allowed, Reason: tc.reason, Details: tc.details}, nil
+							return &models.DeviceCommandAuthResult{
+								Allowed: tc.allowed, Reason: tc.reason, Details: tc.details,
+								Resource: "deviceCommand", SerialNumber: gotSerial, Action: action,
+							}, nil
 						},
 					}
 					gw := &mockGWClient{
@@ -948,5 +951,128 @@ func TestDeviceService_CommandAuthorizationEnforcement(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestDeviceService_RejectsInvalidCommandAuthorizationTarget(t *testing.T) {
+	for _, operation := range []string{"reboot", "rtty", "preflight"} {
+		t.Run(operation, func(t *testing.T) {
+			for _, tc := range []struct {
+				name      string
+				change    func(*models.DeviceCommandAuthResult)
+				nilResult bool
+			}{
+				{name: "different serial", change: func(r *models.DeviceCommandAuthResult) { r.SerialNumber = "60cf84f22291" }},
+				{name: "missing serial", change: func(r *models.DeviceCommandAuthResult) { r.SerialNumber = "" }},
+				{name: "different resource", change: func(r *models.DeviceCommandAuthResult) { r.Resource = "inventory" }},
+				{name: "missing resource", change: func(r *models.DeviceCommandAuthResult) { r.Resource = "" }},
+				{name: "different action", change: func(r *models.DeviceCommandAuthResult) { r.Action = "UPGRADE" }},
+				{name: "missing action", change: func(r *models.DeviceCommandAuthResult) { r.Action = "" }},
+				{name: "unknown action", change: func(r *models.DeviceCommandAuthResult) { r.Action = "UNKNOWN" }},
+				{name: "FULL is not a command", change: func(r *models.DeviceCommandAuthResult) { r.Action = "FULL" }},
+				{name: "missing decision", nilResult: true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					gatewayCalls := 0
+					prov := &mockProvClient{authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+						if tc.nilResult {
+							return nil, nil
+						}
+						result := &models.DeviceCommandAuthResult{Allowed: true, Resource: "deviceCommand", SerialNumber: serial, Action: action}
+						tc.change(result)
+						return result, nil
+					}}
+					gw := &mockGWClient{
+						executeDeviceCommandFn: func(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
+							gatewayCalls++
+							return json.RawMessage(`{}`), nil
+						},
+						getDeviceRttyFn: func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+							gatewayCalls++
+							return json.RawMessage(`{}`), nil
+						},
+					}
+					svc := services.NewDeviceService(prov, gw)
+					var err error
+					switch operation {
+					case "rtty":
+						_, err = svc.GetDeviceRtty(context.Background(), "60cf84f22290", "token", "req", "corr")
+					case "preflight":
+						_, err = svc.AuthorizeDeviceCommand(context.Background(), "60cf84f22290", "reboot", "token", "req", "corr")
+					default:
+						_, err = svc.ExecuteDeviceCommand(context.Background(), "60cf84f22290", operation, nil, "token", "req", "corr")
+					}
+					var apiErr models.ApiError
+					if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusBadGateway {
+						t.Fatalf("expected 502 for invalid authorization decision, got %v", err)
+					}
+					if gatewayCalls != 0 {
+						t.Fatalf("invalid authorization decision reached OWGW %d times", gatewayCalls)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestDeviceService_CommandAuthorizationAliases(t *testing.T) {
+	for _, tc := range []struct{ requested, returned string }{
+		{"reboot", "REBOOT"}, {"configure", "CONFIGURE"}, {"telemetry", "TELEMETRY"},
+		{"upgrade", "UPGRADE"}, {"trace", "TRACE"}, {"rtty", "RTTY"}, {"script", "SCRIPT"},
+		{"leds", "BLINK"}, {"blink", "LEDS"}, {"leds", "LEDS"},
+		{"wifiscan", "WIFI_SCAN"}, {"wifi_scan", "WIFISCAN"}, {"wifiscan", "WIFISCAN"},
+		{"factory", "FACTORY_RESET"}, {"factoryreset", "FACTORY"}, {"factory_reset", "FACTORYRESET"},
+		{"reenroll", "RE_ENROLL"}, {"re_enroll", "REENROLL"},
+	} {
+		t.Run(tc.requested+"/"+tc.returned, func(t *testing.T) {
+			gatewayCalls := 0
+			prov := &mockProvClient{authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+				if serial != "aabbccddeeff" || action != tc.requested {
+					t.Fatalf("unexpected authorization request: serial=%q action=%q", serial, action)
+				}
+				return &models.DeviceCommandAuthResult{Allowed: true, Resource: "deviceCommand", SerialNumber: "AA:BB:CC:DD:EE:FF", Action: tc.returned}, nil
+			}}
+			checkGateway := func(serial, command string) (json.RawMessage, error) {
+				gatewayCalls++
+				if serial != "aabbccddeeff" || command != tc.requested {
+					t.Fatalf("unexpected gateway request: serial=%q command=%q", serial, command)
+				}
+				return json.RawMessage(`{"result":"ok"}`), nil
+			}
+			gw := &mockGWClient{
+				executeDeviceCommandFn: func(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
+					return checkGateway(serial, command)
+				},
+				getDeviceRttyFn: func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+					return checkGateway(serial, "rtty")
+				},
+			}
+			svc := services.NewDeviceService(prov, gw)
+			var err error
+			if tc.requested == "rtty" {
+				_, err = svc.GetDeviceRtty(context.Background(), "aa-bb-cc-dd-ee-ff", "token", "req", "corr")
+			} else {
+				_, err = svc.ExecuteDeviceCommand(context.Background(), "aa-bb-cc-dd-ee-ff", tc.requested, nil, "token", "req", "corr")
+			}
+			if err != nil || gatewayCalls != 1 {
+				t.Fatalf("expected matching decision to execute once, got calls=%d err=%v", gatewayCalls, err)
+			}
+		})
+	}
+}
+
+func TestDeviceService_UnknownRequestedCommandCannotMatchUnknownDecision(t *testing.T) {
+	prov := &mockProvClient{authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+		return &models.DeviceCommandAuthResult{Allowed: true, Resource: "deviceCommand", SerialNumber: serial, Action: action}, nil
+	}}
+	gw := &mockGWClient{executeDeviceCommandFn: func(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
+		t.Fatal("unknown command reached OWGW")
+		return nil, nil
+	}}
+	svc := services.NewDeviceService(prov, gw)
+	_, err := svc.ExecuteDeviceCommand(context.Background(), "60cf84f22290", "UNKNOWN", nil, "token", "req", "corr")
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusBadGateway {
+		t.Fatalf("expected 502 for unknown command decision, got %v", err)
 	}
 }
