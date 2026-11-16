@@ -134,7 +134,7 @@ func (h *DeviceHandler) GetDevice(c fiber.Ctx) error {
 	return c.Status(http.StatusOK).Send(data)
 }
 
-// UpdateDevice handles PUT /api/v1/devices/:serial.
+// UpdateDevice handles notes-only PUT /api/v1/devices/:serial requests.
 func (h *DeviceHandler) UpdateDevice(c fiber.Ctx) error {
 	token := c.Get("Authorization")
 	reqID := c.Get("X-Request-Id")

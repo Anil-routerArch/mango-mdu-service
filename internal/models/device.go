@@ -188,6 +188,18 @@ type AddBlacklistRequest struct {
 	Reason       string `json:"reason,omitempty"`
 }
 
+// DeviceNotesUpdateRequest is the only update supported by MDU's device PUT endpoint.
+type DeviceNotesUpdateRequest struct {
+	SerialNumber string            `json:"serialNumber,omitempty"`
+	Notes        []DeviceNoteInput `json:"notes"`
+}
+
+type DeviceNoteInput struct {
+	Note string `json:"note"`
+	// Accepted for compatibility with the UI; OWGW assigns the actual timestamp.
+	Created int64 `json:"created,omitempty"`
+}
+
 // DeviceCommandAuthRequest represents the request payload to verify authorization for a device command.
 type DeviceCommandAuthRequest struct {
 	SerialNumber string `json:"serialNumber"`

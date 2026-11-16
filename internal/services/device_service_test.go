@@ -1076,3 +1076,98 @@ func TestDeviceService_UnknownRequestedCommandCannotMatchUnknownDecision(t *test
 		t.Fatalf("expected 502 for unknown command decision, got %v", err)
 	}
 }
+
+func TestDeviceService_UpdateDevice_NotesOnly(t *testing.T) {
+	for _, body := range []string{
+		`{"serialNumber":"60cf84f22290","notes":[{"note":"  Checked cabling  ","created":0}]}`,
+		`{"serialNumber":"60:CF:84:F2:22:90","notes":[{"note":"Checked cabling","created":123}]}`,
+		`{"notes":[{"note":"Checked cabling"}]}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			readCalls, gatewayCalls := 0, 0
+			prov := &mockProvClient{getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+				readCalls++
+				if serial != "60cf84f22290" || token != "Bearer reader" || reqID != "req" || corrID != "corr" {
+					t.Fatal("incorrect inventory READ request")
+				}
+				return &models.InventoryTag{SerialNumber: serial}, nil
+			}, authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+				t.Fatal("notes must not require device-command authorization")
+				return nil, nil
+			}}
+			gw := &mockGWClient{updateDeviceFn: func(ctx context.Context, serial string, payload []byte, token, reqID, corrID string) (json.RawMessage, error) {
+				gatewayCalls++
+				if readCalls != 1 || serial != "60cf84f22290" || token != "Bearer reader" || reqID != "req" || corrID != "corr" {
+					t.Fatal("gateway update must follow inventory READ and preserve delegated arguments")
+				}
+				var sent struct {
+					SerialNumber string           `json:"serialNumber"`
+					Notes        []map[string]any `json:"notes"`
+				}
+				if err := json.Unmarshal(payload, &sent); err != nil {
+					t.Fatal(err)
+				}
+				if sent.SerialNumber != serial || len(sent.Notes) != 1 || len(sent.Notes[0]) != 1 || sent.Notes[0]["note"] != "Checked cabling" {
+					t.Fatalf("expected sanitized notes without client timestamp or author, got %s", payload)
+				}
+				return json.RawMessage(`{"notes":[{"note":"Checked cabling","created":100,"createdBy":"reader@example.com"}]}`), nil
+			}}
+			svc := services.NewDeviceService(prov, gw)
+			result, err := svc.UpdateDevice(context.Background(), "60-cf-84-f2-22-90", []byte(body), "Bearer reader", "req", "corr")
+			if err != nil || len(result) == 0 || readCalls != 1 || gatewayCalls != 1 {
+				t.Fatalf("expected one authorized notes update, got result=%s err=%v readCalls=%d gatewayCalls=%d", result, err, readCalls, gatewayCalls)
+			}
+		})
+	}
+}
+
+func TestDeviceService_UpdateDevice_RejectsInvalidOrUnsupportedUpdates(t *testing.T) {
+	bodies := []string{
+		``, `null`, `[]`, `{}`, `{"notes":null}`, `{"notes":[]}`,
+		`{"notes":[{}]}`, `{"notes":[null]}`, `{"notes":[{"note":" \t "}]}`,
+		`{"notes":[{"note":42}]}`, `{"notes":[{"note":"ok"},{"note":""}]}`,
+		`{"notes":[{"note":"ok","createdBy":"root@example.com"}]}`,
+		`{"notes":[{"note":"ok","configuration":"injected"}]}`,
+		`{"notes":[{"note":"ok","created":"invalid"}]}`,
+		`{"notes":[{"note":"ok"}]} {"configuration":"injected"}`,
+		`{"notes":[{"note":"ok"}]} trailing`,
+		`{"serialNumber":"different-device","notes":[{"note":"ok"}]}`,
+	}
+	for _, field := range []string{"configuration", "entity", "venue", "subscriber", "owner", "location", "unknown"} {
+		bodies = append(bodies, `{"`+field+`":"injected"}`, `{"notes":[{"note":"ok"}],"`+field+`":"injected"}`)
+	}
+	for _, body := range bodies {
+		t.Run(body, func(t *testing.T) {
+			prov := &mockProvClient{getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+				t.Fatal("invalid input must be rejected before downstream inventory requests")
+				return nil, nil
+			}}
+			gw := &mockGWClient{updateDeviceFn: func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
+				t.Fatal("invalid or non-note update reached OWGW")
+				return nil, nil
+			}}
+			svc := services.NewDeviceService(prov, gw)
+			_, err := svc.UpdateDevice(context.Background(), "60cf84f22290", []byte(body), "Bearer reader", "req", "corr")
+			var apiErr models.ApiError
+			if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusBadRequest {
+				t.Fatalf("expected 400 for invalid notes update, got %v", err)
+			}
+		})
+	}
+}
+
+func TestDeviceService_UpdateDevice_ReadDenialStopsGateway(t *testing.T) {
+	prov := &mockProvClient{getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
+		return nil, models.NewApiError(http.StatusForbidden, "Forbidden", "No inventory READ access")
+	}}
+	gw := &mockGWClient{updateDeviceFn: func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
+		t.Fatal("notes update without inventory READ reached OWGW")
+		return nil, nil
+	}}
+	svc := services.NewDeviceService(prov, gw)
+	_, err := svc.UpdateDevice(context.Background(), "60cf84f22290", []byte(`{"notes":[{"note":"Checked cabling"}]}`), "Bearer reader", "req", "corr")
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for missing inventory READ, got %v", err)
+	}
+}

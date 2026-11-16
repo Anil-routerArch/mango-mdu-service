@@ -1,9 +1,11 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -490,16 +492,47 @@ func (s *deviceService) GetDeviceCapabilities(ctx context.Context, serial, token
 	return s.gwClient.GetCapabilities(ctx, norm, token, reqID, corrID)
 }
 
-// UpdateDevice proxies device updates/notes to OWGW after verifying user authorization in OWPROV.
+// UpdateDevice appends operational notes using the existing inventory READ authorization.
+// Inventory assignments and configuration updates must use their dedicated APIs.
 func (s *deviceService) UpdateDevice(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
-	if err := s.verifyDeviceAccess(ctx, serial, token, reqID, corrID); err != nil {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+	var update models.DeviceNotesUpdateRequest
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&update); err != nil {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "Only serialNumber and notes containing note and optional created fields are supported")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "Request body must contain a single JSON object")
+	}
+	if update.SerialNumber != "" && normalizeSerial(update.SerialNumber) != norm {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "Body serialNumber must match the requested device")
+	}
+	if len(update.Notes) == 0 {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "At least one note is required")
+	}
+	for i := range update.Notes {
+		update.Notes[i].Note = strings.TrimSpace(update.Notes[i].Note)
+		if update.Notes[i].Note == "" {
+			return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "Note text must not be blank")
+		}
+		update.Notes[i].Created = 0
+	}
+	update.SerialNumber = norm
+	if err := s.verifyDeviceAccess(ctx, norm, token, reqID, corrID); err != nil {
 		return nil, err
 	}
 	if s.gwClient == nil {
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
 	}
-	norm := normalizeSerial(serial)
-	return s.gwClient.UpdateDevice(ctx, norm, body, token, reqID, corrID)
+	notesBody, err := json.Marshal(update)
+	if err != nil {
+		return nil, models.NewApiError(http.StatusInternalServerError, "Internal Server Error", "Failed to encode device notes")
+	}
+	return s.gwClient.UpdateDevice(ctx, norm, notesBody, token, reqID, corrID)
 }
 
 // canonicalDeviceCommandAction mirrors OWPROV's supported commands and aliases.

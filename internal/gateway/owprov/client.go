@@ -99,7 +99,7 @@ func (c *client) resolveTarget() (string, string, error) {
 	if c.instanceResolver != nil {
 		ep, key, err := c.instanceResolver()
 		if err == nil && ep != "" {
-			return strings.TrimRight(ep, "/"), key, nil
+			return c.validateTarget(ep, key)
 		}
 	}
 
@@ -117,7 +117,15 @@ func (c *client) resolveTarget() (string, string, error) {
 	} else {
 		key = c.internalKey
 	}
-	return strings.TrimRight(ep, "/"), key, nil
+	return c.validateTarget(ep, key)
+}
+
+func (c *client) validateTarget(endpoint, key string) (string, string, error) {
+	if strings.TrimSpace(key) == "" {
+		c.logger.Error("OWPROV service key missing from resolved target", "service", "owprov")
+		return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov service credentials unavailable")
+	}
+	return strings.TrimRight(endpoint, "/"), key, nil
 }
 
 // GetPolicy retrieves a single management policy by ID from OWPROV.

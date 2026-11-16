@@ -1,12 +1,16 @@
 package owprov_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owprov"
@@ -33,7 +37,7 @@ func TestOWProvClient_GetPolicy_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	policy, err := client.GetPolicy(context.Background(), "pol-1", "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -49,7 +53,7 @@ func TestOWProvClient_GetPolicy_NotFound(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	_, err := client.GetPolicy(context.Background(), "not-found", "test-token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -79,7 +83,7 @@ func TestOWProvClient_GetRolesByPolicy(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	roles, err := client.GetRolesByPolicy(context.Background(), "pol-1", "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -110,7 +114,7 @@ func TestOWProvClient_GetEntities(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	entities, err := client.GetEntities(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -144,7 +148,7 @@ func TestOWProvClient_GetEntities_Pagination(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	entities, err := client.GetEntities(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -178,7 +182,7 @@ func TestOWProvClient_GetVenues(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	venues, err := client.GetVenues(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -212,7 +216,7 @@ func TestOWProvClient_GetVenues_Pagination(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	venues, err := client.GetVenues(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -232,7 +236,7 @@ func TestOWProvClient_DownstreamError_Sanitized(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	_, err := client.GetPolicy(context.Background(), "pol-1", "token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -296,7 +300,7 @@ func TestOWProvClient_GetInventory_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	tags, err := client.GetInventory(context.Background(), "test-jwt-token", "req-1", "corr-1", 10, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -331,7 +335,7 @@ func TestOWProvClient_GetInventoryCount_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	count, err := client.GetInventoryCount(context.Background(), "test-jwt-token", "req-1", "corr-1", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -360,7 +364,7 @@ func TestOWProvClient_GetInventorySerials_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	serials, err := client.GetInventorySerials(context.Background(), "test-jwt-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -408,7 +412,7 @@ func TestOWProvClient_GetInventorySerials_Pagination_Exhaustive(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	serials, err := client.GetInventorySerials(context.Background(), "test-jwt-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -445,7 +449,7 @@ func TestOWProvClient_GetInventorySerials_Pagination_FailClosed(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	serials, err := client.GetInventorySerials(context.Background(), "test-jwt-token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatalf("expected error on downstream failure, got nil error with %d serials", len(serials))
@@ -470,7 +474,7 @@ func TestOWProvClient_DeleteInventoryItem_Success(t *testing.T) {
 			w.WriteHeader(status)
 		}))
 
-		client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+		client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 		err := client.DeleteInventoryItem(context.Background(), "60:cf:84:f2:22:90", "token", "req-1", "corr-1")
 		ts.Close()
 		if err != nil {
@@ -486,7 +490,7 @@ func TestOWProvClient_DeleteInventoryItem_ExtractsRealReason(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }})
+	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
 	err := client.DeleteInventoryItem(context.Background(), "60cf84f22290", "token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -680,5 +684,130 @@ func TestOWProvClient_InternalHeadersAndBearerPropagation(t *testing.T) {
 	}
 	if _, err := client.AuthorizeDeviceCommand(ctx, "60cf84f22290", "reboot", "test-jwt-token", "req-1", "corr-1"); err != nil {
 		t.Fatalf("AuthorizeDeviceCommand failed: %v", err)
+	}
+}
+
+func TestOWProvClient_MissingServiceKeyStopsRequests(t *testing.T) {
+	var requests atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer ts.Close()
+
+	for _, source := range []string{"discovered instance", "key resolver", "configured key"} {
+		for _, key := range []string{"", " \t\n"} {
+			t.Run(fmt.Sprintf("%s/key=%q", source, key), func(t *testing.T) {
+				var logs bytes.Buffer
+				fallbackCalls := 0
+				cfg := owprov.Config{
+					URLResolver:  func() string { return ts.URL },
+					InternalName: "mango-mdu-service",
+					Logger:       slog.New(slog.NewTextHandler(&logs, nil)),
+				}
+				switch source {
+				case "discovered instance":
+					cfg.InstanceResolver = func() (string, string, error) { return ts.URL, key, nil }
+					// A discovered endpoint without a key must not fall back to unrelated credentials.
+					cfg.URLResolver = func() string { fallbackCalls++; return ts.URL }
+					cfg.InternalKey = "unrelated-mdu-key"
+				case "key resolver":
+					cfg.KeyResolver = func() string { return key }
+					cfg.InternalKey = "unrelated-mdu-key"
+				case "configured key":
+					cfg.InternalKey = key
+				}
+				client := owprov.NewClient(cfg)
+				ctx := context.Background()
+				operations := []struct {
+					name string
+					call func() error
+				}{
+					{"GetPolicy", func() error { _, err := client.GetPolicy(ctx, "pol-1", "valid-user-token", "req", "corr"); return err }},
+					{"GetRolesByPolicy", func() error {
+						_, err := client.GetRolesByPolicy(ctx, "pol-1", "valid-user-token", "req", "corr")
+						return err
+					}},
+					{"GetEntities", func() error { _, err := client.GetEntities(ctx, "valid-user-token", "req", "corr"); return err }},
+					{"GetVenues", func() error { _, err := client.GetVenues(ctx, "valid-user-token", "req", "corr"); return err }},
+					{"GetInventory", func() error {
+						_, err := client.GetInventory(ctx, "valid-user-token", "req", "corr", 10, 0, false)
+						return err
+					}},
+					{"GetInventoryCount", func() error {
+						_, err := client.GetInventoryCount(ctx, "valid-user-token", "req", "corr", false)
+						return err
+					}},
+					{"GetInventorySerials", func() error { _, err := client.GetInventorySerials(ctx, "valid-user-token", "req", "corr"); return err }},
+					{"GetInventoryItem", func() error {
+						_, err := client.GetInventoryItem(ctx, "60cf84f22290", "valid-user-token", "req", "corr")
+						return err
+					}},
+					{"DeleteInventoryItem", func() error {
+						return client.DeleteInventoryItem(ctx, "60cf84f22290", "valid-user-token", "req", "corr")
+					}},
+					{"AuthorizeDeviceCommand", func() error {
+						_, err := client.AuthorizeDeviceCommand(ctx, "60cf84f22290", "reboot", "valid-user-token", "req", "corr")
+						return err
+					}},
+				}
+				for _, operation := range operations {
+					t.Run(operation.name, func(t *testing.T) {
+						err := operation.call()
+						var apiErr models.ApiError
+						if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusServiceUnavailable {
+							t.Fatalf("expected 503 for missing service credentials, got %v", err)
+						}
+						if apiErr.ErrorDetails != "owprov service credentials unavailable" {
+							t.Fatalf("expected service credential error, got %q", apiErr.ErrorDetails)
+						}
+						if requests.Load() != 0 {
+							t.Fatalf("missing service key caused %d downstream HTTP requests", requests.Load())
+						}
+					})
+				}
+				if fallbackCalls != 0 {
+					t.Fatalf("invalid discovered credentials triggered %d URL fallback calls", fallbackCalls)
+				}
+				if !strings.Contains(logs.String(), "OWPROV service key missing") {
+					t.Fatal("missing service credentials were not logged")
+				}
+				if strings.Contains(logs.String(), "unrelated-mdu-key") || strings.Contains(logs.String(), "valid-user-token") {
+					t.Fatal("service credentials or user token leaked into logs")
+				}
+			})
+		}
+	}
+}
+
+func TestOWProvClient_ValidServiceKeySources(t *testing.T) {
+	for _, source := range []string{"discovered instance", "key resolver", "configured key"} {
+		t.Run(source, func(t *testing.T) {
+			var requests atomic.Int32
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.Header.Get("X-API-KEY") != "owprov-target-key" || r.Header.Get("X-INTERNAL-NAME") != "mango-mdu-service" || r.Header.Get("Authorization") != "Bearer user-token" {
+					t.Error("expected target service credentials and delegated bearer token")
+				}
+				json.NewEncoder(w).Encode(models.DeviceCommandAuthResult{Allowed: true})
+			}))
+			defer ts.Close()
+			cfg := owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mango-mdu-service"}
+			switch source {
+			case "discovered instance":
+				cfg.InstanceResolver = func() (string, string, error) { return ts.URL, "owprov-target-key", nil }
+				cfg.InternalKey = "unrelated-mdu-key"
+			case "key resolver":
+				cfg.KeyResolver = func() string { return "owprov-target-key" }
+				cfg.InternalKey = "unrelated-mdu-key"
+			case "configured key":
+				cfg.InternalKey = "owprov-target-key"
+			}
+			client := owprov.NewClient(cfg)
+			_, err := client.AuthorizeDeviceCommand(context.Background(), "60cf84f22290", "reboot", "user-token", "req", "corr")
+			if err != nil || requests.Load() != 1 {
+				t.Fatalf("expected one authenticated downstream request, got requests=%d err=%v", requests.Load(), err)
+			}
+		})
 	}
 }
