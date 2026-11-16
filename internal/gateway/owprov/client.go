@@ -44,21 +44,16 @@ type Client interface {
 
 type client struct {
 	instanceResolver InstanceResolver
-	urlResolver      func() string
-	keyResolver      func() string
 	internalName     string
-	internalKey      string
 	httpClient       *http.Client
 	logger           *slog.Logger
 }
 
 // Config holds configuration for creating an OWPROV client.
 type Config struct {
+	// InstanceResolver must return the endpoint and key from the same OWPROV instance.
 	InstanceResolver InstanceResolver
-	URLResolver      func() string
-	KeyResolver      func() string
 	InternalName     string
-	InternalKey      string
 	Timeout          time.Duration
 	TLSConfig        *tls.Config
 	Logger           *slog.Logger
@@ -83,10 +78,7 @@ func NewClient(cfg Config) Client {
 
 	return &client{
 		instanceResolver: cfg.InstanceResolver,
-		urlResolver:      cfg.URLResolver,
-		keyResolver:      cfg.KeyResolver,
 		internalName:     cfg.InternalName,
-		internalKey:      cfg.InternalKey,
 		httpClient: &http.Client{
 			Timeout:   timeout,
 			Transport: transport,
@@ -96,36 +88,19 @@ func NewClient(cfg Config) Client {
 }
 
 func (c *client) resolveTarget() (string, string, error) {
-	if c.instanceResolver != nil {
-		ep, key, err := c.instanceResolver()
-		if err == nil && ep != "" {
-			return c.validateTarget(ep, key)
-		}
-	}
-
-	var ep string
-	if c.urlResolver != nil {
-		ep = c.urlResolver()
-	}
-	if ep == "" {
+	if c.instanceResolver == nil {
 		return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov service endpoint not discovered or available")
 	}
-
-	var key string
-	if c.keyResolver != nil {
-		key = c.keyResolver()
-	} else {
-		key = c.internalKey
+	endpoint, key, err := c.instanceResolver()
+	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	if err != nil || endpoint == "" {
+		return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov service endpoint not discovered or available")
 	}
-	return c.validateTarget(ep, key)
-}
-
-func (c *client) validateTarget(endpoint, key string) (string, string, error) {
 	if strings.TrimSpace(key) == "" {
 		c.logger.Error("OWPROV service key missing from resolved target", "service", "owprov")
 		return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov service credentials unavailable")
 	}
-	return strings.TrimRight(endpoint, "/"), key, nil
+	return endpoint, key, nil
 }
 
 // GetPolicy retrieves a single management policy by ID from OWPROV.

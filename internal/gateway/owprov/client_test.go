@@ -37,7 +37,7 @@ func TestOWProvClient_GetPolicy_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	policy, err := client.GetPolicy(context.Background(), "pol-1", "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -53,7 +53,7 @@ func TestOWProvClient_GetPolicy_NotFound(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	_, err := client.GetPolicy(context.Background(), "not-found", "test-token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -83,7 +83,7 @@ func TestOWProvClient_GetRolesByPolicy(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	roles, err := client.GetRolesByPolicy(context.Background(), "pol-1", "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -114,7 +114,7 @@ func TestOWProvClient_GetEntities(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	entities, err := client.GetEntities(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -148,7 +148,7 @@ func TestOWProvClient_GetEntities_Pagination(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	entities, err := client.GetEntities(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -182,7 +182,7 @@ func TestOWProvClient_GetVenues(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	venues, err := client.GetVenues(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -216,7 +216,7 @@ func TestOWProvClient_GetVenues_Pagination(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	venues, err := client.GetVenues(context.Background(), "test-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -236,7 +236,7 @@ func TestOWProvClient_DownstreamError_Sanitized(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	_, err := client.GetPolicy(context.Background(), "pol-1", "token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -300,7 +300,7 @@ func TestOWProvClient_GetInventory_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	tags, err := client.GetInventory(context.Background(), "test-jwt-token", "req-1", "corr-1", 10, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -335,7 +335,7 @@ func TestOWProvClient_GetInventoryCount_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	count, err := client.GetInventoryCount(context.Background(), "test-jwt-token", "req-1", "corr-1", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -364,7 +364,7 @@ func TestOWProvClient_GetInventorySerials_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	serials, err := client.GetInventorySerials(context.Background(), "test-jwt-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -412,7 +412,7 @@ func TestOWProvClient_GetInventorySerials_Pagination_Exhaustive(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	serials, err := client.GetInventorySerials(context.Background(), "test-jwt-token", "req-1", "corr-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -449,7 +449,7 @@ func TestOWProvClient_GetInventorySerials_Pagination_FailClosed(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	serials, err := client.GetInventorySerials(context.Background(), "test-jwt-token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatalf("expected error on downstream failure, got nil error with %d serials", len(serials))
@@ -474,7 +474,7 @@ func TestOWProvClient_DeleteInventoryItem_Success(t *testing.T) {
 			w.WriteHeader(status)
 		}))
 
-		client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+		client := owprov.NewClient(testOWProvConfig(ts.URL))
 		err := client.DeleteInventoryItem(context.Background(), "60:cf:84:f2:22:90", "token", "req-1", "corr-1")
 		ts.Close()
 		if err != nil {
@@ -490,7 +490,7 @@ func TestOWProvClient_DeleteInventoryItem_ExtractsRealReason(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mdu-test", InternalKey: "test-owprov-key"})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 	err := client.DeleteInventoryItem(context.Background(), "60cf84f22290", "token", "req-1", "corr-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -589,11 +589,7 @@ func TestOWProvClient_AuthorizeDeviceCommand_Denied(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := owprov.NewClient(owprov.Config{
-		URLResolver:  func() string { return ts.URL },
-		InternalName: "mango-mdu-service",
-		InternalKey:  "key",
-	})
+	client := owprov.NewClient(testOWProvConfig(ts.URL))
 
 	res, err := client.AuthorizeDeviceCommand(context.Background(), "60cf84f22290", "reboot", "token", "req", "corr")
 	if err != nil {
@@ -687,127 +683,186 @@ func TestOWProvClient_InternalHeadersAndBearerPropagation(t *testing.T) {
 	}
 }
 
-func TestOWProvClient_MissingServiceKeyStopsRequests(t *testing.T) {
+func testOWProvConfig(endpoint string) owprov.Config {
+	return owprov.Config{
+		InstanceResolver: func() (string, string, error) { return endpoint, "test-owprov-key", nil },
+		InternalName:     "mdu-test",
+	}
+}
+
+func owprovClientOperations(client owprov.Client) []struct {
+	name string
+	call func() error
+} {
+	ctx := context.Background()
+	return []struct {
+		name string
+		call func() error
+	}{
+		{"GetPolicy", func() error { _, err := client.GetPolicy(ctx, "pol-1", "valid-user-token", "req", "corr"); return err }},
+		{"GetRolesByPolicy", func() error {
+			_, err := client.GetRolesByPolicy(ctx, "pol-1", "valid-user-token", "req", "corr")
+			return err
+		}},
+		{"GetEntities", func() error { _, err := client.GetEntities(ctx, "valid-user-token", "req", "corr"); return err }},
+		{"GetVenues", func() error { _, err := client.GetVenues(ctx, "valid-user-token", "req", "corr"); return err }},
+		{"GetInventory", func() error {
+			_, err := client.GetInventory(ctx, "valid-user-token", "req", "corr", 10, 0, false)
+			return err
+		}},
+		{"GetInventoryCount", func() error {
+			_, err := client.GetInventoryCount(ctx, "valid-user-token", "req", "corr", false)
+			return err
+		}},
+		{"GetInventorySerials", func() error { _, err := client.GetInventorySerials(ctx, "valid-user-token", "req", "corr"); return err }},
+		{"GetInventoryItem", func() error {
+			_, err := client.GetInventoryItem(ctx, "60cf84f22290", "valid-user-token", "req", "corr")
+			return err
+		}},
+		{"DeleteInventoryItem", func() error {
+			return client.DeleteInventoryItem(ctx, "60cf84f22290", "valid-user-token", "req", "corr")
+		}},
+		{"AuthorizeDeviceCommand", func() error {
+			_, err := client.AuthorizeDeviceCommand(ctx, "60cf84f22290", "reboot", "valid-user-token", "req", "corr")
+			return err
+		}},
+	}
+}
+
+func TestOWProvClient_ResolutionFailureStopsRequests(t *testing.T) {
 	var requests atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer ts.Close()
+	for _, tc := range []struct {
+		name       string
+		endpoint   string
+		key        string
+		err        error
+		noResolver bool
+		missingKey bool
+	}{
+		{name: "missing resolver", noResolver: true},
+		{name: "resolver error with endpoint and key", endpoint: ts.URL, key: "must-not-be-used", err: errors.New("internal resolver failure")},
+		{name: "empty endpoint", key: "must-not-be-used"},
+		{name: "whitespace endpoint", endpoint: " \t\n", key: "must-not-be-used"},
+		{name: "empty key", endpoint: ts.URL, missingKey: true},
+		{name: "whitespace key", endpoint: ts.URL, key: " \t\n", missingKey: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			resolverCalls := 0
+			cfg := owprov.Config{
+				InstanceResolver: func() (string, string, error) {
+					resolverCalls++
+					// A second lookup could observe newly available discovery data.
+					// A failure must stop this request, rather than retry with a different target/key.
+					if resolverCalls%2 == 0 {
+						return ts.URL, "must-not-be-used", nil
+					}
+					return tc.endpoint, tc.key, tc.err
+				},
+				InternalName: "mango-mdu-service",
+				Logger:       slog.New(slog.NewTextHandler(&logs, nil)),
+			}
+			if tc.noResolver {
+				cfg.InstanceResolver = nil
+			}
+			client := owprov.NewClient(cfg)
+			for _, operation := range owprovClientOperations(client) {
+				t.Run(operation.name, func(t *testing.T) {
+					resolverCalls = 0
+					err := operation.call()
+					var apiErr models.ApiError
+					if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusServiceUnavailable {
+						t.Fatalf("expected 503 without fallback, got %v", err)
+					}
+					if tc.missingKey && apiErr.ErrorDetails != "owprov service credentials unavailable" {
+						t.Fatalf("expected missing credential error, got %q", apiErr.ErrorDetails)
+					}
+					wantCalls := 1
+					if tc.noResolver {
+						wantCalls = 0
+					}
+					if resolverCalls != wantCalls || requests.Load() != 0 {
+						t.Fatalf("failed resolution must not retry or send HTTP requests: resolver calls=%d requests=%d", resolverCalls, requests.Load())
+					}
+				})
+			}
+			if tc.missingKey && !strings.Contains(logs.String(), "OWPROV service key missing") {
+				t.Fatal("missing service credentials were not logged")
+			}
+			if strings.Contains(logs.String(), "must-not-be-used") || strings.Contains(logs.String(), "valid-user-token") {
+				t.Fatal("credentials leaked into logs")
+			}
+		})
+	}
+}
 
-	for _, source := range []string{"discovered instance", "key resolver", "configured key"} {
-		for _, key := range []string{"", " \t\n"} {
-			t.Run(fmt.Sprintf("%s/key=%q", source, key), func(t *testing.T) {
-				var logs bytes.Buffer
-				fallbackCalls := 0
-				cfg := owprov.Config{
-					URLResolver:  func() string { return ts.URL },
-					InternalName: "mango-mdu-service",
-					Logger:       slog.New(slog.NewTextHandler(&logs, nil)),
-				}
-				switch source {
-				case "discovered instance":
-					cfg.InstanceResolver = func() (string, string, error) { return ts.URL, key, nil }
-					// A discovered endpoint without a key must not fall back to unrelated credentials.
-					cfg.URLResolver = func() string { fallbackCalls++; return ts.URL }
-					cfg.InternalKey = "unrelated-mdu-key"
-				case "key resolver":
-					cfg.KeyResolver = func() string { return key }
-					cfg.InternalKey = "unrelated-mdu-key"
-				case "configured key":
-					cfg.InternalKey = key
-				}
-				client := owprov.NewClient(cfg)
-				ctx := context.Background()
-				operations := []struct {
-					name string
-					call func() error
-				}{
-					{"GetPolicy", func() error { _, err := client.GetPolicy(ctx, "pol-1", "valid-user-token", "req", "corr"); return err }},
-					{"GetRolesByPolicy", func() error {
-						_, err := client.GetRolesByPolicy(ctx, "pol-1", "valid-user-token", "req", "corr")
-						return err
-					}},
-					{"GetEntities", func() error { _, err := client.GetEntities(ctx, "valid-user-token", "req", "corr"); return err }},
-					{"GetVenues", func() error { _, err := client.GetVenues(ctx, "valid-user-token", "req", "corr"); return err }},
-					{"GetInventory", func() error {
-						_, err := client.GetInventory(ctx, "valid-user-token", "req", "corr", 10, 0, false)
-						return err
-					}},
-					{"GetInventoryCount", func() error {
-						_, err := client.GetInventoryCount(ctx, "valid-user-token", "req", "corr", false)
-						return err
-					}},
-					{"GetInventorySerials", func() error { _, err := client.GetInventorySerials(ctx, "valid-user-token", "req", "corr"); return err }},
-					{"GetInventoryItem", func() error {
-						_, err := client.GetInventoryItem(ctx, "60cf84f22290", "valid-user-token", "req", "corr")
-						return err
-					}},
-					{"DeleteInventoryItem", func() error {
-						return client.DeleteInventoryItem(ctx, "60cf84f22290", "valid-user-token", "req", "corr")
-					}},
-					{"AuthorizeDeviceCommand", func() error {
-						_, err := client.AuthorizeDeviceCommand(ctx, "60cf84f22290", "reboot", "valid-user-token", "req", "corr")
-						return err
-					}},
-				}
-				for _, operation := range operations {
-					t.Run(operation.name, func(t *testing.T) {
-						err := operation.call()
-						var apiErr models.ApiError
-						if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusServiceUnavailable {
-							t.Fatalf("expected 503 for missing service credentials, got %v", err)
-						}
-						if apiErr.ErrorDetails != "owprov service credentials unavailable" {
-							t.Fatalf("expected service credential error, got %q", apiErr.ErrorDetails)
-						}
-						if requests.Load() != 0 {
-							t.Fatalf("missing service key caused %d downstream HTTP requests", requests.Load())
-						}
-					})
-				}
-				if fallbackCalls != 0 {
-					t.Fatalf("invalid discovered credentials triggered %d URL fallback calls", fallbackCalls)
-				}
-				if !strings.Contains(logs.String(), "OWPROV service key missing") {
-					t.Fatal("missing service credentials were not logged")
-				}
-				if strings.Contains(logs.String(), "unrelated-mdu-key") || strings.Contains(logs.String(), "valid-user-token") {
-					t.Fatal("service credentials or user token leaked into logs")
-				}
-			})
+func TestOWProvClient_UsesEndpointAndKeyFromSameInstance(t *testing.T) {
+	var requests atomic.Int32
+	newServer := func(expectedKey string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			if r.Header.Get("X-API-KEY") != expectedKey || r.Header.Get("X-INTERNAL-NAME") != "mango-mdu-service" || r.Header.Get("Authorization") != "Bearer user-token" {
+				t.Error("expected matching target credentials and delegated bearer token")
+			}
+			json.NewEncoder(w).Encode(models.DeviceCommandAuthResult{Allowed: true})
+		}))
+	}
+	first := newServer("first-owprov-key")
+	defer first.Close()
+	second := newServer("second-owprov-key")
+	defer second.Close()
+	resolverCalls := 0
+	client := owprov.NewClient(owprov.Config{
+		InstanceResolver: func() (string, string, error) {
+			resolverCalls++
+			if resolverCalls == 1 {
+				return first.URL, "first-owprov-key", nil
+			}
+			return second.URL, "second-owprov-key", nil
+		},
+		InternalName: "mango-mdu-service",
+	})
+	for i := 1; i <= 2; i++ {
+		_, err := client.AuthorizeDeviceCommand(context.Background(), "60cf84f22290", "reboot", "user-token", "req", "corr")
+		if err != nil || resolverCalls != i || requests.Load() != int32(i) {
+			t.Fatalf("expected one paired resolution per request, got resolver calls=%d requests=%d err=%v", resolverCalls, requests.Load(), err)
 		}
 	}
 }
 
-func TestOWProvClient_ValidServiceKeySources(t *testing.T) {
-	for _, source := range []string{"discovered instance", "key resolver", "configured key"} {
-		t.Run(source, func(t *testing.T) {
-			var requests atomic.Int32
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests.Add(1)
-				if r.Header.Get("X-API-KEY") != "owprov-target-key" || r.Header.Get("X-INTERNAL-NAME") != "mango-mdu-service" || r.Header.Get("Authorization") != "Bearer user-token" {
-					t.Error("expected target service credentials and delegated bearer token")
-				}
-				json.NewEncoder(w).Encode(models.DeviceCommandAuthResult{Allowed: true})
-			}))
-			defer ts.Close()
-			cfg := owprov.Config{URLResolver: func() string { return ts.URL }, InternalName: "mango-mdu-service"}
-			switch source {
-			case "discovered instance":
-				cfg.InstanceResolver = func() (string, string, error) { return ts.URL, "owprov-target-key", nil }
-				cfg.InternalKey = "unrelated-mdu-key"
-			case "key resolver":
-				cfg.KeyResolver = func() string { return "owprov-target-key" }
-				cfg.InternalKey = "unrelated-mdu-key"
-			case "configured key":
-				cfg.InternalKey = "owprov-target-key"
+func TestOWProvClient_DiscoveryRecoveryUsesNextRequest(t *testing.T) {
+	var requests atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Header.Get("X-API-KEY") != "recovered-owprov-key" {
+			t.Error("wrong target service key")
+		}
+		json.NewEncoder(w).Encode(models.DeviceCommandAuthResult{Allowed: true})
+	}))
+	defer ts.Close()
+	resolverCalls := 0
+	client := owprov.NewClient(owprov.Config{
+		InstanceResolver: func() (string, string, error) {
+			resolverCalls++
+			if resolverCalls == 1 {
+				return "", "", errors.New("discovery unavailable")
 			}
-			client := owprov.NewClient(cfg)
-			_, err := client.AuthorizeDeviceCommand(context.Background(), "60cf84f22290", "reboot", "user-token", "req", "corr")
-			if err != nil || requests.Load() != 1 {
-				t.Fatalf("expected one authenticated downstream request, got requests=%d err=%v", requests.Load(), err)
-			}
-		})
+			return ts.URL, "recovered-owprov-key", nil
+		},
+		InternalName: "mango-mdu-service",
+	})
+	_, err := client.AuthorizeDeviceCommand(context.Background(), "60cf84f22290", "reboot", "user-token", "req", "corr")
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusServiceUnavailable || resolverCalls != 1 || requests.Load() != 0 {
+		t.Fatalf("expected first request to stop on discovery failure, got resolver calls=%d requests=%d err=%v", resolverCalls, requests.Load(), err)
+	}
+	_, err = client.AuthorizeDeviceCommand(context.Background(), "60cf84f22290", "reboot", "user-token", "req", "corr")
+	if err != nil || resolverCalls != 2 || requests.Load() != 1 {
+		t.Fatalf("expected next request to use recovered discovery, got resolver calls=%d requests=%d err=%v", resolverCalls, requests.Load(), err)
 	}
 }

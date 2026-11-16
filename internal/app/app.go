@@ -147,16 +147,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 			}
 			return "", "", fmt.Errorf("owprov not found in discovery")
 		},
-		URLResolver: func() string {
-			if discovery != nil {
-				if inst := discovery.Store().GetServiceInstances("owprov"); inst != nil {
-					return inst.PrivateEndPoint
-				}
-			}
-			return ""
-		},
 		InternalName: instanceInternalName,
-		InternalKey:  instanceKey,
 		Timeout:      60 * time.Second,
 		TLSConfig:    tlsConfig,
 		Logger:       rootLog,
