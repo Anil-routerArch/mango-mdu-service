@@ -16,20 +16,20 @@ import (
 )
 
 type mockDeviceService struct {
-	getDevicesFn            func(ctx context.Context, token, reqID, corrID string, pageIndex, pageSize int, unassignedOnly bool) (*models.PaginatedDevicesResponse, error)
-	getDeviceCommandsFn     func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	deleteDeviceCommandFn   func(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error
-	getDeviceHealthChecksFn func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	getDeviceLogsFn         func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	getDeviceStatisticsFn   func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	getDeviceStatusFn       func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
-	getDeviceFn             func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
-	updateDeviceFn          func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
-	getDeviceCapabilitiesFn func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
-	deleteDeviceFn          func(ctx context.Context, serial, token, reqID, corrID string) error
-	getBlacklistFn          func(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
-	addBlacklistFn          func(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
-	deleteBlacklistFn       func(ctx context.Context, serial, token, reqID, corrID string) error
+	getDevicesFn             func(ctx context.Context, token, reqID, corrID string, pageIndex, pageSize int, unassignedOnly bool) (*models.PaginatedDevicesResponse, error)
+	getDeviceCommandsFn      func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
+	deleteDeviceCommandFn    func(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error
+	getDeviceHealthChecksFn  func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
+	getDeviceLogsFn          func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
+	getDeviceStatisticsFn    func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
+	getDeviceStatusFn        func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	getDeviceFn              func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	updateDeviceFn           func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
+	getDeviceCapabilitiesFn  func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	deleteDeviceFn           func(ctx context.Context, serial, token, reqID, corrID string) error
+	getBlacklistFn           func(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
+	addBlacklistFn           func(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
+	deleteBlacklistFn        func(ctx context.Context, serial, token, reqID, corrID string) error
 	authorizeDeviceCommandFn func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
 }
 

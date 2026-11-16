@@ -206,4 +206,3 @@ type DeviceCommandAuthResult struct {
 	Reason       string `json:"reason"`
 	Details      string `json:"details"`
 }
-

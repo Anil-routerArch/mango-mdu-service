@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/routerarchitects/mango-mdu-service/internal/models"
@@ -14,21 +13,23 @@ import (
 )
 
 type mockGWClient struct {
-	getDevicesStatusFn func(ctx context.Context, serialNumbers []string, token, reqID, corrID string) ([]models.GatewayDeviceStatus, error)
-	getCommandsFn      func(ctx context.Context, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
-	getCommandFn       func(ctx context.Context, commandUUID, token, reqID, corrID string) (json.RawMessage, error)
-	deleteCommandFn    func(ctx context.Context, commandUUID, token, reqID, corrID string) error
-	getHealthChecksFn  func(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
-	getLogsFn          func(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
-	getStatisticsFn    func(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
-	getDeviceStatusFn  func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
-	getDeviceFn        func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
-	updateDeviceFn     func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
-	getCapabilitiesFn  func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
-	deleteDeviceFn     func(ctx context.Context, serial, token, reqID, corrID string) error
-	getBlacklistFn     func(ctx context.Context, limit, offset int, token, reqID, corrID string) ([]models.BlacklistDevice, error)
-	addBlacklistFn     func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
-	deleteBlacklistFn  func(ctx context.Context, serial, token, reqID, corrID string) error
+	executeDeviceCommandFn func(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
+	getDeviceRttyFn        func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	getDevicesStatusFn     func(ctx context.Context, serialNumbers []string, token, reqID, corrID string) ([]models.GatewayDeviceStatus, error)
+	getCommandsFn          func(ctx context.Context, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
+	getCommandFn           func(ctx context.Context, commandUUID, token, reqID, corrID string) (json.RawMessage, error)
+	deleteCommandFn        func(ctx context.Context, commandUUID, token, reqID, corrID string) error
+	getHealthChecksFn      func(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
+	getLogsFn              func(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
+	getStatisticsFn        func(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
+	getDeviceStatusFn      func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	getDeviceFn            func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	updateDeviceFn         func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
+	getCapabilitiesFn      func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	deleteDeviceFn         func(ctx context.Context, serial, token, reqID, corrID string) error
+	getBlacklistFn         func(ctx context.Context, limit, offset int, token, reqID, corrID string) ([]models.BlacklistDevice, error)
+	addBlacklistFn         func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
+	deleteBlacklistFn      func(ctx context.Context, serial, token, reqID, corrID string) error
 }
 
 func (m *mockGWClient) GetDevicesStatus(ctx context.Context, serialNumbers []string, token, reqID, corrID string) ([]models.GatewayDeviceStatus, error) {
@@ -109,10 +110,16 @@ func (m *mockGWClient) GetStatistics(ctx context.Context, serial string, queryPa
 }
 
 func (m *mockGWClient) ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
+	if m.executeDeviceCommandFn != nil {
+		return m.executeDeviceCommandFn(ctx, serial, command, body, token, reqID, corrID)
+	}
 	return json.RawMessage(`{"result":"ok"}`), nil
 }
 
 func (m *mockGWClient) GetDeviceRtty(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+	if m.getDeviceRttyFn != nil {
+		return m.getDeviceRttyFn(ctx, serial, token, reqID, corrID)
+	}
 	return json.RawMessage(`{"server":"tty.example.com","viewport":5912,"connectionId":"conn-123"}`), nil
 }
 
@@ -444,9 +451,9 @@ func TestDeviceService_DeviceActions_RBAC(t *testing.T) {
 		},
 		authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
 			return &models.DeviceCommandAuthResult{
-				Allowed:  false,
-				Reason:   "ACTION_NOT_GRANTED",
-				Details:  "Action is not granted in policy",
+				Allowed: false,
+				Reason:  "ACTION_NOT_GRANTED",
+				Details: "Action is not granted in policy",
 			}, nil
 		},
 	}
@@ -817,59 +824,129 @@ func TestDeviceService_DeleteBlacklistDevice_AuthorizedAndUnauthorized(t *testin
 	}
 }
 
-func TestDeviceService_ExecuteDeviceCommand_OWPROVAuthorizationEnforcement(t *testing.T) {
-	gwCommandCalled := false
-	prov := &mockProvClient{
-		authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
-			if action == "reboot" {
-				return &models.DeviceCommandAuthResult{
-					Allowed:      true,
-					Resource:     "deviceCommand",
-					Action:       "REBOOT",
-					SerialNumber: serial,
-					Reason:       "ALLOWED",
-				}, nil
+func TestDeviceService_CommandAuthorizationEnforcement(t *testing.T) {
+	const serial = "60cf84f22290"
+	const token = "Bearer delegated-user-token"
+	const reqID = "req-authz"
+	const corrID = "corr-authz"
+	body := []byte(`{"when":0}`)
+	response := json.RawMessage(`{"result":"ok"}`)
+	downstreamFailure := errors.New("OWPROV connection failed")
+
+	for _, operation := range []string{"reboot", "rtty"} {
+		t.Run(operation, func(t *testing.T) {
+			for _, tc := range []struct {
+				name        string
+				allowed     bool
+				reason      string
+				details     string
+				authErr     error
+				noProv      bool
+				wantStatus  int
+				wantDetails string
+			}{
+				{name: "allowed", allowed: true},
+				{name: "action denied", reason: "ACTION_NOT_GRANTED", details: "Policy does not grant this command", wantStatus: http.StatusForbidden, wantDetails: "Policy does not grant this command"},
+				{name: "out of scope", reason: "OUT_OF_SCOPE", wantStatus: http.StatusForbidden, wantDetails: "OUT_OF_SCOPE"},
+				{name: "authorization connection failure", authErr: downstreamFailure},
+				{name: "invalid user token", authErr: models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid token"), wantStatus: http.StatusUnauthorized},
+				{name: "authorization service unavailable", authErr: models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "OWPROV unavailable"), wantStatus: http.StatusServiceUnavailable},
+				{name: "missing authorization client", noProv: true, wantStatus: http.StatusServiceUnavailable},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					authCalls, commandCalls, rttyCalls := 0, 0, 0
+					authorized := false
+					checkArgs := func(gotSerial, gotToken, gotReqID, gotCorrID string) {
+						t.Helper()
+						if gotSerial != serial || gotToken != token || gotReqID != reqID || gotCorrID != corrID {
+							t.Fatalf("incorrect forwarded arguments: serial=%q token=%q reqID=%q corrID=%q", gotSerial, gotToken, gotReqID, gotCorrID)
+						}
+					}
+					prov := &mockProvClient{
+						authorizeDeviceCommandFn: func(ctx context.Context, gotSerial, action, gotToken, gotReqID, gotCorrID string) (*models.DeviceCommandAuthResult, error) {
+							authCalls++
+							checkArgs(gotSerial, gotToken, gotReqID, gotCorrID)
+							if action != operation {
+								t.Fatalf("expected authorization for %q, got %q", operation, action)
+							}
+							if commandCalls != 0 || rttyCalls != 0 {
+								t.Fatal("OWGW was called before OWPROV authorization")
+							}
+							if tc.authErr != nil {
+								return nil, tc.authErr
+							}
+							authorized = tc.allowed
+							return &models.DeviceCommandAuthResult{Allowed: tc.allowed, Reason: tc.reason, Details: tc.details}, nil
+						},
+					}
+					gw := &mockGWClient{
+						executeDeviceCommandFn: func(ctx context.Context, gotSerial, command string, gotBody []byte, gotToken, gotReqID, gotCorrID string) (json.RawMessage, error) {
+							commandCalls++
+							if !authorized {
+								t.Fatal("OWGW command called without an allowed authorization decision")
+							}
+							checkArgs(gotSerial, gotToken, gotReqID, gotCorrID)
+							if command != operation || string(gotBody) != string(body) {
+								t.Fatalf("incorrect forwarded command/body: %q %s", command, gotBody)
+							}
+							return response, nil
+						},
+						getDeviceRttyFn: func(ctx context.Context, gotSerial, gotToken, gotReqID, gotCorrID string) (json.RawMessage, error) {
+							rttyCalls++
+							if !authorized {
+								t.Fatal("OWGW RTTY called without an allowed authorization decision")
+							}
+							checkArgs(gotSerial, gotToken, gotReqID, gotCorrID)
+							return response, nil
+						},
+					}
+					svc := services.NewDeviceService(prov, gw)
+					if tc.noProv {
+						svc = services.NewDeviceService(nil, gw)
+					}
+					var result json.RawMessage
+					var err error
+					if operation == "rtty" {
+						result, err = svc.GetDeviceRtty(context.Background(), "60:cf:84:f2:22:90", token, reqID, corrID)
+					} else {
+						result, err = svc.ExecuteDeviceCommand(context.Background(), "60:cf:84:f2:22:90", operation, body, token, reqID, corrID)
+					}
+					wantAuthCalls := 1
+					if tc.noProv {
+						wantAuthCalls = 0
+					}
+					if authCalls != wantAuthCalls {
+						t.Fatalf("expected %d OWPROV calls, got %d", wantAuthCalls, authCalls)
+					}
+					if tc.allowed {
+						if err != nil || string(result) != string(response) {
+							t.Fatalf("expected gateway response, got result=%s err=%v", result, err)
+						}
+						if (operation == "rtty" && (rttyCalls != 1 || commandCalls != 0)) || (operation != "rtty" && (commandCalls != 1 || rttyCalls != 0)) {
+							t.Fatalf("incorrect gateway call counts: commands=%d rtty=%d", commandCalls, rttyCalls)
+						}
+						return
+					}
+					if commandCalls != 0 || rttyCalls != 0 {
+						t.Fatalf("authorization failure reached OWGW: commands=%d rtty=%d", commandCalls, rttyCalls)
+					}
+					if err == nil || len(result) != 0 {
+						t.Fatalf("expected failure without gateway response, got result=%s err=%v", result, err)
+					}
+					if tc.authErr != nil && !errors.Is(err, tc.authErr) {
+						t.Fatalf("authorization error not propagated: got %v, want %v", err, tc.authErr)
+					}
+					if tc.wantStatus != 0 {
+						var apiErr models.ApiError
+						if !errors.As(err, &apiErr) || apiErr.ErrorCode != tc.wantStatus {
+							t.Fatalf("expected HTTP %d error, got %v", tc.wantStatus, err)
+						}
+						if tc.wantDetails != "" && apiErr.ErrorDetails != tc.wantDetails {
+							t.Fatalf("expected denial details %q, got %q", tc.wantDetails, apiErr.ErrorDetails)
+						}
+					}
+				})
 			}
-			return &models.DeviceCommandAuthResult{
-				Allowed:      false,
-				Resource:     "deviceCommand",
-				Action:       action,
-				SerialNumber: serial,
-				Reason:       "ACTION_NOT_GRANTED",
-				Details:      "Policy 'Operator' does not grant action '" + action + "' on deviceCommand.",
-			}, nil
-		},
-	}
-
-	gw := &mockGWClient{
-		// ExecuteDeviceCommand returns success
-	}
-	_ = gwCommandCalled
-
-	svc := services.NewDeviceService(prov, gw)
-
-	// 1. Allowed command (reboot)
-	res, err := svc.ExecuteDeviceCommand(context.Background(), "60cf84f22290", "reboot", []byte(`{}`), "token", "req", "corr")
-	if err != nil {
-		t.Fatalf("expected allowed command to succeed, got: %v", err)
-	}
-	if len(res) == 0 {
-		t.Errorf("expected non-empty command response")
-	}
-
-	// 2. Denied command (factory)
-	_, err = svc.ExecuteDeviceCommand(context.Background(), "60cf84f22290", "factory", []byte(`{}`), "token", "req", "corr")
-	if err == nil {
-		t.Fatalf("expected denied command to return error, got nil")
-	}
-	var apiErr models.ApiError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected ApiError, got: %T", err)
-	}
-	if apiErr.ErrorCode != http.StatusForbidden {
-		t.Errorf("expected 403 Forbidden, got %d", apiErr.ErrorCode)
-	}
-	if !strings.Contains(apiErr.ErrorDetails, "Policy 'Operator' does not grant action 'factory'") {
-		t.Errorf("expected detailed policy error message, got: %s", apiErr.ErrorDetails)
+		})
 	}
 }
