@@ -829,12 +829,15 @@ func TestDeviceService_CommandAuthorizationEnforcement(t *testing.T) {
 	const token = "Bearer delegated-user-token"
 	const reqID = "req-authz"
 	const corrID = "corr-authz"
-	body := []byte(`{"when":0}`)
 	response := json.RawMessage(`{"result":"ok"}`)
 	downstreamFailure := errors.New("OWPROV connection failed")
 
-	for _, operation := range []string{"reboot", "rtty"} {
+	for _, operation := range []string{"reboot", "rtty", "eventqueue"} {
 		t.Run(operation, func(t *testing.T) {
+			body := []byte(`{"when":0}`)
+			if operation == "eventqueue" {
+				body = []byte(`{"serialNumber":"60cf84f22290","types":["dhcp-snooping","wifi-frames"]}`)
+			}
 			for _, tc := range []struct {
 				name        string
 				allowed     bool
@@ -955,7 +958,7 @@ func TestDeviceService_CommandAuthorizationEnforcement(t *testing.T) {
 }
 
 func TestDeviceService_RejectsInvalidCommandAuthorizationTarget(t *testing.T) {
-	for _, operation := range []string{"reboot", "rtty", "preflight"} {
+	for _, operation := range []string{"reboot", "rtty", "eventqueue", "preflight"} {
 		t.Run(operation, func(t *testing.T) {
 			for _, tc := range []struct {
 				name      string
@@ -1019,6 +1022,7 @@ func TestDeviceService_CommandAuthorizationAliases(t *testing.T) {
 	for _, tc := range []struct{ requested, returned string }{
 		{"reboot", "REBOOT"}, {"configure", "CONFIGURE"}, {"telemetry", "TELEMETRY"},
 		{"upgrade", "UPGRADE"}, {"trace", "TRACE"}, {"rtty", "RTTY"}, {"script", "SCRIPT"},
+		{"eventqueue", "EVENTQUEUE"}, {"eventqueue", "eventqueue"},
 		{"leds", "BLINK"}, {"blink", "LEDS"}, {"leds", "LEDS"},
 		{"wifiscan", "WIFI_SCAN"}, {"wifi_scan", "WIFISCAN"}, {"wifiscan", "WIFISCAN"},
 		{"factory", "FACTORY_RESET"}, {"factoryreset", "FACTORY"}, {"factory_reset", "FACTORYRESET"},

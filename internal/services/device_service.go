@@ -538,7 +538,7 @@ func (s *deviceService) UpdateDevice(ctx context.Context, serial string, body []
 // canonicalDeviceCommandAction mirrors OWPROV's supported commands and aliases.
 func canonicalDeviceCommandAction(action string) string {
 	switch strings.ToUpper(action) {
-	case "REBOOT", "CONFIGURE", "TELEMETRY", "UPGRADE", "TRACE", "RTTY", "SCRIPT":
+	case "REBOOT", "CONFIGURE", "TELEMETRY", "UPGRADE", "TRACE", "RTTY", "SCRIPT", "EVENTQUEUE":
 		return strings.ToUpper(action)
 	case "BLINK", "LEDS":
 		return "BLINK"
