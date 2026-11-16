@@ -88,6 +88,16 @@ func (d *dummyDeviceService) DeleteBlacklistDevice(ctx context.Context, serial, 
 	return nil
 }
 
+func (d *dummyDeviceService) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+	return &models.DeviceCommandAuthResult{
+		Allowed:      true,
+		Resource:     "deviceCommand",
+		Action:       action,
+		SerialNumber: serial,
+		Reason:       "ALLOWED",
+	}, nil
+}
+
 func TestRouteVisibility(t *testing.T) {
 	policyHdlr := handlers.NewPolicyHandler(&dummyPolicyService{})
 	deviceHdlr := handlers.NewDeviceHandler(&dummyDeviceService{})

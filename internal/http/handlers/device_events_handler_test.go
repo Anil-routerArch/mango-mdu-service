@@ -49,6 +49,9 @@ func (m *mockProvForEventsHandler) GetInventoryItem(ctx context.Context, serial,
 func (m *mockProvForEventsHandler) DeleteInventoryItem(ctx context.Context, serial, token, reqID, corrID string) error {
 	return nil
 }
+func (m *mockProvForEventsHandler) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+	return &models.DeviceCommandAuthResult{Allowed: true}, nil
+}
 
 type mockTokenValidator struct {
 	validateFn func(ctx context.Context, rawToken string) error

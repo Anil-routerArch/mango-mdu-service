@@ -42,6 +42,9 @@ func RegisterPublic(app *fiber.App, deps PublicDeps) {
 
 	// Register device routes
 	if deps.DeviceHandler != nil {
+		// Authorization routes
+		group.Post("/api/v1/authorization/deviceCommand", deps.DeviceHandler.AuthorizeDeviceCommand)
+
 		// Blacklist routes (register before /api/v1/devices/:serial wildcard)
 		group.Get("/api/v1/devices/blacklist", deps.DeviceHandler.GetBlacklist)
 		group.Post("/api/v1/devices/blacklist", deps.DeviceHandler.AddBlacklistDevice)

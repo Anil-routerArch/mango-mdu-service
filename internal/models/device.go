@@ -187,3 +187,23 @@ type AddBlacklistRequest struct {
 	SerialNumber string `json:"serialNumber,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 }
+
+// DeviceCommandAuthRequest represents the request payload to verify authorization for a device command.
+type DeviceCommandAuthRequest struct {
+	SerialNumber string `json:"serialNumber"`
+	Action       string `json:"action"`
+}
+
+// DeviceCommandAuthResult represents the response from OWPROV device command authorization check.
+type DeviceCommandAuthResult struct {
+	Allowed      bool   `json:"allowed"`
+	Resource     string `json:"resource"`
+	Action       string `json:"action"`
+	SerialNumber string `json:"serialNumber"`
+	UserID       string `json:"userId"`
+	PolicyID     string `json:"policyId,omitempty"`
+	PolicyName   string `json:"policyName,omitempty"`
+	Reason       string `json:"reason"`
+	Details      string `json:"details"`
+}
+

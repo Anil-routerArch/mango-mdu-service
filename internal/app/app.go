@@ -119,20 +119,6 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 	}
 
 	// 6. Initialize downstream gateway clients with dynamic discovery
-	owprovClient := owprov.NewClient(owprov.Config{
-		URLResolver: func() string {
-			if discovery != nil {
-				if inst := discovery.Store().GetServiceInstances("owprov"); inst != nil {
-					return inst.PrivateEndPoint
-				}
-			}
-			return ""
-		},
-		Timeout:   60 * time.Second,
-		TLSConfig: tlsConfig,
-		Logger:    rootLog,
-	})
-
 	instanceKey := cfg.Discovery.InstanceKey
 	if instanceKey == "" && discovery != nil {
 		instanceKey = discovery.Self().Key
@@ -151,6 +137,30 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 	if instanceInternalName == "" {
 		instanceInternalName = "mango-mdu-service"
 	}
+
+	owprovClient := owprov.NewClient(owprov.Config{
+		InstanceResolver: func() (string, string, error) {
+			if discovery != nil {
+				if inst := discovery.Store().GetServiceInstances("owprov"); inst != nil {
+					return inst.PrivateEndPoint, inst.Key, nil
+				}
+			}
+			return "", "", fmt.Errorf("owprov not found in discovery")
+		},
+		URLResolver: func() string {
+			if discovery != nil {
+				if inst := discovery.Store().GetServiceInstances("owprov"); inst != nil {
+					return inst.PrivateEndPoint
+				}
+			}
+			return ""
+		},
+		InternalName: instanceInternalName,
+		InternalKey:  instanceKey,
+		Timeout:      60 * time.Second,
+		TLSConfig:    tlsConfig,
+		Logger:       rootLog,
+	})
 
 	owsecClient := owsec.NewClient(owsec.Config{
 		InstanceResolver: func() (string, string, error) {

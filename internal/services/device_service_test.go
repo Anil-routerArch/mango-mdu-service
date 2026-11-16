@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/routerarchitects/mango-mdu-service/internal/models"
@@ -441,6 +442,13 @@ func TestDeviceService_DeviceActions_RBAC(t *testing.T) {
 		getInventoryItemFn: func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
 			return nil, errors.New("forbidden")
 		},
+		authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+			return &models.DeviceCommandAuthResult{
+				Allowed:  false,
+				Reason:   "ACTION_NOT_GRANTED",
+				Details:  "Action is not granted in policy",
+			}, nil
+		},
 	}
 	unauthSvc := services.NewDeviceService(unauthorizedProv, gw)
 
@@ -806,5 +814,62 @@ func TestDeviceService_DeleteBlacklistDevice_AuthorizedAndUnauthorized(t *testin
 	}
 	if !deleteCalled {
 		t.Errorf("DeleteBlacklistDevice in gateway should have been called")
+	}
+}
+
+func TestDeviceService_ExecuteDeviceCommand_OWPROVAuthorizationEnforcement(t *testing.T) {
+	gwCommandCalled := false
+	prov := &mockProvClient{
+		authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+			if action == "reboot" {
+				return &models.DeviceCommandAuthResult{
+					Allowed:      true,
+					Resource:     "deviceCommand",
+					Action:       "REBOOT",
+					SerialNumber: serial,
+					Reason:       "ALLOWED",
+				}, nil
+			}
+			return &models.DeviceCommandAuthResult{
+				Allowed:      false,
+				Resource:     "deviceCommand",
+				Action:       action,
+				SerialNumber: serial,
+				Reason:       "ACTION_NOT_GRANTED",
+				Details:      "Policy 'Operator' does not grant action '" + action + "' on deviceCommand.",
+			}, nil
+		},
+	}
+
+	gw := &mockGWClient{
+		// ExecuteDeviceCommand returns success
+	}
+	_ = gwCommandCalled
+
+	svc := services.NewDeviceService(prov, gw)
+
+	// 1. Allowed command (reboot)
+	res, err := svc.ExecuteDeviceCommand(context.Background(), "60cf84f22290", "reboot", []byte(`{}`), "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("expected allowed command to succeed, got: %v", err)
+	}
+	if len(res) == 0 {
+		t.Errorf("expected non-empty command response")
+	}
+
+	// 2. Denied command (factory)
+	_, err = svc.ExecuteDeviceCommand(context.Background(), "60cf84f22290", "factory", []byte(`{}`), "token", "req", "corr")
+	if err == nil {
+		t.Fatalf("expected denied command to return error, got nil")
+	}
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected ApiError, got: %T", err)
+	}
+	if apiErr.ErrorCode != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden, got %d", apiErr.ErrorCode)
+	}
+	if !strings.Contains(apiErr.ErrorDetails, "Policy 'Operator' does not grant action 'factory'") {
+		t.Errorf("expected detailed policy error message, got: %s", apiErr.ErrorDetails)
 	}
 }

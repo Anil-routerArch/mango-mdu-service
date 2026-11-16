@@ -30,6 +30,7 @@ type mockDeviceService struct {
 	getBlacklistFn          func(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
 	addBlacklistFn          func(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
 	deleteBlacklistFn       func(ctx context.Context, serial, token, reqID, corrID string) error
+	authorizeDeviceCommandFn func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
 }
 
 func (m *mockDeviceService) GetDevices(ctx context.Context, token, reqID, corrID string, pageIndex, pageSize int, unassignedOnly bool) (*models.PaginatedDevicesResponse, error) {
@@ -138,6 +139,19 @@ func (m *mockDeviceService) DeleteBlacklistDevice(ctx context.Context, serial, t
 	return nil
 }
 
+func (m *mockDeviceService) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+	if m.authorizeDeviceCommandFn != nil {
+		return m.authorizeDeviceCommandFn(ctx, serial, action, token, reqID, corrID)
+	}
+	return &models.DeviceCommandAuthResult{
+		Allowed:      true,
+		Resource:     "deviceCommand",
+		Action:       action,
+		SerialNumber: serial,
+		Reason:       "ALLOWED",
+	}, nil
+}
+
 func setupDeviceTestApp(svc *mockDeviceService) *fiber.App {
 	app := fiber.New()
 	handler := handlers.NewDeviceHandler(svc)
@@ -159,6 +173,7 @@ func setupDeviceTestApp(svc *mockDeviceService) *fiber.App {
 	app.Put("/api/v1/devices/:serial", handler.UpdateDevice)
 	app.Delete("/api/v1/devices/:serial", handler.DeleteDevice)
 	app.Post("/api/v1/devices/:serial/:command", handler.ExecuteDeviceCommand)
+	app.Post("/api/v1/authorization/deviceCommand", handler.AuthorizeDeviceCommand)
 	return app
 }
 
@@ -595,5 +610,59 @@ func TestDeviceHandler_DeleteBlacklistDevice_Success(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeviceHandler_AuthorizeDeviceCommand_Success(t *testing.T) {
+	svc := &mockDeviceService{
+		authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+			return &models.DeviceCommandAuthResult{
+				Allowed:      true,
+				Resource:     "deviceCommand",
+				Action:       action,
+				SerialNumber: serial,
+				Reason:       "ALLOWED",
+			}, nil
+		},
+	}
+	app := setupDeviceTestApp(svc)
+
+	body := strings.NewReader(`{"serialNumber":"60cf84f22290","action":"reboot"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/authorization/deviceCommand", body)
+	req.Header.Set("Authorization", "Bearer jwt")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var authRes models.DeviceCommandAuthResult
+	if err := json.NewDecoder(resp.Body).Decode(&authRes); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !authRes.Allowed {
+		t.Errorf("expected allowed=true, got false")
+	}
+}
+
+func TestDeviceHandler_AuthorizeDeviceCommand_MissingAuth(t *testing.T) {
+	svc := &mockDeviceService{}
+	app := setupDeviceTestApp(svc)
+
+	body := strings.NewReader(`{"serialNumber":"60cf84f22290","action":"reboot"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/authorization/deviceCommand", body)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", resp.StatusCode)
 	}
 }

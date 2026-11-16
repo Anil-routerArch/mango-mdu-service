@@ -32,6 +32,7 @@ type DeviceService interface {
 	GetDeviceCapabilities(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	GetDeviceRtty(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
 	DeleteDevice(ctx context.Context, serial, token, reqID, corrID string) error
 	GetBlacklist(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
 	AddBlacklistDevice(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
@@ -501,27 +502,104 @@ func (s *deviceService) UpdateDevice(ctx context.Context, serial string, body []
 	return s.gwClient.UpdateDevice(ctx, norm, body, token, reqID, corrID)
 }
 
+// AuthorizeDeviceCommand verifies whether the caller is authorized to execute a device command via OWPROV.
+func (s *deviceService) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+	if strings.TrimSpace(action) == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "action is required")
+	}
+
+	if s.provClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
+	}
+
+	return s.provClient.AuthorizeDeviceCommand(ctx, norm, action, token, reqID, corrID)
+}
+
 // ExecuteDeviceCommand forwards a device command to OWGW after pre-flight RBAC verification against OWPROV.
 func (s *deviceService) ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
-	if err := s.verifyDeviceAccess(ctx, serial, token, reqID, corrID); err != nil {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+
+	if s.provClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
+	}
+
+	// 1. Authoritative pre-flight RBAC verification against OWPROV
+	authRes, err := s.provClient.AuthorizeDeviceCommand(ctx, norm, command, token, reqID, corrID)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("failed to authorize device command with OWPROV",
+				"serial", norm,
+				"command", command,
+				"error", err,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
 		return nil, err
 	}
+
+	if !authRes.Allowed {
+		if s.logger != nil {
+			s.logger.Warn("device command execution denied by OWPROV authorization policy",
+				"serial", norm,
+				"command", command,
+				"reason", authRes.Reason,
+				"details", authRes.Details,
+				"policy_id", authRes.PolicyID,
+				"policy_name", authRes.PolicyName,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		details := authRes.Details
+		if details == "" {
+			details = authRes.Reason
+		}
+		return nil, models.NewApiError(http.StatusForbidden, "Forbidden", details)
+	}
+
+	// 2. Authorization succeeded -> call OWGW to implement command on device
 	if s.gwClient == nil {
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
 	}
-	norm := normalizeSerial(serial)
+
 	return s.gwClient.ExecuteDeviceCommand(ctx, norm, command, body, token, reqID, corrID)
 }
 
 // GetDeviceRtty initiates or fetches RTTY connection details from OWGW after verifying authorization.
 func (s *deviceService) GetDeviceRtty(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
-	if err := s.verifyDeviceAccess(ctx, serial, token, reqID, corrID); err != nil {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+
+	if s.provClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
+	}
+
+	authRes, err := s.provClient.AuthorizeDeviceCommand(ctx, norm, "rtty", token, reqID, corrID)
+	if err != nil {
 		return nil, err
 	}
+	if !authRes.Allowed {
+		details := authRes.Details
+		if details == "" {
+			details = authRes.Reason
+		}
+		return nil, models.NewApiError(http.StatusForbidden, "Forbidden", details)
+	}
+
 	if s.gwClient == nil {
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
 	}
-	norm := normalizeSerial(serial)
+
 	return s.gwClient.GetDeviceRtty(ctx, norm, token, reqID, corrID)
 }
 

@@ -279,6 +279,45 @@ func (h *DeviceHandler) ExecuteDeviceCommand(c fiber.Ctx) error {
 	return c.Status(http.StatusOK).Send(data)
 }
 
+// AuthorizeDeviceCommand handles POST /api/v1/authorization/deviceCommand.
+func (h *DeviceHandler) AuthorizeDeviceCommand(c fiber.Ctx) error {
+	token := c.Get("Authorization")
+	reqID := c.Get("X-Request-Id")
+	corrID := c.Get("X-Correlation-Id")
+
+	if token == "" {
+		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
+			http.StatusUnauthorized, "Unauthorized", "Authorization header is required",
+		))
+	}
+
+	var req models.DeviceCommandAuthRequest
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(models.NewApiError(
+			http.StatusBadRequest, "Bad Request", "Invalid JSON request body",
+		))
+	}
+
+	if req.SerialNumber == "" || req.Action == "" {
+		return c.Status(http.StatusBadRequest).JSON(models.NewApiError(
+			http.StatusBadRequest, "Bad Request", "serialNumber and action are required",
+		))
+	}
+
+	result, err := h.svc.AuthorizeDeviceCommand(c.Context(), req.SerialNumber, req.Action, token, reqID, corrID)
+	if err != nil {
+		var apiErr models.ApiError
+		if errors.As(err, &apiErr) {
+			return c.Status(apiErr.ErrorCode).JSON(apiErr)
+		}
+		return c.Status(http.StatusInternalServerError).JSON(models.NewApiError(
+			http.StatusInternalServerError, "Internal Server Error", err.Error(),
+		))
+	}
+
+	return c.Status(http.StatusOK).JSON(result)
+}
+
 // GetDeviceHealthChecks handles GET /api/v1/devices/:serial/healthchecks.
 func (h *DeviceHandler) GetDeviceHealthChecks(c fiber.Ctx) error {
 	token := c.Get("Authorization")

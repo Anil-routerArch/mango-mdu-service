@@ -506,3 +506,179 @@ func TestOWProvClient_DeleteInventoryItem_ExtractsRealReason(t *testing.T) {
 		t.Errorf("error contains unwanted downstream wrapper: %s", apiErr.Error())
 	}
 }
+
+func TestOWProvClient_AuthorizeDeviceCommand_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/authorization/deviceCommand" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		if r.Header.Get("X-INTERNAL-NAME") != "mango-mdu-service" {
+			t.Errorf("missing or incorrect X-INTERNAL-NAME: %s", r.Header.Get("X-INTERNAL-NAME"))
+		}
+		if r.Header.Get("X-API-KEY") != "secret-prov-key" {
+			t.Errorf("missing or incorrect X-API-KEY: %s", r.Header.Get("X-API-KEY"))
+		}
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Errorf("missing or incorrect Authorization header: %s", r.Header.Get("Authorization"))
+		}
+
+		var req models.DeviceCommandAuthRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		if req.SerialNumber != "60cf84f22290" || req.Action != "reboot" {
+			t.Errorf("unexpected payload: %+v", req)
+		}
+
+		resp := models.DeviceCommandAuthResult{
+			Allowed:      true,
+			Resource:     "deviceCommand",
+			Action:       "REBOOT",
+			SerialNumber: "60cf84f22290",
+			UserID:       "11111111-0000-0000-6666-999999999999",
+			Reason:       "ALLOWED",
+			Details:      "User is authorized for action 'REBOOT' on device '60cf84f22290' via policy 'Admin'.",
+			PolicyID:     "pol-admin",
+			PolicyName:   "Admin",
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client := owprov.NewClient(owprov.Config{
+		InstanceResolver: func() (string, string, error) {
+			return ts.URL, "secret-prov-key", nil
+		},
+		InternalName: "mango-mdu-service",
+	})
+
+	res, err := client.AuthorizeDeviceCommand(context.Background(), "60:cf:84:f2:22:90", "reboot", "test-jwt-token", "req-1", "corr-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.Allowed {
+		t.Errorf("expected allowed=true, got false")
+	}
+	if res.Action != "REBOOT" {
+		t.Errorf("expected REBOOT, got %s", res.Action)
+	}
+	if res.Reason != "ALLOWED" {
+		t.Errorf("expected ALLOWED, got %s", res.Reason)
+	}
+}
+
+func TestOWProvClient_AuthorizeDeviceCommand_Denied(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := models.DeviceCommandAuthResult{
+			Allowed:      false,
+			Resource:     "deviceCommand",
+			Action:       "REBOOT",
+			SerialNumber: "60cf84f22290",
+			UserID:       "user-1",
+			Reason:       "ACTION_NOT_GRANTED",
+			Details:      "Policy 'Operator' does not grant action 'REBOOT' on deviceCommand.",
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client := owprov.NewClient(owprov.Config{
+		URLResolver:  func() string { return ts.URL },
+		InternalName: "mango-mdu-service",
+		InternalKey:  "key",
+	})
+
+	res, err := client.AuthorizeDeviceCommand(context.Background(), "60cf84f22290", "reboot", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Allowed {
+		t.Errorf("expected allowed=false, got true")
+	}
+	if res.Reason != "ACTION_NOT_GRANTED" {
+		t.Errorf("expected ACTION_NOT_GRANTED, got %s", res.Reason)
+	}
+}
+
+func TestOWProvClient_InternalHeadersAndBearerPropagation(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-INTERNAL-NAME") != "mango-mdu-service" {
+			t.Errorf("%s %s: expected X-INTERNAL-NAME mango-mdu-service, got %q", r.Method, r.URL.Path, r.Header.Get("X-INTERNAL-NAME"))
+		}
+		if r.Header.Get("X-API-KEY") != "secret-prov-key" {
+			t.Errorf("%s %s: expected X-API-KEY secret-prov-key, got %q", r.Method, r.URL.Path, r.Header.Get("X-API-KEY"))
+		}
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Errorf("%s %s: expected Authorization Bearer test-jwt-token, got %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/v1/managementPolicy/pol-1":
+			json.NewEncoder(w).Encode(models.ManagementPolicy{ID: "pol-1", Name: "Ops"})
+		case r.URL.Path == "/api/v1/managementRole":
+			json.NewEncoder(w).Encode(models.ManagementRoleListResponse{})
+		case r.URL.Path == "/api/v1/entity":
+			json.NewEncoder(w).Encode(models.EntityListResponse{})
+		case r.URL.Path == "/api/v1/venue":
+			json.NewEncoder(w).Encode(models.VenueListResponse{})
+		case r.URL.Path == "/api/v1/inventory" && r.URL.Query().Get("countOnly") == "true":
+			json.NewEncoder(w).Encode(models.CountOnlyResponse{Count: 1})
+		case r.URL.Path == "/api/v1/inventory" && r.URL.Query().Get("serialOnly") == "true":
+			json.NewEncoder(w).Encode(map[string][]string{"serialNumbers": {"60cf84f22290"}})
+		case r.URL.Path == "/api/v1/inventory":
+			json.NewEncoder(w).Encode(models.InventoryTagListResponse{})
+		case r.URL.Path == "/api/v1/inventory/60cf84f22290" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(models.InventoryTag{SerialNumber: "60cf84f22290"})
+		case r.URL.Path == "/api/v1/inventory/60cf84f22290" && r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/api/v1/authorization/deviceCommand":
+			json.NewEncoder(w).Encode(models.DeviceCommandAuthResult{Allowed: true})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	client := owprov.NewClient(owprov.Config{
+		InstanceResolver: func() (string, string, error) {
+			return ts.URL, "secret-prov-key", nil
+		},
+		InternalName: "mango-mdu-service",
+	})
+	ctx := context.Background()
+
+	if _, err := client.GetPolicy(ctx, "pol-1", "test-jwt-token", "req-1", "corr-1"); err != nil {
+		t.Fatalf("GetPolicy failed: %v", err)
+	}
+	if _, err := client.GetRolesByPolicy(ctx, "pol-1", "test-jwt-token", "req-1", "corr-1"); err != nil {
+		t.Fatalf("GetRolesByPolicy failed: %v", err)
+	}
+	if _, err := client.GetEntities(ctx, "test-jwt-token", "req-1", "corr-1"); err != nil {
+		t.Fatalf("GetEntities failed: %v", err)
+	}
+	if _, err := client.GetVenues(ctx, "test-jwt-token", "req-1", "corr-1"); err != nil {
+		t.Fatalf("GetVenues failed: %v", err)
+	}
+	if _, err := client.GetInventory(ctx, "test-jwt-token", "req-1", "corr-1", 10, 0, false); err != nil {
+		t.Fatalf("GetInventory failed: %v", err)
+	}
+	if _, err := client.GetInventoryCount(ctx, "test-jwt-token", "req-1", "corr-1", false); err != nil {
+		t.Fatalf("GetInventoryCount failed: %v", err)
+	}
+	if _, err := client.GetInventorySerials(ctx, "test-jwt-token", "req-1", "corr-1"); err != nil {
+		t.Fatalf("GetInventorySerials failed: %v", err)
+	}
+	if _, err := client.GetInventoryItem(ctx, "60cf84f22290", "test-jwt-token", "req-1", "corr-1"); err != nil {
+		t.Fatalf("GetInventoryItem failed: %v", err)
+	}
+	if err := client.DeleteInventoryItem(ctx, "60cf84f22290", "test-jwt-token", "req-1", "corr-1"); err != nil {
+		t.Fatalf("DeleteInventoryItem failed: %v", err)
+	}
+	if _, err := client.AuthorizeDeviceCommand(ctx, "60cf84f22290", "reboot", "test-jwt-token", "req-1", "corr-1"); err != nil {
+		t.Fatalf("AuthorizeDeviceCommand failed: %v", err)
+	}
+}
