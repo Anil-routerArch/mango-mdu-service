@@ -31,8 +31,6 @@ type Client interface {
 	GetDeviceStatus(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	GetCapabilities(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	GetCommands(ctx context.Context, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
-	GetCommand(ctx context.Context, commandUUID, token, reqID, corrID string) (json.RawMessage, error)
-	DeleteCommand(ctx context.Context, commandUUID, token, reqID, corrID string) error
 	GetHealthChecks(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
 	GetLogs(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
 	GetStatistics(ctx context.Context, serial string, queryParams url.Values, token, reqID, corrID string) (json.RawMessage, error)
@@ -264,27 +262,6 @@ func (c *client) GetCommands(ctx context.Context, queryParams url.Values, token,
 	}
 	endpoint := fmt.Sprintf("%s/api/v1/commands?%s", baseURL, queryParams.Encode())
 	return c.doJSONRequest(ctx, http.MethodGet, endpoint, token, reqID, corrID)
-}
-
-// GetCommand retrieves a specific command record by UUID from OWGW: GET /api/v1/command/{commandUUID}.
-func (c *client) GetCommand(ctx context.Context, commandUUID, token, reqID, corrID string) (json.RawMessage, error) {
-	baseURL, err := c.getBaseURL()
-	if err != nil {
-		return nil, err
-	}
-	endpoint := fmt.Sprintf("%s/api/v1/command/%s", baseURL, url.PathEscape(commandUUID))
-	return c.doJSONRequest(ctx, http.MethodGet, endpoint, token, reqID, corrID)
-}
-
-// DeleteCommand deletes a specific command record by UUID in OWGW.
-func (c *client) DeleteCommand(ctx context.Context, commandUUID, token, reqID, corrID string) error {
-	baseURL, err := c.getBaseURL()
-	if err != nil {
-		return err
-	}
-	endpoint := fmt.Sprintf("%s/api/v1/command/%s", baseURL, url.PathEscape(commandUUID))
-	_, err = c.doJSONRequest(ctx, http.MethodDelete, endpoint, token, reqID, corrID)
-	return err
 }
 
 // GetHealthChecks retrieves healthcheck history from OWGW.

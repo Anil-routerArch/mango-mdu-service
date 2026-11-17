@@ -42,6 +42,9 @@ func RegisterPublic(app *fiber.App, deps PublicDeps) {
 
 	// Register device routes
 	if deps.DeviceHandler != nil {
+		// Authorization routes
+		group.Post("/api/v1/authorization/deviceCommand", deps.DeviceHandler.AuthorizeDeviceCommand)
+
 		// Blacklist routes (register before /api/v1/devices/:serial wildcard)
 		group.Get("/api/v1/devices/blacklist", deps.DeviceHandler.GetBlacklist)
 		group.Post("/api/v1/devices/blacklist", deps.DeviceHandler.AddBlacklistDevice)
@@ -51,7 +54,6 @@ func RegisterPublic(app *fiber.App, deps PublicDeps) {
 
 		group.Get("/api/v1/devices", deps.DeviceHandler.GetDevices)
 		group.Get("/api/v1/devices/:serial/commands", deps.DeviceHandler.GetDeviceCommands)
-		group.Delete("/api/v1/devices/:serial/commands/:uuid", deps.DeviceHandler.DeleteDeviceCommand)
 		group.Get("/api/v1/devices/:serial/healthchecks", deps.DeviceHandler.GetDeviceHealthChecks)
 		group.Get("/api/v1/devices/:serial/logs", deps.DeviceHandler.GetDeviceLogs)
 		group.Get("/api/v1/devices/:serial/statistics", deps.DeviceHandler.GetDeviceStatistics)

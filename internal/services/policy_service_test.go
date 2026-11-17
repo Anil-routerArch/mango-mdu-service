@@ -10,15 +10,16 @@ import (
 )
 
 type mockProvClient struct {
-	getPolicyFn           func(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error)
-	getRolesByPolicyFn    func(ctx context.Context, policyID, token, reqID, corrID string) ([]models.ManagementRole, error)
-	getEntitiesFn         func(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error)
-	getVenuesFn           func(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error)
-	getInventoryFn        func(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error)
-	getInventoryCountFn   func(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error)
-	getInventorySerialsFn func(ctx context.Context, token, reqID, corrID string) ([]string, error)
-	getInventoryItemFn    func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
-	deleteInventoryItemFn func(ctx context.Context, serial, token, reqID, corrID string) error
+	getPolicyFn              func(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error)
+	getRolesByPolicyFn       func(ctx context.Context, policyID, token, reqID, corrID string) ([]models.ManagementRole, error)
+	getEntitiesFn            func(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error)
+	getVenuesFn              func(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error)
+	getInventoryFn           func(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error)
+	getInventoryCountFn      func(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error)
+	getInventorySerialsFn    func(ctx context.Context, token, reqID, corrID string) ([]string, error)
+	getInventoryItemFn       func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
+	deleteInventoryItemFn    func(ctx context.Context, serial, token, reqID, corrID string) error
+	authorizeDeviceCommandFn func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
 }
 
 func (m *mockProvClient) GetPolicy(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error) {
@@ -82,6 +83,19 @@ func (m *mockProvClient) DeleteInventoryItem(ctx context.Context, serial, token,
 		return m.deleteInventoryItemFn(ctx, serial, token, reqID, corrID)
 	}
 	return nil
+}
+
+func (m *mockProvClient) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+	if m.authorizeDeviceCommandFn != nil {
+		return m.authorizeDeviceCommandFn(ctx, serial, action, token, reqID, corrID)
+	}
+	return &models.DeviceCommandAuthResult{
+		Allowed:      true,
+		Resource:     "deviceCommand",
+		Action:       action,
+		SerialNumber: serial,
+		Reason:       "ALLOWED",
+	}, nil
 }
 
 type mockSecClient struct {

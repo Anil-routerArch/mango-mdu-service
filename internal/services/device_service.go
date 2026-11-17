@@ -1,9 +1,11 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -24,7 +26,6 @@ type DeviceService interface {
 	GetDevice(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	UpdateDevice(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	GetDeviceCommands(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	DeleteDeviceCommand(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error
 	GetDeviceHealthChecks(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
 	GetDeviceLogs(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
 	GetDeviceStatistics(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
@@ -32,6 +33,7 @@ type DeviceService interface {
 	GetDeviceCapabilities(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	GetDeviceRtty(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
 	DeleteDevice(ctx context.Context, serial, token, reqID, corrID string) error
 	GetBlacklist(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
 	AddBlacklistDevice(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
@@ -357,57 +359,6 @@ func (s *deviceService) GetDeviceCommands(ctx context.Context, serial, token, re
 	return s.gwClient.GetCommands(ctx, queryParams, token, reqID, corrID)
 }
 
-// DeleteDeviceCommand deletes a specific command record in OWGW after verifying user authorization in OWPROV
-// and verifying that the command record actually belongs to the specified device serial.
-func (s *deviceService) DeleteDeviceCommand(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error {
-	normSerial := normalizeSerial(serial)
-	if normSerial == "" {
-		return models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
-	}
-	cleanUUID := strings.TrimSpace(commandUUID)
-	if cleanUUID == "" {
-		return models.NewApiError(http.StatusBadRequest, "Bad Request", "command UUID is required")
-	}
-
-	if err := s.verifyDeviceAccess(ctx, normSerial, token, reqID, corrID); err != nil {
-		return err
-	}
-	if s.gwClient == nil {
-		return models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
-	}
-
-	// Fetch command details to verify ownership before deletion
-	cmdRaw, err := s.gwClient.GetCommand(ctx, cleanUUID, token, reqID, corrID)
-	if err != nil {
-		return err
-	}
-
-	var cmd struct {
-		SerialNumber string `json:"serialNumber"`
-	}
-	if err := json.Unmarshal(cmdRaw, &cmd); err != nil {
-		if s.logger != nil {
-			s.logger.Error("failed to parse command record from OWGW", "commandUUID", cleanUUID, "error", err)
-		}
-		return models.NewApiError(http.StatusInternalServerError, "Internal Server Error", "failed to parse command record")
-	}
-
-	if normalizeSerial(cmd.SerialNumber) != normSerial {
-		if s.logger != nil {
-			s.logger.Warn("rejected command deletion: command does not belong to specified device",
-				"commandUUID", cleanUUID,
-				"requestedSerial", normSerial,
-				"commandSerial", normalizeSerial(cmd.SerialNumber),
-				"request_id", reqID,
-				"correlation_id", corrID,
-			)
-		}
-		return models.NewApiError(http.StatusNotFound, "Not Found", "command not found for this device")
-	}
-
-	return s.gwClient.DeleteCommand(ctx, cleanUUID, token, reqID, corrID)
-}
-
 // GetDeviceHealthChecks proxies healthcheck history from OWGW after verifying user authorization in OWPROV.
 func (s *deviceService) GetDeviceHealthChecks(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error) {
 	if err := s.verifyDeviceAccess(ctx, serial, token, reqID, corrID); err != nil {
@@ -489,39 +440,179 @@ func (s *deviceService) GetDeviceCapabilities(ctx context.Context, serial, token
 	return s.gwClient.GetCapabilities(ctx, norm, token, reqID, corrID)
 }
 
-// UpdateDevice proxies device updates/notes to OWGW after verifying user authorization in OWPROV.
+// UpdateDevice appends operational notes using the existing inventory READ authorization.
+// Inventory assignments and configuration updates must use their dedicated APIs.
 func (s *deviceService) UpdateDevice(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
-	if err := s.verifyDeviceAccess(ctx, serial, token, reqID, corrID); err != nil {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+	var update models.DeviceNotesUpdateRequest
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&update); err != nil {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "Only serialNumber and notes containing note and optional created fields are supported")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "Request body must contain a single JSON object")
+	}
+	if update.SerialNumber != "" && normalizeSerial(update.SerialNumber) != norm {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "Body serialNumber must match the requested device")
+	}
+	if len(update.Notes) == 0 {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "At least one note is required")
+	}
+	for i := range update.Notes {
+		update.Notes[i].Note = strings.TrimSpace(update.Notes[i].Note)
+		if update.Notes[i].Note == "" {
+			return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "Note text must not be blank")
+		}
+		update.Notes[i].Created = 0
+	}
+	update.SerialNumber = norm
+	if err := s.verifyDeviceAccess(ctx, norm, token, reqID, corrID); err != nil {
 		return nil, err
 	}
 	if s.gwClient == nil {
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
 	}
+	notesBody, err := json.Marshal(update)
+	if err != nil {
+		return nil, models.NewApiError(http.StatusInternalServerError, "Internal Server Error", "Failed to encode device notes")
+	}
+	return s.gwClient.UpdateDevice(ctx, norm, notesBody, token, reqID, corrID)
+}
+
+// canonicalDeviceCommandAction mirrors OWPROV's supported commands and aliases.
+func canonicalDeviceCommandAction(action string) string {
+	switch strings.ToUpper(action) {
+	case "REBOOT", "CONFIGURE", "TELEMETRY", "UPGRADE", "TRACE", "RTTY", "SCRIPT", "EVENTQUEUE":
+		return strings.ToUpper(action)
+	case "BLINK", "LEDS":
+		return "BLINK"
+	case "WIFI_SCAN", "WIFISCAN":
+		return "WIFI_SCAN"
+	case "FACTORY_RESET", "FACTORY", "FACTORYRESET":
+		return "FACTORY_RESET"
+	case "RE_ENROLL", "REENROLL":
+		return "RE_ENROLL"
+	default:
+		return ""
+	}
+}
+
+// AuthorizeDeviceCommand verifies the decision applies to the requested device and command.
+func (s *deviceService) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
 	norm := normalizeSerial(serial)
-	return s.gwClient.UpdateDevice(ctx, norm, body, token, reqID, corrID)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+	if strings.TrimSpace(action) == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "action is required")
+	}
+
+	if s.provClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
+	}
+
+	result, err := s.provClient.AuthorizeDeviceCommand(ctx, norm, action, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWPROV returned an empty authorization decision")
+	}
+	if result.Allowed {
+		expectedAction := canonicalDeviceCommandAction(action)
+		if result.Resource != "deviceCommand" || normalizeSerial(result.SerialNumber) != norm ||
+			expectedAction == "" || canonicalDeviceCommandAction(result.Action) != expectedAction {
+			return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWPROV authorization decision does not match the requested device command")
+		}
+	}
+	return result, nil
 }
 
 // ExecuteDeviceCommand forwards a device command to OWGW after pre-flight RBAC verification against OWPROV.
 func (s *deviceService) ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
-	if err := s.verifyDeviceAccess(ctx, serial, token, reqID, corrID); err != nil {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+
+	if s.provClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
+	}
+
+	// 1. Authoritative pre-flight RBAC verification against OWPROV
+	authRes, err := s.AuthorizeDeviceCommand(ctx, norm, command, token, reqID, corrID)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("failed to authorize device command with OWPROV",
+				"serial", norm,
+				"command", command,
+				"error", err,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
 		return nil, err
 	}
+
+	if !authRes.Allowed {
+		if s.logger != nil {
+			s.logger.Warn("device command execution denied by OWPROV authorization policy",
+				"serial", norm,
+				"command", command,
+				"reason", authRes.Reason,
+				"details", authRes.Details,
+				"policy_id", authRes.PolicyID,
+				"policy_name", authRes.PolicyName,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		details := authRes.Details
+		if details == "" {
+			details = authRes.Reason
+		}
+		return nil, models.NewApiError(http.StatusForbidden, "Forbidden", details)
+	}
+
+	// 2. Authorization succeeded -> call OWGW to implement command on device
 	if s.gwClient == nil {
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
 	}
-	norm := normalizeSerial(serial)
+
 	return s.gwClient.ExecuteDeviceCommand(ctx, norm, command, body, token, reqID, corrID)
 }
 
 // GetDeviceRtty initiates or fetches RTTY connection details from OWGW after verifying authorization.
 func (s *deviceService) GetDeviceRtty(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
-	if err := s.verifyDeviceAccess(ctx, serial, token, reqID, corrID); err != nil {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+
+	if s.provClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
+	}
+
+	authRes, err := s.AuthorizeDeviceCommand(ctx, norm, "rtty", token, reqID, corrID)
+	if err != nil {
 		return nil, err
 	}
+	if !authRes.Allowed {
+		details := authRes.Details
+		if details == "" {
+			details = authRes.Reason
+		}
+		return nil, models.NewApiError(http.StatusForbidden, "Forbidden", details)
+	}
+
 	if s.gwClient == nil {
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
 	}
-	norm := normalizeSerial(serial)
+
 	return s.gwClient.GetDeviceRtty(ctx, norm, token, reqID, corrID)
 }
 

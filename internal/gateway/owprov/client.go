@@ -1,6 +1,7 @@
 package owprov
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -24,6 +25,9 @@ const (
 	maxResponseBytes = 10 << 20 // 10 MB
 )
 
+// InstanceResolver resolves an instance's endpoint and key together from a single discovered instance.
+type InstanceResolver func() (endpoint string, key string, err error)
+
 // Client defines the contract for communicating with OWPROV.
 type Client interface {
 	GetPolicy(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error)
@@ -35,20 +39,24 @@ type Client interface {
 	GetInventorySerials(ctx context.Context, token, reqID, corrID string) ([]string, error)
 	GetInventoryItem(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
 	DeleteInventoryItem(ctx context.Context, serial, token, reqID, corrID string) error
+	AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
 }
 
 type client struct {
-	urlResolver func() string
-	httpClient  *http.Client
-	logger      *slog.Logger
+	instanceResolver InstanceResolver
+	internalName     string
+	httpClient       *http.Client
+	logger           *slog.Logger
 }
 
 // Config holds configuration for creating an OWPROV client.
 type Config struct {
-	URLResolver func() string
-	Timeout     time.Duration
-	TLSConfig   *tls.Config
-	Logger      *slog.Logger
+	// InstanceResolver must return the endpoint and key from the same OWPROV instance.
+	InstanceResolver InstanceResolver
+	InternalName     string
+	Timeout          time.Duration
+	TLSConfig        *tls.Config
+	Logger           *slog.Logger
 }
 
 // NewClient creates a new OWPROV client instance.
@@ -69,7 +77,8 @@ func NewClient(cfg Config) Client {
 	}
 
 	return &client{
-		urlResolver: cfg.URLResolver,
+		instanceResolver: cfg.InstanceResolver,
+		internalName:     cfg.InternalName,
 		httpClient: &http.Client{
 			Timeout:   timeout,
 			Transport: transport,
@@ -78,18 +87,25 @@ func NewClient(cfg Config) Client {
 	}
 }
 
-func (c *client) getBaseURL() (string, error) {
-	if c.urlResolver != nil {
-		if resolved := c.urlResolver(); resolved != "" {
-			return strings.TrimRight(resolved, "/"), nil
-		}
+func (c *client) resolveTarget() (string, string, error) {
+	if c.instanceResolver == nil {
+		return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov service endpoint not discovered or available")
 	}
-	return "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov service endpoint not discovered or available")
+	endpoint, key, err := c.instanceResolver()
+	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	if err != nil || endpoint == "" {
+		return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov service endpoint not discovered or available")
+	}
+	if strings.TrimSpace(key) == "" {
+		c.logger.Error("OWPROV service key missing from resolved target", "service", "owprov")
+		return "", "", models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov service credentials unavailable")
+	}
+	return endpoint, key, nil
 }
 
 // GetPolicy retrieves a single management policy by ID from OWPROV.
 func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string) (*models.ManagementPolicy, error) {
-	baseURL, err := c.getBaseURL()
+	baseURL, key, err := c.resolveTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +115,7 @@ func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string)
 		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create policy request", err)
 	}
 
-	c.setHeaders(req, token, reqID, corrID)
+	c.setHeaders(req, key, token, reqID, corrID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -152,7 +168,7 @@ func (c *client) GetPolicy(ctx context.Context, id, token, reqID, corrID string)
 
 // GetRolesByPolicy fetches all management roles associated with policyID using pagination.
 func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, corrID string) ([]models.ManagementRole, error) {
-	baseURL, err := c.getBaseURL()
+	baseURL, key, err := c.resolveTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +187,7 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to create roles request", err)
 		}
 
-		c.setHeaders(req, token, reqID, corrID)
+		c.setHeaders(req, key, token, reqID, corrID)
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -224,7 +240,7 @@ func (c *client) GetRolesByPolicy(ctx context.Context, policyID, token, reqID, c
 
 // GetEntities fetches properties/entities from OWPROV using pagination.
 func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) ([]models.Entity, error) {
-	baseURL, err := c.getBaseURL()
+	baseURL, key, err := c.resolveTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +257,7 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to create entity request", err)
 		}
 
-		c.setHeaders(req, token, reqID, corrID)
+		c.setHeaders(req, key, token, reqID, corrID)
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -294,7 +310,7 @@ func (c *client) GetEntities(ctx context.Context, token, reqID, corrID string) (
 
 // GetVenues fetches venues from OWPROV using pagination.
 func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]models.Venue, error) {
-	baseURL, err := c.getBaseURL()
+	baseURL, key, err := c.resolveTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +327,7 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to create venue request", err)
 		}
 
-		c.setHeaders(req, token, reqID, corrID)
+		c.setHeaders(req, key, token, reqID, corrID)
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -364,7 +380,7 @@ func (c *client) GetVenues(ctx context.Context, token, reqID, corrID string) ([]
 
 // GetInventory retrieves a page of inventory records from OWPROV with extended information.
 func (c *client) GetInventory(ctx context.Context, token, reqID, corrID string, limit, offset int, unassigned bool) ([]models.InventoryTag, error) {
-	baseURL, err := c.getBaseURL()
+	baseURL, key, err := c.resolveTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +401,7 @@ func (c *client) GetInventory(ctx context.Context, token, reqID, corrID string, 
 		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create inventory request", err)
 	}
 
-	c.setHeaders(req, token, reqID, corrID)
+	c.setHeaders(req, key, token, reqID, corrID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -430,7 +446,7 @@ func (c *client) GetInventory(ctx context.Context, token, reqID, corrID string, 
 
 // GetInventoryCount retrieves the total count of inventory records accessible to the caller.
 func (c *client) GetInventoryCount(ctx context.Context, token, reqID, corrID string, unassigned bool) (int, error) {
-	baseURL, err := c.getBaseURL()
+	baseURL, key, err := c.resolveTarget()
 	if err != nil {
 		return 0, err
 	}
@@ -445,7 +461,7 @@ func (c *client) GetInventoryCount(ctx context.Context, token, reqID, corrID str
 		return 0, apperror.Wrap(apperror.CodeInternal, "failed to create inventory count request", err)
 	}
 
-	c.setHeaders(req, token, reqID, corrID)
+	c.setHeaders(req, key, token, reqID, corrID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -489,7 +505,7 @@ func (c *client) GetInventoryCount(ctx context.Context, token, reqID, corrID str
 }
 
 func (c *client) GetInventorySerials(ctx context.Context, token, reqID, corrID string) ([]string, error) {
-	baseURL, err := c.getBaseURL()
+	baseURL, key, err := c.resolveTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +523,7 @@ func (c *client) GetInventorySerials(ctx context.Context, token, reqID, corrID s
 			return nil, apperror.Wrap(apperror.CodeInternal, "failed to create inventory serials request", err)
 		}
 
-		c.setHeaders(req, token, reqID, corrID)
+		c.setHeaders(req, key, token, reqID, corrID)
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -574,7 +590,7 @@ func normalizeSerial(s string) string {
 
 // GetInventoryItem retrieves a single inventory record from OWPROV by serial number.
 func (c *client) GetInventoryItem(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error) {
-	baseURL, err := c.getBaseURL()
+	baseURL, key, err := c.resolveTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -588,7 +604,7 @@ func (c *client) GetInventoryItem(ctx context.Context, serial, token, reqID, cor
 		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create inventory item request", err)
 	}
 
-	c.setHeaders(req, token, reqID, corrID)
+	c.setHeaders(req, key, token, reqID, corrID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -639,7 +655,7 @@ func (c *client) GetInventoryItem(ctx context.Context, serial, token, reqID, cor
 
 // DeleteInventoryItem removes an inventory item from OWPROV.
 func (c *client) DeleteInventoryItem(ctx context.Context, serial, token, reqID, corrID string) error {
-	baseURL, err := c.getBaseURL()
+	baseURL, key, err := c.resolveTarget()
 	if err != nil {
 		return err
 	}
@@ -655,7 +671,7 @@ func (c *client) DeleteInventoryItem(ctx context.Context, serial, token, reqID, 
 		return apperror.Wrap(apperror.CodeInternal, "failed to create inventory delete request", err)
 	}
 
-	c.setHeaders(req, token, reqID, corrID)
+	c.setHeaders(req, key, token, reqID, corrID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -680,7 +696,80 @@ func (c *client) DeleteInventoryItem(ctx context.Context, serial, token, reqID, 
 	return models.ParseResponseError(resp, maxErrorBytes)
 }
 
-func (c *client) setHeaders(req *http.Request, token, reqID, corrID string) {
+// AuthorizeDeviceCommand verifies whether the caller is authorized to execute a device command via OWPROV.
+func (c *client) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+	baseURL, key, err := c.resolveTarget()
+	if err != nil {
+		return nil, err
+	}
+
+	clean := normalizeSerial(serial)
+	if clean == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+	if strings.TrimSpace(action) == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "action is required")
+	}
+
+	payload := models.DeviceCommandAuthRequest{
+		SerialNumber: clean,
+		Action:       action,
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to marshal authorization request", err)
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/authorization/deviceCommand", baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create authorization request", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	c.setHeaders(req, key, token, reqID, corrID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV authorization request failed",
+				"service", "owprov",
+				"serial", clean,
+				"action", action,
+				"error", err,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, models.NewApiError(http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, models.ParseResponseError(resp, maxErrorBytes)
+	}
+
+	var authResult models.DeviceCommandAuthResult
+	limitedReader := io.LimitReader(resp.Body, maxResponseBytes)
+	if err := json.NewDecoder(limitedReader).Decode(&authResult); err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to parse authorization response", err)
+	}
+
+	return &authResult, nil
+}
+
+func (c *client) setHeaders(req *http.Request, key, token, reqID, corrID string) {
+	if c.internalName != "" {
+		req.Header.Set("X-INTERNAL-NAME", c.internalName)
+	}
+	if key != "" {
+		req.Header.Set("X-API-KEY", key)
+	}
 	if token != "" {
 		if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
 			req.Header.Set("Authorization", "Bearer "+token)

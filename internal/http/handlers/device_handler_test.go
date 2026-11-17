@@ -16,20 +16,20 @@ import (
 )
 
 type mockDeviceService struct {
-	getDevicesFn            func(ctx context.Context, token, reqID, corrID string, pageIndex, pageSize int, unassignedOnly bool) (*models.PaginatedDevicesResponse, error)
-	getDeviceCommandsFn     func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	deleteDeviceCommandFn   func(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error
-	getDeviceHealthChecksFn func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	getDeviceLogsFn         func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	getDeviceStatisticsFn   func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	getDeviceStatusFn       func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
-	getDeviceFn             func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
-	updateDeviceFn          func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
-	getDeviceCapabilitiesFn func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
-	deleteDeviceFn          func(ctx context.Context, serial, token, reqID, corrID string) error
-	getBlacklistFn          func(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
-	addBlacklistFn          func(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
-	deleteBlacklistFn       func(ctx context.Context, serial, token, reqID, corrID string) error
+	getDevicesFn             func(ctx context.Context, token, reqID, corrID string, pageIndex, pageSize int, unassignedOnly bool) (*models.PaginatedDevicesResponse, error)
+	getDeviceCommandsFn      func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
+	getDeviceHealthChecksFn  func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
+	getDeviceLogsFn          func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
+	getDeviceStatisticsFn    func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
+	getDeviceStatusFn        func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	getDeviceFn              func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	updateDeviceFn           func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
+	getDeviceCapabilitiesFn  func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	deleteDeviceFn           func(ctx context.Context, serial, token, reqID, corrID string) error
+	getBlacklistFn           func(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
+	addBlacklistFn           func(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
+	deleteBlacklistFn        func(ctx context.Context, serial, token, reqID, corrID string) error
+	authorizeDeviceCommandFn func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
 }
 
 func (m *mockDeviceService) GetDevices(ctx context.Context, token, reqID, corrID string, pageIndex, pageSize int, unassignedOnly bool) (*models.PaginatedDevicesResponse, error) {
@@ -44,13 +44,6 @@ func (m *mockDeviceService) GetDeviceCommands(ctx context.Context, serial, token
 		return m.getDeviceCommandsFn(ctx, serial, token, reqID, corrID, queryParams)
 	}
 	return json.RawMessage(`{"commands":[]}`), nil
-}
-
-func (m *mockDeviceService) DeleteDeviceCommand(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error {
-	if m.deleteDeviceCommandFn != nil {
-		return m.deleteDeviceCommandFn(ctx, serial, commandUUID, token, reqID, corrID)
-	}
-	return nil
 }
 
 func (m *mockDeviceService) GetDeviceHealthChecks(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error) {
@@ -138,6 +131,19 @@ func (m *mockDeviceService) DeleteBlacklistDevice(ctx context.Context, serial, t
 	return nil
 }
 
+func (m *mockDeviceService) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+	if m.authorizeDeviceCommandFn != nil {
+		return m.authorizeDeviceCommandFn(ctx, serial, action, token, reqID, corrID)
+	}
+	return &models.DeviceCommandAuthResult{
+		Allowed:      true,
+		Resource:     "deviceCommand",
+		Action:       action,
+		SerialNumber: serial,
+		Reason:       "ALLOWED",
+	}, nil
+}
+
 func setupDeviceTestApp(svc *mockDeviceService) *fiber.App {
 	app := fiber.New()
 	handler := handlers.NewDeviceHandler(svc)
@@ -148,7 +154,6 @@ func setupDeviceTestApp(svc *mockDeviceService) *fiber.App {
 	app.Delete("/api/v1/devices/:serial/blacklist", handler.DeleteBlacklistDevice)
 	app.Get("/api/v1/devices", handler.GetDevices)
 	app.Get("/api/v1/devices/:serial/commands", handler.GetDeviceCommands)
-	app.Delete("/api/v1/devices/:serial/commands/:uuid", handler.DeleteDeviceCommand)
 	app.Get("/api/v1/devices/:serial/healthchecks", handler.GetDeviceHealthChecks)
 	app.Get("/api/v1/devices/:serial/logs", handler.GetDeviceLogs)
 	app.Get("/api/v1/devices/:serial/statistics", handler.GetDeviceStatistics)
@@ -159,6 +164,7 @@ func setupDeviceTestApp(svc *mockDeviceService) *fiber.App {
 	app.Put("/api/v1/devices/:serial", handler.UpdateDevice)
 	app.Delete("/api/v1/devices/:serial", handler.DeleteDevice)
 	app.Post("/api/v1/devices/:serial/:command", handler.ExecuteDeviceCommand)
+	app.Post("/api/v1/authorization/deviceCommand", handler.AuthorizeDeviceCommand)
 	return app
 }
 
@@ -280,7 +286,6 @@ func TestDeviceHandler_ProxyEndpoints_MissingAuth(t *testing.T) {
 		path   string
 	}{
 		{http.MethodGet, "/api/v1/devices/60cf84f22290/commands"},
-		{http.MethodDelete, "/api/v1/devices/60cf84f22290/commands/cmd-123"},
 		{http.MethodGet, "/api/v1/devices/60cf84f22290/healthchecks"},
 		{http.MethodGet, "/api/v1/devices/60cf84f22290/logs"},
 		{http.MethodGet, "/api/v1/devices/60cf84f22290/statistics"},
@@ -311,12 +316,6 @@ func TestDeviceHandler_ProxyEndpoints_Success(t *testing.T) {
 			}
 			return json.RawMessage(`{"commands":[{"command":"configure"}]}`), nil
 		},
-		deleteDeviceCommandFn: func(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error {
-			if commandUUID != "cmd-999" {
-				t.Errorf("unexpected command uuid: %s", commandUUID)
-			}
-			return nil
-		},
 		getDeviceHealthChecksFn: func(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error) {
 			return json.RawMessage(`{"values":[{"sanity":100}]}`), nil
 		},
@@ -345,7 +344,6 @@ func TestDeviceHandler_ProxyEndpoints_Success(t *testing.T) {
 		expectedStatus int
 	}{
 		{http.MethodGet, "/api/v1/devices/60cf84f22290/commands?limit=25&newest=true", http.StatusOK},
-		{http.MethodDelete, "/api/v1/devices/60cf84f22290/commands/cmd-999", http.StatusOK},
 		{http.MethodGet, "/api/v1/devices/60cf84f22290/healthchecks?limit=10", http.StatusOK},
 		{http.MethodGet, "/api/v1/devices/60cf84f22290/logs?limit=50&logType=crash", http.StatusOK},
 		{http.MethodGet, "/api/v1/devices/60cf84f22290/statistics?lastOnly=true", http.StatusOK},
@@ -466,57 +464,6 @@ func TestDeviceHandler_DeleteDevice_MissingAuth(t *testing.T) {
 	}
 }
 
-func TestDeviceHandler_DeleteDeviceCommand_Success(t *testing.T) {
-	svc := &mockDeviceService{
-		deleteDeviceCommandFn: func(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error {
-			if serial != "60cf84f22290" || commandUUID != "cmd-uuid-1" {
-				t.Errorf("unexpected params: serial=%s, uuid=%s", serial, commandUUID)
-			}
-			return nil
-		},
-	}
-	app := setupDeviceTestApp(svc)
-
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/devices/60cf84f22290/commands/cmd-uuid-1", nil)
-	req.Header.Set("Authorization", "Bearer jwt")
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	var res map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&res)
-	if res["success"] != true {
-		t.Errorf("expected success: true, got %v", res)
-	}
-}
-
-func TestDeviceHandler_DeleteDeviceCommand_NotFound(t *testing.T) {
-	svc := &mockDeviceService{
-		deleteDeviceCommandFn: func(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error {
-			return models.NewApiError(http.StatusNotFound, "Not Found", "command not found for this device")
-		},
-	}
-	app := setupDeviceTestApp(svc)
-
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/devices/60cf84f22290/commands/cmd-victim-999", nil)
-	req.Header.Set("Authorization", "Bearer jwt")
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected status 404, got %d", resp.StatusCode)
-	}
-}
-
 func TestDeviceHandler_GetBlacklist_Success(t *testing.T) {
 	svc := &mockDeviceService{
 		getBlacklistFn: func(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error) {
@@ -595,5 +542,59 @@ func TestDeviceHandler_DeleteBlacklistDevice_Success(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeviceHandler_AuthorizeDeviceCommand_Success(t *testing.T) {
+	svc := &mockDeviceService{
+		authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+			return &models.DeviceCommandAuthResult{
+				Allowed:      true,
+				Resource:     "deviceCommand",
+				Action:       action,
+				SerialNumber: serial,
+				Reason:       "ALLOWED",
+			}, nil
+		},
+	}
+	app := setupDeviceTestApp(svc)
+
+	body := strings.NewReader(`{"serialNumber":"60cf84f22290","action":"reboot"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/authorization/deviceCommand", body)
+	req.Header.Set("Authorization", "Bearer jwt")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var authRes models.DeviceCommandAuthResult
+	if err := json.NewDecoder(resp.Body).Decode(&authRes); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !authRes.Allowed {
+		t.Errorf("expected allowed=true, got false")
+	}
+}
+
+func TestDeviceHandler_AuthorizeDeviceCommand_MissingAuth(t *testing.T) {
+	svc := &mockDeviceService{}
+	app := setupDeviceTestApp(svc)
+
+	body := strings.NewReader(`{"serialNumber":"60cf84f22290","action":"reboot"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/authorization/deviceCommand", body)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", resp.StatusCode)
 	}
 }
