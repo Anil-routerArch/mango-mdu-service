@@ -70,7 +70,16 @@ func normalizeSerial(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func validateOWGWCommandResponse(raw json.RawMessage) error {
+func lookupFold(values map[string]any, name string) (any, bool) {
+	for key, value := range values {
+		if strings.EqualFold(key, name) {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func validateOWGWCommandResponse(raw json.RawMessage, expectedSerial, command string) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var response map[string]any
@@ -78,38 +87,57 @@ func validateOWGWCommandResponse(raw json.RawMessage) error {
 		return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command response")
 	}
 
-	var errorCode int64
-	for key, value := range response {
-		if !strings.EqualFold(key, "errorCode") {
-			continue
+	// OWGW's telemetry handler returns a telemetry status object rather than the
+	// CommandDetails object used by commands executed through WaitForCommand.
+	if canonicalDeviceCommandAction(command) == "TELEMETRY" {
+		action, actionOK := lookupFold(response, "action")
+		status, statusOK := lookupFold(response, "status")
+		actionText, actionIsString := action.(string)
+		_, statusIsObject := status.(map[string]any)
+		if !actionOK || !actionIsString || strings.TrimSpace(actionText) == "" ||
+			!statusOK || !statusIsObject {
+			return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid telemetry response")
 		}
-		switch code := value.(type) {
-		case json.Number:
-			parsed, err := code.Int64()
-			if err != nil {
-				return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command error code")
-			}
-			errorCode = parsed
-		case string:
-			parsed, err := strconv.ParseInt(strings.TrimSpace(code), 10, 64)
-			if err != nil {
-				return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command error code")
-			}
-			errorCode = parsed
-		case nil:
-			errorCode = 0
-		default:
-			return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command error code")
-		}
-		break
+		return nil
 	}
 
-	status := ""
+	uuid, uuidOK := lookupFold(response, "UUID")
+	serial, serialOK := lookupFold(response, "serialNumber")
+	returnedCommand, commandOK := lookupFold(response, "command")
+	statusValue, statusOK := lookupFold(response, "status")
+	errorCodeValue, errorCodeOK := lookupFold(response, "errorCode")
+	uuidText, uuidIsString := uuid.(string)
+	serialText, serialIsString := serial.(string)
+	commandText, commandIsString := returnedCommand.(string)
+	status, statusIsString := statusValue.(string)
+	if !uuidOK || !uuidIsString || strings.TrimSpace(uuidText) == "" ||
+		!serialOK || !serialIsString || normalizeSerial(serialText) != normalizeSerial(expectedSerial) ||
+		!commandOK || !commandIsString || strings.TrimSpace(commandText) == "" ||
+		!statusOK || !statusIsString || strings.TrimSpace(status) == "" || !errorCodeOK {
+		return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an incomplete command response")
+	}
+
+	var errorCode int64
+	switch code := errorCodeValue.(type) {
+	case json.Number:
+		parsed, err := code.Int64()
+		if err != nil {
+			return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command error code")
+		}
+		errorCode = parsed
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(code), 10, 64)
+		if err != nil {
+			return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command error code")
+		}
+		errorCode = parsed
+	default:
+		return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command error code")
+	}
+
 	errorText := ""
 	for key, value := range response {
 		switch {
-		case strings.EqualFold(key, "status"):
-			status, _ = value.(string)
 		case strings.EqualFold(key, "errorText") || strings.EqualFold(key, "errorDescription"):
 			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
 				errorText = text
@@ -641,7 +669,7 @@ func (s *deviceService) PushDirectDeviceConfiguration(ctx context.Context, seria
 	if err != nil {
 		return nil, err
 	}
-	if err := validateOWGWCommandResponse(result); err != nil {
+	if err := validateOWGWCommandResponse(result, norm, "configure"); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -733,7 +761,7 @@ func (s *deviceService) ExecuteDeviceCommand(ctx context.Context, serial, comman
 	if err != nil {
 		return nil, err
 	}
-	if err := validateOWGWCommandResponse(result); err != nil {
+	if err := validateOWGWCommandResponse(result, norm, command); err != nil {
 		return nil, err
 	}
 	return result, nil

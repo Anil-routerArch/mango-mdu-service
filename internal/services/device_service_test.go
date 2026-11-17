@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
@@ -97,7 +98,7 @@ func (m *mockGWClient) ExecuteDeviceCommand(ctx context.Context, serial, command
 	if m.executeDeviceCommandFn != nil {
 		return m.executeDeviceCommandFn(ctx, serial, command, body, token, reqID, corrID)
 	}
-	return json.RawMessage(`{"result":"ok"}`), nil
+	return json.RawMessage(fmt.Sprintf(`{"UUID":"cmd-1","serialNumber":%q,"command":%q,"status":"completed","errorCode":0}`, serial, command)), nil
 }
 
 func (m *mockGWClient) GetDeviceRtty(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
@@ -581,7 +582,7 @@ func TestDeviceService_PushDirectDeviceConfiguration_AuthorizesAndBuildsEnvelope
 			if payload.Configuration["radios"] == nil || payload.Configuration["uuid"] != float64(payload.UUID) {
 				t.Fatalf("unexpected gateway configuration: %+v", payload.Configuration)
 			}
-			return json.RawMessage(`{"status":"pending"}`), nil
+			return json.RawMessage(`{"UUID":"cmd-1","serialNumber":"60cf84f22290","command":"configure","status":"pending","errorCode":0}`), nil
 		},
 	}
 	requestConfig := map[string]any{"uuid": float64(7), "radios": map[string]any{"band": "5G"}}
@@ -597,7 +598,7 @@ func TestDeviceService_PushDirectDeviceConfiguration_AuthorizesAndBuildsEnvelope
 	if requestConfig["uuid"] != float64(7) {
 		t.Fatalf("service mutated caller configuration: %+v", requestConfig)
 	}
-	if string(result) != `{"status":"pending"}` {
+	if string(result) != `{"UUID":"cmd-1","serialNumber":"60cf84f22290","command":"configure","status":"pending","errorCode":0}` {
 		t.Fatalf("unexpected response: %s", result)
 	}
 }
@@ -650,11 +651,16 @@ func TestDeviceService_ExecuteDeviceCommand_InterpretsOWGWStatus(t *testing.T) {
 		response   string
 		wantStatus int
 	}{
-		{name: "pending is preserved", response: `{"UUID":"cmd-1","status":"pending","errorCode":0}`},
-		{name: "completed is preserved", response: `{"UUID":"cmd-2","status":"completed","errorCode":0}`},
-		{name: "failed status is rejected", response: `{"UUID":"cmd-3","status":"failed","errorCode":0,"errorText":"device rejected command"}`, wantStatus: http.StatusBadRequest},
-		{name: "nonzero lowercase error code is rejected", response: `{"status":"completed","errorCode":2,"errorText":"configuration invalid"}`, wantStatus: http.StatusBadRequest},
-		{name: "nonzero uppercase string error code is rejected", response: `{"status":"completed","ErrorCode":"7","ErrorDescription":"command failed"}`, wantStatus: http.StatusBadRequest},
+		{name: "pending is preserved", response: `{"UUID":"cmd-1","serialNumber":"60cf84f22290","command":"reboot","status":"pending","errorCode":0}`},
+		{name: "completed is preserved", response: `{"UUID":"cmd-2","serialNumber":"60cf84f22290","command":"reboot","status":"completed","errorCode":0}`},
+		{name: "failed status is rejected", response: `{"UUID":"cmd-3","serialNumber":"60cf84f22290","command":"reboot","status":"failed","errorCode":0,"errorText":"device rejected command"}`, wantStatus: http.StatusBadRequest},
+		{name: "nonzero lowercase error code is rejected", response: `{"UUID":"cmd-4","serialNumber":"60cf84f22290","command":"reboot","status":"completed","errorCode":2,"errorText":"configuration invalid"}`, wantStatus: http.StatusBadRequest},
+		{name: "nonzero uppercase string error code is rejected", response: `{"UUID":"cmd-5","serialNumber":"60cf84f22290","command":"reboot","status":"completed","ErrorCode":"7","ErrorDescription":"command failed"}`, wantStatus: http.StatusBadRequest},
+		{name: "empty object is rejected", response: `{}`, wantStatus: http.StatusBadGateway},
+		{name: "unrelated object is rejected", response: `{"unexpected":"value"}`, wantStatus: http.StatusBadGateway},
+		{name: "missing command identity is rejected", response: `{"UUID":"cmd-6","status":"completed","errorCode":0}`, wantStatus: http.StatusBadGateway},
+		{name: "different serial is rejected", response: `{"UUID":"cmd-7","serialNumber":"60cf84f22291","command":"reboot","status":"completed","errorCode":0}`, wantStatus: http.StatusBadGateway},
+		{name: "null error code is rejected", response: `{"UUID":"cmd-8","serialNumber":"60cf84f22290","command":"reboot","status":"completed","errorCode":null}`, wantStatus: http.StatusBadGateway},
 		{name: "invalid JSON is rejected", response: `not-json`, wantStatus: http.StatusBadGateway},
 	}
 
@@ -672,6 +678,41 @@ func TestDeviceService_ExecuteDeviceCommand_InterpretsOWGWStatus(t *testing.T) {
 				}
 				if string(result) != tc.response {
 					t.Fatalf("expected raw OWGW response to be preserved, got %s", result)
+				}
+				return
+			}
+			var apiErr models.ApiError
+			if !errors.As(err, &apiErr) || apiErr.ErrorCode != tc.wantStatus {
+				t.Fatalf("expected ApiError status %d, got %T %v", tc.wantStatus, err, err)
+			}
+		})
+	}
+}
+
+func TestDeviceService_ExecuteDeviceCommand_ValidatesTelemetryResponseShape(t *testing.T) {
+	prov := &mockProvClient{authorizeDeviceCommandFn: func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
+		return &models.DeviceCommandAuthResult{Allowed: true, Resource: "deviceCommand", Action: "TELEMETRY", SerialNumber: serial}, nil
+	}}
+
+	for _, tc := range []struct {
+		name       string
+		response   string
+		wantStatus int
+	}{
+		{name: "telemetry status is preserved", response: `{"action":"WebSocket telemetry started.","status":{"running":true,"interval":5}}`},
+		{name: "missing telemetry status is rejected", response: `{"action":"WebSocket telemetry started."}`, wantStatus: http.StatusBadGateway},
+		{name: "missing telemetry action is rejected", response: `{"status":{"running":true}}`, wantStatus: http.StatusBadGateway},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gw := &mockGWClient{executeDeviceCommandFn: func(context.Context, string, string, []byte, string, string, string) (json.RawMessage, error) {
+				return json.RawMessage(tc.response), nil
+			}}
+			result, err := services.NewDeviceService(prov, gw).ExecuteDeviceCommand(
+				context.Background(), "60cf84f22290", "telemetry", []byte(`{"serialNumber":"60cf84f22290","types":["health"]}`), "jwt", "req", "corr",
+			)
+			if tc.wantStatus == 0 {
+				if err != nil || string(result) != tc.response {
+					t.Fatalf("expected telemetry response to be preserved, got result=%s err=%v", result, err)
 				}
 				return
 			}
@@ -920,7 +961,7 @@ func TestDeviceService_CommandAuthorizationEnforcement(t *testing.T) {
 	const token = "Bearer delegated-user-token"
 	const reqID = "req-authz"
 	const corrID = "corr-authz"
-	response := json.RawMessage(`{"result":"ok"}`)
+	response := json.RawMessage(`{"UUID":"cmd-1","serialNumber":"60cf84f22290","command":"reboot","status":"completed","errorCode":0}`)
 	downstreamFailure := errors.New("OWPROV connection failed")
 
 	for _, operation := range []string{"reboot", "rtty", "eventqueue"} {
@@ -1132,7 +1173,10 @@ func TestDeviceService_CommandAuthorizationAliases(t *testing.T) {
 				if serial != "aabbccddeeff" || command != tc.requested {
 					t.Fatalf("unexpected gateway request: serial=%q command=%q", serial, command)
 				}
-				return json.RawMessage(`{"result":"ok"}`), nil
+				if command == "telemetry" {
+					return json.RawMessage(`{"action":"Telemetry status only.","status":{"running":false}}`), nil
+				}
+				return json.RawMessage(fmt.Sprintf(`{"UUID":"cmd-1","serialNumber":%q,"command":%q,"status":"completed","errorCode":0}`, serial, command)), nil
 			}
 			gw := &mockGWClient{
 				executeDeviceCommandFn: func(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {

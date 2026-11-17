@@ -744,6 +744,21 @@ func (c *client) ApplyDeviceConfiguration(ctx context.Context, serial, token, re
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWPROV returned an empty apply configuration response")
 	}
+
+	var result struct {
+		ErrorCode *uint64  `json:"errorCode"`
+		Errors    []string `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || result.ErrorCode == nil {
+		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWPROV returned an invalid apply configuration response")
+	}
+	if *result.ErrorCode != 0 {
+		details := strings.Join(result.Errors, "; ")
+		if strings.TrimSpace(details) == "" {
+			details = fmt.Sprintf("OWPROV failed to apply the device configuration (errorCode %d)", *result.ErrorCode)
+		}
+		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", details)
+	}
 	return json.RawMessage(body), nil
 }
 

@@ -627,6 +627,39 @@ func TestOWProvClient_ApplyDeviceConfiguration(t *testing.T) {
 			t.Fatalf("expected downstream 403 ApiError, got %T %v", err, err)
 		}
 	})
+
+	t.Run("rejects application failure returned with HTTP 200", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"errorCode":1,"errors":["configuration application failed"]}`))
+		}))
+		defer ts.Close()
+
+		client := owprov.NewClient(testOWProvConfig(ts.URL))
+		_, err := client.ApplyDeviceConfiguration(context.Background(), "60cf84f22290", "token", "req", "corr")
+		var apiErr models.ApiError
+		if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusBadGateway {
+			t.Fatalf("expected application failure as 502 ApiError, got %T %v", err, err)
+		}
+		if apiErr.ErrorDetails != "configuration application failed" {
+			t.Fatalf("expected OWPROV failure details, got %q", apiErr.ErrorDetails)
+		}
+	})
+
+	t.Run("rejects malformed HTTP 200 response", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"errorCode":`))
+		}))
+		defer ts.Close()
+
+		client := owprov.NewClient(testOWProvConfig(ts.URL))
+		_, err := client.ApplyDeviceConfiguration(context.Background(), "60cf84f22290", "token", "req", "corr")
+		var apiErr models.ApiError
+		if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusBadGateway {
+			t.Fatalf("expected malformed response as 502 ApiError, got %T %v", err, err)
+		}
+	})
 }
 
 func TestOWProvClient_AuthorizeDeviceCommand_Denied(t *testing.T) {
