@@ -31,6 +31,8 @@ type DeviceService interface {
 	GetDeviceStatistics(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
 	GetDeviceStatus(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	GetDeviceCapabilities(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	ApplyProvisionedDeviceConfiguration(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	PushDirectDeviceConfiguration(ctx context.Context, serial string, req models.DirectDeviceConfigurationRequest, token, reqID, corrID string) (json.RawMessage, error)
 	ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	GetDeviceRtty(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
@@ -66,6 +68,62 @@ func normalizeSerial(s string) string {
 	s = strings.ReplaceAll(s, ":", "")
 	s = strings.ReplaceAll(s, "-", "")
 	return strings.TrimSpace(s)
+}
+
+func validateOWGWCommandResponse(raw json.RawMessage) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var response map[string]any
+	if err := decoder.Decode(&response); err != nil || response == nil {
+		return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command response")
+	}
+
+	var errorCode int64
+	for key, value := range response {
+		if !strings.EqualFold(key, "errorCode") {
+			continue
+		}
+		switch code := value.(type) {
+		case json.Number:
+			parsed, err := code.Int64()
+			if err != nil {
+				return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command error code")
+			}
+			errorCode = parsed
+		case string:
+			parsed, err := strconv.ParseInt(strings.TrimSpace(code), 10, 64)
+			if err != nil {
+				return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command error code")
+			}
+			errorCode = parsed
+		case nil:
+			errorCode = 0
+		default:
+			return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command error code")
+		}
+		break
+	}
+
+	status := ""
+	errorText := ""
+	for key, value := range response {
+		switch {
+		case strings.EqualFold(key, "status"):
+			status, _ = value.(string)
+		case strings.EqualFold(key, "errorText") || strings.EqualFold(key, "errorDescription"):
+			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+				errorText = text
+			}
+		}
+	}
+
+	if errorCode != 0 || strings.EqualFold(strings.TrimSpace(status), "failed") {
+		if strings.TrimSpace(errorText) == "" {
+			errorText = "OWGW rejected or failed the device command"
+		}
+		return models.NewApiError(http.StatusBadRequest, "Command Failed", errorText)
+	}
+	return nil
 }
 
 func parseLastContact(v any) *int64 {
@@ -206,13 +264,24 @@ func (s *deviceService) GetDevices(ctx context.Context, token, reqID, corrID str
 			}
 		}
 
+		// Resolve authoritative hardware SKU (Finding F7)
+		// DeviceType represents the specific hardware SKU (e.g. edgecore_ecs4100_12ph),
+		// while DeviceGroup represents the normalized platform category (e.g. switch, ap, olg).
+		hardwareSku := strings.TrimSpace(tag.DeviceType)
+		if hardwareSku == "" && hasGw && liveGw.Compatible != "" {
+			hardwareSku = strings.TrimSpace(liveGw.Compatible)
+		}
+		if hardwareSku == "" {
+			hardwareSku = platformType
+		}
+
 		item := models.DeviceFleetItem{
 			SerialNumber: tag.SerialNumber,
 			Name:         tag.Name,
 			Description:  tag.Description,
 			Model:        model,
 			DeviceGroup:  platformType,
-			DeviceType:   platformType,
+			DeviceType:   hardwareSku,
 			IPAddress:    "-",
 		}
 
@@ -501,6 +570,83 @@ func canonicalDeviceCommandAction(action string) string {
 	}
 }
 
+// ApplyProvisionedDeviceConfiguration delegates compilation and delivery to
+// OWPROV, matching the existing OWPROV UI applyConfiguration flow.
+func (s *deviceService) ApplyProvisionedDeviceConfiguration(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+	if s.provClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")
+	}
+	return s.provClient.ApplyDeviceConfiguration(ctx, norm, token, reqID, corrID)
+}
+
+// PushDirectDeviceConfiguration sends a concrete operator-supplied
+// configuration to OWGW after explicit CONFIGURE authorization in OWPROV.
+func (s *deviceService) PushDirectDeviceConfiguration(ctx context.Context, serial string, req models.DirectDeviceConfigurationRequest, token, reqID, corrID string) (json.RawMessage, error) {
+	norm := normalizeSerial(serial)
+	if norm == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+	if len(req.Configuration) == 0 {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "configuration must be a non-empty JSON object")
+	}
+
+	hasSettings := false
+	for key := range req.Configuration {
+		if !strings.EqualFold(strings.TrimSpace(key), "uuid") {
+			hasSettings = true
+			break
+		}
+	}
+	if !hasSettings {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "configuration must contain device settings in addition to uuid")
+	}
+
+	authRes, err := s.AuthorizeDeviceCommand(ctx, norm, "CONFIGURE", token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+	if !authRes.Allowed {
+		details := authRes.Details
+		if details == "" {
+			details = authRes.Reason
+		}
+		return nil, models.NewApiError(http.StatusForbidden, "Forbidden", details)
+	}
+	if s.gwClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
+	}
+
+	commandUUID := uint64(time.Now().Unix())
+	configuration := make(map[string]any, len(req.Configuration)+1)
+	for key, value := range req.Configuration {
+		configuration[key] = value
+	}
+	configuration["uuid"] = commandUUID
+
+	payload := map[string]any{
+		"serialNumber":  norm,
+		"UUID":          commandUUID,
+		"when":          req.When,
+		"configuration": configuration,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, models.NewApiError(http.StatusInternalServerError, "Internal Server Error", "failed to encode direct configuration request")
+	}
+	result, err := s.gwClient.ExecuteDeviceCommand(ctx, norm, "configure", body, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOWGWCommandResponse(result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // AuthorizeDeviceCommand verifies the decision applies to the requested device and command.
 func (s *deviceService) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
 	norm := normalizeSerial(serial)
@@ -583,7 +729,14 @@ func (s *deviceService) ExecuteDeviceCommand(ctx context.Context, serial, comman
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
 	}
 
-	return s.gwClient.ExecuteDeviceCommand(ctx, norm, command, body, token, reqID, corrID)
+	result, err := s.gwClient.ExecuteDeviceCommand(ctx, norm, command, body, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOWGWCommandResponse(result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // GetDeviceRtty initiates or fetches RTTY connection details from OWGW after verifying authorization.

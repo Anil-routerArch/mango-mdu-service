@@ -60,6 +60,14 @@ func (d *dummyDeviceService) GetDeviceCapabilities(ctx context.Context, serial, 
 	return json.RawMessage(`{"capabilities":{"model":"ASUS RT-AX53U"}}`), nil
 }
 
+func (d *dummyDeviceService) ApplyProvisionedDeviceConfiguration(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+	return json.RawMessage(`{"errorCode":0}`), nil
+}
+
+func (d *dummyDeviceService) PushDirectDeviceConfiguration(ctx context.Context, serial string, req models.DirectDeviceConfigurationRequest, token, reqID, corrID string) (json.RawMessage, error) {
+	return json.RawMessage(`{"status":"pending"}`), nil
+}
+
 func (d *dummyDeviceService) ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
 	return json.RawMessage(`{"result":"ok"}`), nil
 }

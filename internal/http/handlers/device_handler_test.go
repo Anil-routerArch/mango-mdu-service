@@ -25,6 +25,8 @@ type mockDeviceService struct {
 	getDeviceFn              func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	updateDeviceFn           func(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	getDeviceCapabilitiesFn  func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	applyProvisionedConfigFn func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
+	pushDirectConfigFn       func(ctx context.Context, serial string, req models.DirectDeviceConfigurationRequest, token, reqID, corrID string) (json.RawMessage, error)
 	deleteDeviceFn           func(ctx context.Context, serial, token, reqID, corrID string) error
 	getBlacklistFn           func(ctx context.Context, token, reqID, corrID string) ([]models.BlacklistDevice, error)
 	addBlacklistFn           func(ctx context.Context, serial, reason string, token, reqID, corrID string) (json.RawMessage, error)
@@ -95,6 +97,20 @@ func (m *mockDeviceService) GetDeviceCapabilities(ctx context.Context, serial, t
 	return json.RawMessage(`{"capabilities":{"model":"ASUS RT-AX53U"}}`), nil
 }
 
+func (m *mockDeviceService) ApplyProvisionedDeviceConfiguration(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+	if m.applyProvisionedConfigFn != nil {
+		return m.applyProvisionedConfigFn(ctx, serial, token, reqID, corrID)
+	}
+	return json.RawMessage(`{"errorCode":0}`), nil
+}
+
+func (m *mockDeviceService) PushDirectDeviceConfiguration(ctx context.Context, serial string, req models.DirectDeviceConfigurationRequest, token, reqID, corrID string) (json.RawMessage, error) {
+	if m.pushDirectConfigFn != nil {
+		return m.pushDirectConfigFn(ctx, serial, req, token, reqID, corrID)
+	}
+	return json.RawMessage(`{"status":"pending"}`), nil
+}
+
 func (m *mockDeviceService) ExecuteDeviceCommand(ctx context.Context, serial, command string, body []byte, token, reqID, corrID string) (json.RawMessage, error) {
 	return json.RawMessage(`{"result":"ok"}`), nil
 }
@@ -159,6 +175,8 @@ func setupDeviceTestApp(svc *mockDeviceService) *fiber.App {
 	app.Get("/api/v1/devices/:serial/statistics", handler.GetDeviceStatistics)
 	app.Get("/api/v1/devices/:serial/status", handler.GetDeviceStatus)
 	app.Get("/api/v1/devices/:serial/capabilities", handler.GetDeviceCapabilities)
+	app.Post("/api/v1/devices/:serial/configuration/apply-provisioned", handler.ApplyProvisionedDeviceConfiguration)
+	app.Post("/api/v1/devices/:serial/configuration/push-direct", handler.PushDirectDeviceConfiguration)
 	app.Get("/api/v1/devices/:serial/rtty", handler.GetDeviceRtty)
 	app.Get("/api/v1/devices/:serial", handler.GetDevice)
 	app.Put("/api/v1/devices/:serial", handler.UpdateDevice)
@@ -579,6 +597,81 @@ func TestDeviceHandler_AuthorizeDeviceCommand_Success(t *testing.T) {
 	}
 	if !authRes.Allowed {
 		t.Errorf("expected allowed=true, got false")
+	}
+}
+
+func TestDeviceHandler_ApplyProvisionedDeviceConfiguration(t *testing.T) {
+	called := 0
+	svc := &mockDeviceService{applyProvisionedConfigFn: func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+		called++
+		if serial != "60:cf:84:f2:22:90" || token != "Bearer jwt" || reqID != "req" || corrID != "corr" {
+			t.Fatalf("unexpected service arguments: serial=%q token=%q reqID=%q corrID=%q", serial, token, reqID, corrID)
+		}
+		return json.RawMessage(`{"errorCode":0}`), nil
+	}}
+	app := setupDeviceTestApp(svc)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/60:cf:84:f2:22:90/configuration/apply-provisioned", nil)
+	req.Header.Set("Authorization", "Bearer jwt")
+	req.Header.Set("X-Request-Id", "req")
+	req.Header.Set("X-Correlation-Id", "corr")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || called != 1 {
+		t.Fatalf("expected status 200 and one service call, got status=%d calls=%d", resp.StatusCode, called)
+	}
+}
+
+func TestDeviceHandler_PushDirectDeviceConfiguration_StrictBody(t *testing.T) {
+	t.Run("valid request", func(t *testing.T) {
+		called := 0
+		svc := &mockDeviceService{pushDirectConfigFn: func(ctx context.Context, serial string, request models.DirectDeviceConfigurationRequest, token, reqID, corrID string) (json.RawMessage, error) {
+			called++
+			if serial != "60cf84f22290" || request.When != 9 || request.Configuration["radios"] == nil {
+				t.Fatalf("unexpected direct configuration request: serial=%q request=%+v", serial, request)
+			}
+			return json.RawMessage(`{"status":"pending"}`), nil
+		}}
+		app := setupDeviceTestApp(svc)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/60cf84f22290/configuration/push-direct", strings.NewReader(`{"configuration":{"radios":{"band":"5G"}},"when":9}`))
+		req.Header.Set("Authorization", "Bearer jwt")
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || called != 1 {
+			t.Fatalf("expected status 200 and one service call, got status=%d calls=%d", resp.StatusCode, called)
+		}
+	})
+
+	for _, body := range []string{
+		`{"configuration":{"radios":{}},"unexpected":true}`,
+		`{"configuration":{"radios":{}}}{"configuration":{"radios":{}}}`,
+		`not-json`,
+	} {
+		t.Run("rejects malformed or unknown fields", func(t *testing.T) {
+			called := 0
+			svc := &mockDeviceService{pushDirectConfigFn: func(context.Context, string, models.DirectDeviceConfigurationRequest, string, string, string) (json.RawMessage, error) {
+				called++
+				return nil, nil
+			}}
+			app := setupDeviceTestApp(svc)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/60cf84f22290/configuration/push-direct", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer jwt")
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest || called != 0 {
+				t.Fatalf("expected status 400 and no service call, got status=%d calls=%d", resp.StatusCode, called)
+			}
+		})
 	}
 }
 

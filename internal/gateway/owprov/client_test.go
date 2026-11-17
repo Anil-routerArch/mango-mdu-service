@@ -574,6 +574,61 @@ func TestOWProvClient_AuthorizeDeviceCommand_Success(t *testing.T) {
 	}
 }
 
+func TestOWProvClient_ApplyDeviceConfiguration(t *testing.T) {
+	t.Run("forwards delegated identity and returns OWPROV response", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != "/api/v1/inventory/60cf84f22290" {
+				t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			}
+			if r.URL.Query().Get("applyConfiguration") != "true" {
+				t.Errorf("missing applyConfiguration=true query: %s", r.URL.RawQuery)
+			}
+			for header, expected := range map[string]string{
+				"X-INTERNAL-NAME":  "mango-mdu-service",
+				"X-API-KEY":        "secret-prov-key",
+				"Authorization":    "Bearer user-token",
+				"X-Request-Id":     "req-1",
+				"X-Correlation-Id": "corr-1",
+			} {
+				if actual := r.Header.Get(header); actual != expected {
+					t.Errorf("expected %s=%q, got %q", header, expected, actual)
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"errorCode":0,"appliedConfiguration":true}`))
+		}))
+		defer ts.Close()
+
+		client := owprov.NewClient(owprov.Config{
+			InstanceResolver: func() (string, string, error) { return ts.URL, "secret-prov-key", nil },
+			InternalName:     "mango-mdu-service",
+		})
+		result, err := client.ApplyDeviceConfiguration(context.Background(), "60:cf:84:f2:22:90", "Bearer user-token", "req-1", "corr-1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(result) != `{"errorCode":0,"appliedConfiguration":true}` {
+			t.Fatalf("unexpected response: %s", result)
+		}
+	})
+
+	t.Run("propagates downstream error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"ErrorCode":403,"ErrorDescription":"inventory access denied"}`))
+		}))
+		defer ts.Close()
+
+		client := owprov.NewClient(testOWProvConfig(ts.URL))
+		_, err := client.ApplyDeviceConfiguration(context.Background(), "60cf84f22290", "token", "req", "corr")
+		var apiErr models.ApiError
+		if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusForbidden {
+			t.Fatalf("expected downstream 403 ApiError, got %T %v", err, err)
+		}
+	})
+}
+
 func TestOWProvClient_AuthorizeDeviceCommand_Denied(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := models.DeviceCommandAuthResult{
