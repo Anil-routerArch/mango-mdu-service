@@ -26,7 +26,6 @@ type DeviceService interface {
 	GetDevice(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	UpdateDevice(ctx context.Context, serial string, body []byte, token, reqID, corrID string) (json.RawMessage, error)
 	GetDeviceCommands(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
-	DeleteDeviceCommand(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error
 	GetDeviceHealthChecks(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
 	GetDeviceLogs(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
 	GetDeviceStatistics(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error)
@@ -358,57 +357,6 @@ func (s *deviceService) GetDeviceCommands(ctx context.Context, serial, token, re
 	}
 	queryParams.Set("serialNumber", norm)
 	return s.gwClient.GetCommands(ctx, queryParams, token, reqID, corrID)
-}
-
-// DeleteDeviceCommand deletes a specific command record in OWGW after verifying user authorization in OWPROV
-// and verifying that the command record actually belongs to the specified device serial.
-func (s *deviceService) DeleteDeviceCommand(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error {
-	normSerial := normalizeSerial(serial)
-	if normSerial == "" {
-		return models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
-	}
-	cleanUUID := strings.TrimSpace(commandUUID)
-	if cleanUUID == "" {
-		return models.NewApiError(http.StatusBadRequest, "Bad Request", "command UUID is required")
-	}
-
-	if err := s.verifyDeviceAccess(ctx, normSerial, token, reqID, corrID); err != nil {
-		return err
-	}
-	if s.gwClient == nil {
-		return models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owgw client unavailable")
-	}
-
-	// Fetch command details to verify ownership before deletion
-	cmdRaw, err := s.gwClient.GetCommand(ctx, cleanUUID, token, reqID, corrID)
-	if err != nil {
-		return err
-	}
-
-	var cmd struct {
-		SerialNumber string `json:"serialNumber"`
-	}
-	if err := json.Unmarshal(cmdRaw, &cmd); err != nil {
-		if s.logger != nil {
-			s.logger.Error("failed to parse command record from OWGW", "commandUUID", cleanUUID, "error", err)
-		}
-		return models.NewApiError(http.StatusInternalServerError, "Internal Server Error", "failed to parse command record")
-	}
-
-	if normalizeSerial(cmd.SerialNumber) != normSerial {
-		if s.logger != nil {
-			s.logger.Warn("rejected command deletion: command does not belong to specified device",
-				"commandUUID", cleanUUID,
-				"requestedSerial", normSerial,
-				"commandSerial", normalizeSerial(cmd.SerialNumber),
-				"request_id", reqID,
-				"correlation_id", corrID,
-			)
-		}
-		return models.NewApiError(http.StatusNotFound, "Not Found", "command not found for this device")
-	}
-
-	return s.gwClient.DeleteCommand(ctx, cleanUUID, token, reqID, corrID)
 }
 
 // GetDeviceHealthChecks proxies healthcheck history from OWGW after verifying user authorization in OWPROV.

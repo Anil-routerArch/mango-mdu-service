@@ -218,37 +218,6 @@ func (h *DeviceHandler) GetDeviceCommands(c fiber.Ctx) error {
 	return c.Status(http.StatusOK).Send(data)
 }
 
-// DeleteDeviceCommand handles DELETE /api/v1/devices/:serial/commands/:uuid.
-func (h *DeviceHandler) DeleteDeviceCommand(c fiber.Ctx) error {
-	token := c.Get("Authorization")
-	reqID := c.Get("X-Request-Id")
-	corrID := c.Get("X-Correlation-Id")
-	serial := c.Params("serial")
-	commandUUID := c.Params("commandUUID")
-	if commandUUID == "" {
-		commandUUID = c.Params("uuid")
-	}
-
-	if token == "" {
-		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
-			http.StatusUnauthorized, "Unauthorized", "Authorization header is required",
-		))
-	}
-
-	err := h.svc.DeleteDeviceCommand(c.Context(), serial, commandUUID, token, reqID, corrID)
-	if err != nil {
-		var apiErr models.ApiError
-		if errors.As(err, &apiErr) {
-			return c.Status(apiErr.ErrorCode).JSON(apiErr)
-		}
-		return c.Status(http.StatusInternalServerError).JSON(models.NewApiError(
-			http.StatusInternalServerError, "Internal Server Error", err.Error(),
-		))
-	}
-
-	return c.Status(http.StatusOK).JSON(fiber.Map{"success": true})
-}
-
 // ExecuteDeviceCommand handles POST /api/v1/devices/:serial/:command.
 func (h *DeviceHandler) ExecuteDeviceCommand(c fiber.Ctx) error {
 	token := c.Get("Authorization")

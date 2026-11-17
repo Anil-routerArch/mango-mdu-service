@@ -32,10 +32,6 @@ func (d *dummyDeviceService) GetDeviceCommands(ctx context.Context, serial, toke
 	return json.RawMessage(`{"commands":[]}`), nil
 }
 
-func (d *dummyDeviceService) DeleteDeviceCommand(ctx context.Context, serial, commandUUID, token, reqID, corrID string) error {
-	return nil
-}
-
 func (d *dummyDeviceService) GetDeviceHealthChecks(ctx context.Context, serial, token, reqID, corrID string, queryParams url.Values) (json.RawMessage, error) {
 	return json.RawMessage(`{"healthchecks":[]}`), nil
 }
@@ -130,6 +126,7 @@ func TestRouteVisibility(t *testing.T) {
 	hasSubscriptionsRoute := false
 	hasWsRoute := false
 	hasRootWsRoute := false
+	hasCommandDeleteRoute := false
 	for _, route := range publicApp.GetRoutes() {
 		if route.Path == "/api/v1/system" {
 			hasPublicSystemRoute = true
@@ -152,6 +149,9 @@ func TestRouteVisibility(t *testing.T) {
 		if route.Path == "/ws" {
 			hasRootWsRoute = true
 		}
+		if route.Method == http.MethodDelete && route.Path == "/api/v1/devices/:serial/commands/:uuid" {
+			hasCommandDeleteRoute = true
+		}
 	}
 	if !hasPublicSystemRoute {
 		t.Errorf("expected public app to register /api/v1/system route, but it did not")
@@ -173,6 +173,9 @@ func TestRouteVisibility(t *testing.T) {
 	}
 	if !hasRootWsRoute {
 		t.Errorf("expected public app to register /ws route, but it did not")
+	}
+	if hasCommandDeleteRoute {
+		t.Errorf("expected command-record deletion route to remain unregistered")
 	}
 
 	// Check if private app has system route registered
