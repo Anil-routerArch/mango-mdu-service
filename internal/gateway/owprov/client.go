@@ -47,6 +47,7 @@ type client struct {
 	instanceResolver InstanceResolver
 	internalName     string
 	httpClient       *http.Client
+	applyHTTPClient  *http.Client
 	logger           *slog.Logger
 }
 
@@ -56,8 +57,11 @@ type Config struct {
 	InstanceResolver InstanceResolver
 	InternalName     string
 	Timeout          time.Duration
-	TLSConfig        *tls.Config
-	Logger           *slog.Logger
+	// ApplyTimeout must cover OWPROV configuration compilation plus its
+	// downstream OWGW command timeout.
+	ApplyTimeout time.Duration
+	TLSConfig    *tls.Config
+	Logger       *slog.Logger
 }
 
 // NewClient creates a new OWPROV client instance.
@@ -65,6 +69,10 @@ func NewClient(cfg Config) Client {
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = 60 * time.Second
+	}
+	applyTimeout := cfg.ApplyTimeout
+	if applyTimeout <= 0 {
+		applyTimeout = timeout
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -82,6 +90,10 @@ func NewClient(cfg Config) Client {
 		internalName:     cfg.InternalName,
 		httpClient: &http.Client{
 			Timeout:   timeout,
+			Transport: transport,
+		},
+		applyHTTPClient: &http.Client{
+			Timeout:   applyTimeout,
 			Transport: transport,
 		},
 		logger: logger,
@@ -717,7 +729,7 @@ func (c *client) ApplyDeviceConfiguration(ctx context.Context, serial, token, re
 	}
 	c.setHeaders(req, key, token, reqID, corrID)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.applyHTTPClient.Do(req)
 	if err != nil {
 		if c.logger != nil {
 			c.logger.Error("downstream OWPROV apply configuration request failed",

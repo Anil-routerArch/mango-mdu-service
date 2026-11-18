@@ -632,10 +632,18 @@ func TestDeviceHandler_PushDirectDeviceConfiguration_StrictBody(t *testing.T) {
 			if serial != "60cf84f22290" || request.When != 9 || request.Configuration["radios"] == nil {
 				t.Fatalf("unexpected direct configuration request: serial=%q request=%+v", serial, request)
 			}
+			radios, ok := request.Configuration["radios"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected radios object, got %T", request.Configuration["radios"])
+			}
+			counter, ok := radios["counter"].(json.Number)
+			if !ok || counter.String() != "9007199254740993" {
+				t.Fatalf("large integer lost precision: %#v (%T)", radios["counter"], radios["counter"])
+			}
 			return json.RawMessage(`{"status":"pending"}`), nil
 		}}
 		app := setupDeviceTestApp(svc)
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/60cf84f22290/configuration/push-direct", strings.NewReader(`{"configuration":{"radios":{"band":"5G"}},"when":9}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/60cf84f22290/configuration/push-direct", strings.NewReader(`{"configuration":{"radios":{"band":"5G","counter":9007199254740993}},"when":9}`))
 		req.Header.Set("Authorization", "Bearer jwt")
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := app.Test(req)

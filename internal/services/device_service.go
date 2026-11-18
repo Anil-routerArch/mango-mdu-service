@@ -719,6 +719,13 @@ func (s *deviceService) ExecuteDeviceCommand(ctx context.Context, serial, comman
 	if norm == "" {
 		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
 	}
+	if canonicalDeviceCommandAction(command) == "CONFIGURE" {
+		return nil, models.NewApiError(
+			http.StatusBadRequest,
+			"Bad Request",
+			"configure is not supported by the generic command endpoint; use /api/v1/devices/{serial}/configuration/push-direct",
+		)
+	}
 
 	if s.provClient == nil {
 		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owprov client unavailable")

@@ -259,6 +259,7 @@ func (h *DeviceHandler) PushDirectDeviceConfiguration(c fiber.Ctx) error {
 
 	var request models.DirectDeviceConfigurationRequest
 	decoder := json.NewDecoder(bytes.NewReader(c.Body()))
+	decoder.UseNumber()
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
 		return c.Status(http.StatusBadRequest).JSON(models.NewApiError(

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owprov"
 	"github.com/routerarchitects/mango-mdu-service/internal/models"
@@ -609,6 +610,25 @@ func TestOWProvClient_ApplyDeviceConfiguration(t *testing.T) {
 		}
 		if string(result) != `{"errorCode":0,"appliedConfiguration":true}` {
 			t.Fatalf("unexpected response: %s", result)
+		}
+	})
+
+	t.Run("uses dedicated budget for slow configuration apply", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(50 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"errorCode":0,"appliedConfiguration":true}`))
+		}))
+		defer ts.Close()
+
+		client := owprov.NewClient(owprov.Config{
+			InstanceResolver: func() (string, string, error) { return ts.URL, "secret-prov-key", nil },
+			InternalName:     "mango-mdu-service",
+			Timeout:          10 * time.Millisecond,
+			ApplyTimeout:     500 * time.Millisecond,
+		})
+		if _, err := client.ApplyDeviceConfiguration(context.Background(), "60cf84f22290", "token", "req", "corr"); err != nil {
+			t.Fatalf("slow apply should use the larger apply timeout: %v", err)
 		}
 	})
 

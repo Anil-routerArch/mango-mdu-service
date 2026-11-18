@@ -149,6 +149,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 		},
 		InternalName: instanceInternalName,
 		Timeout:      60 * time.Second,
+		ApplyTimeout: 120 * time.Second,
 		TLSConfig:    tlsConfig,
 		Logger:       rootLog,
 	})

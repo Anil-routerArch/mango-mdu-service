@@ -568,6 +568,9 @@ func TestDeviceService_PushDirectDeviceConfiguration_AuthorizesAndBuildsEnvelope
 			if serial != "60cf84f22290" || command != "configure" {
 				t.Fatalf("unexpected gateway target: serial=%q command=%q", serial, command)
 			}
+			if !strings.Contains(string(body), `"counter":9007199254740993`) {
+				t.Fatalf("large configuration integer was not preserved: %s", body)
+			}
 			var payload struct {
 				SerialNumber  string         `json:"serialNumber"`
 				UUID          uint64         `json:"UUID"`
@@ -599,7 +602,7 @@ func TestDeviceService_PushDirectDeviceConfiguration_AuthorizesAndBuildsEnvelope
 		"uuid":   float64(7),
 		"UUID":   float64(8),
 		" Uuid ": float64(9),
-		"radios": map[string]any{"band": "5G"},
+		"radios": map[string]any{"band": "5G", "counter": json.Number("9007199254740993")},
 	}
 	result, err := services.NewDeviceService(prov, gw).PushDirectDeviceConfiguration(
 		context.Background(), "60-cf-84-f2-22-90", models.DirectDeviceConfigurationRequest{Configuration: requestConfig, When: 42}, "jwt", "req", "corr",
@@ -618,6 +621,37 @@ func TestDeviceService_PushDirectDeviceConfiguration_AuthorizesAndBuildsEnvelope
 	}
 	if string(result) != `{"UUID":"cmd-1","serialNumber":"60cf84f22290","command":"configure","status":"pending","errorCode":0}` {
 		t.Fatalf("unexpected response: %s", result)
+	}
+}
+
+func TestDeviceService_ExecuteDeviceCommand_RejectsLegacyConfigureEndpoint(t *testing.T) {
+	for _, command := range []string{"configure", "CONFIGURE"} {
+		t.Run(command, func(t *testing.T) {
+			authCalls := 0
+			gatewayCalls := 0
+			prov := &mockProvClient{authorizeDeviceCommandFn: func(context.Context, string, string, string, string, string) (*models.DeviceCommandAuthResult, error) {
+				authCalls++
+				return &models.DeviceCommandAuthResult{Allowed: true}, nil
+			}}
+			gw := &mockGWClient{executeDeviceCommandFn: func(context.Context, string, string, []byte, string, string, string) (json.RawMessage, error) {
+				gatewayCalls++
+				return json.RawMessage(`{}`), nil
+			}}
+
+			_, err := services.NewDeviceService(prov, gw).ExecuteDeviceCommand(
+				context.Background(), "60cf84f22290", command, []byte(`{"configuration":{"radios":{}}}`), "jwt", "req", "corr",
+			)
+			var apiErr models.ApiError
+			if !errors.As(err, &apiErr) || apiErr.ErrorCode != http.StatusBadRequest {
+				t.Fatalf("expected legacy configure endpoint to return 400, got %v", err)
+			}
+			if !strings.Contains(apiErr.ErrorDetails, "/configuration/push-direct") {
+				t.Fatalf("expected canonical endpoint guidance, got %q", apiErr.ErrorDetails)
+			}
+			if authCalls != 0 || gatewayCalls != 0 {
+				t.Fatalf("legacy configure reached downstream services: auth=%d gateway=%d", authCalls, gatewayCalls)
+			}
+		})
 	}
 }
 
@@ -1172,7 +1206,7 @@ func TestDeviceService_RejectsInvalidCommandAuthorizationTarget(t *testing.T) {
 
 func TestDeviceService_CommandAuthorizationAliases(t *testing.T) {
 	for _, tc := range []struct{ requested, returned string }{
-		{"reboot", "REBOOT"}, {"configure", "CONFIGURE"}, {"telemetry", "TELEMETRY"},
+		{"reboot", "REBOOT"}, {"telemetry", "TELEMETRY"},
 		{"upgrade", "UPGRADE"}, {"trace", "TRACE"}, {"rtty", "RTTY"}, {"script", "SCRIPT"},
 		{"eventqueue", "EVENTQUEUE"}, {"eventqueue", "eventqueue"},
 		{"leds", "BLINK"}, {"blink", "LEDS"}, {"leds", "LEDS"},
