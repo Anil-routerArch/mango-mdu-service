@@ -59,6 +59,8 @@ func RegisterPublic(app *fiber.App, deps PublicDeps) {
 		group.Get("/api/v1/devices/:serial/statistics", deps.DeviceHandler.GetDeviceStatistics)
 		group.Get("/api/v1/devices/:serial/status", deps.DeviceHandler.GetDeviceStatus)
 		group.Get("/api/v1/devices/:serial/capabilities", deps.DeviceHandler.GetDeviceCapabilities)
+		group.Post("/api/v1/devices/:serial/configuration/apply-provisioned", deps.DeviceHandler.ApplyProvisionedDeviceConfiguration)
+		group.Post("/api/v1/devices/:serial/configuration/push-direct", deps.DeviceHandler.PushDirectDeviceConfiguration)
 		group.Get("/api/v1/devices/:serial/rtty", deps.DeviceHandler.GetDeviceRtty)
 		group.Get("/api/v1/devices/:serial", deps.DeviceHandler.GetDevice)
 		group.Put("/api/v1/devices/:serial", deps.DeviceHandler.UpdateDevice)

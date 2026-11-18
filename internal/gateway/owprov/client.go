@@ -39,6 +39,7 @@ type Client interface {
 	GetInventorySerials(ctx context.Context, token, reqID, corrID string) ([]string, error)
 	GetInventoryItem(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
 	DeleteInventoryItem(ctx context.Context, serial, token, reqID, corrID string) error
+	ApplyDeviceConfiguration(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
 }
 
@@ -46,6 +47,7 @@ type client struct {
 	instanceResolver InstanceResolver
 	internalName     string
 	httpClient       *http.Client
+	applyHTTPClient  *http.Client
 	logger           *slog.Logger
 }
 
@@ -55,8 +57,11 @@ type Config struct {
 	InstanceResolver InstanceResolver
 	InternalName     string
 	Timeout          time.Duration
-	TLSConfig        *tls.Config
-	Logger           *slog.Logger
+	// ApplyTimeout must cover OWPROV configuration compilation plus its
+	// downstream OWGW command timeout.
+	ApplyTimeout time.Duration
+	TLSConfig    *tls.Config
+	Logger       *slog.Logger
 }
 
 // NewClient creates a new OWPROV client instance.
@@ -64,6 +69,10 @@ func NewClient(cfg Config) Client {
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = 60 * time.Second
+	}
+	applyTimeout := cfg.ApplyTimeout
+	if applyTimeout <= 0 {
+		applyTimeout = timeout
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -81,6 +90,10 @@ func NewClient(cfg Config) Client {
 		internalName:     cfg.InternalName,
 		httpClient: &http.Client{
 			Timeout:   timeout,
+			Transport: transport,
+		},
+		applyHTTPClient: &http.Client{
+			Timeout:   applyTimeout,
 			Transport: transport,
 		},
 		logger: logger,
@@ -694,6 +707,71 @@ func (c *client) DeleteInventoryItem(ctx context.Context, serial, token, reqID, 
 	}
 
 	return models.ParseResponseError(resp, maxErrorBytes)
+}
+
+// ApplyDeviceConfiguration asks OWPROV to compile the effective provisioned
+// configuration and push it to OWGW using OWPROV's existing apply flow.
+func (c *client) ApplyDeviceConfiguration(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+	baseURL, key, err := c.resolveTarget()
+	if err != nil {
+		return nil, err
+	}
+
+	clean := normalizeSerial(serial)
+	if clean == "" {
+		return nil, models.NewApiError(http.StatusBadRequest, "Bad Request", "serial number is required")
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/inventory/%s?applyConfiguration=true", baseURL, url.PathEscape(clean))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create apply configuration request", err)
+	}
+	c.setHeaders(req, key, token, reqID, corrID)
+
+	resp, err := c.applyHTTPClient.Do(req)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Error("downstream OWPROV apply configuration request failed",
+				"service", "owprov",
+				"serial", clean,
+				"error", err,
+				"endpoint", req.URL.Path,
+				"request_id", reqID,
+				"correlation_id", corrID,
+			)
+		}
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, models.ParseResponseError(resp, maxErrorBytes)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to read apply configuration response", err)
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWPROV returned an empty apply configuration response")
+	}
+
+	var result struct {
+		ErrorCode *uint64  `json:"errorCode"`
+		Errors    []string `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || result.ErrorCode == nil {
+		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWPROV returned an invalid apply configuration response")
+	}
+	if *result.ErrorCode != 0 {
+		details := strings.Join(result.Errors, "; ")
+		if strings.TrimSpace(details) == "" {
+			details = fmt.Sprintf("OWPROV failed to apply the device configuration (errorCode %d)", *result.ErrorCode)
+		}
+		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", details)
+	}
+	return json.RawMessage(body), nil
 }
 
 // AuthorizeDeviceCommand verifies whether the caller is authorized to execute a device command via OWPROV.

@@ -200,6 +200,13 @@ type DeviceNoteInput struct {
 	Created int64 `json:"created,omitempty"`
 }
 
+// DirectDeviceConfigurationRequest contains a concrete uCentral configuration
+// supplied by an operator. MDU creates the OWGW command envelope itself.
+type DirectDeviceConfigurationRequest struct {
+	Configuration map[string]any `json:"configuration"`
+	When          uint64         `json:"when,omitempty"`
+}
+
 // DeviceCommandAuthRequest represents the request payload to verify authorization for a device command.
 type DeviceCommandAuthRequest struct {
 	SerialNumber string `json:"serialNumber"`

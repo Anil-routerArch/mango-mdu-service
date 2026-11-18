@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -204,6 +206,75 @@ func (h *DeviceHandler) GetDeviceCommands(c fiber.Ctx) error {
 
 	queryParams := extractQueryParams(c)
 	data, err := h.svc.GetDeviceCommands(c.Context(), serial, token, reqID, corrID, queryParams)
+	if err != nil {
+		var apiErr models.ApiError
+		if errors.As(err, &apiErr) {
+			return c.Status(apiErr.ErrorCode).JSON(apiErr)
+		}
+		return c.Status(http.StatusInternalServerError).JSON(models.NewApiError(
+			http.StatusInternalServerError, "Internal Server Error", err.Error(),
+		))
+	}
+
+	c.Set("Content-Type", "application/json")
+	return c.Status(http.StatusOK).Send(data)
+}
+
+// ApplyProvisionedDeviceConfiguration handles
+// POST /api/v1/devices/:serial/configuration/apply-provisioned.
+func (h *DeviceHandler) ApplyProvisionedDeviceConfiguration(c fiber.Ctx) error {
+	token := c.Get("Authorization")
+	if token == "" {
+		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
+			http.StatusUnauthorized, "Unauthorized", "Authorization header is required",
+		))
+	}
+
+	data, err := h.svc.ApplyProvisionedDeviceConfiguration(
+		c.Context(), c.Params("serial"), token, c.Get("X-Request-Id"), c.Get("X-Correlation-Id"),
+	)
+	if err != nil {
+		var apiErr models.ApiError
+		if errors.As(err, &apiErr) {
+			return c.Status(apiErr.ErrorCode).JSON(apiErr)
+		}
+		return c.Status(http.StatusInternalServerError).JSON(models.NewApiError(
+			http.StatusInternalServerError, "Internal Server Error", err.Error(),
+		))
+	}
+
+	c.Set("Content-Type", "application/json")
+	return c.Status(http.StatusOK).Send(data)
+}
+
+// PushDirectDeviceConfiguration handles
+// POST /api/v1/devices/:serial/configuration/push-direct.
+func (h *DeviceHandler) PushDirectDeviceConfiguration(c fiber.Ctx) error {
+	token := c.Get("Authorization")
+	if token == "" {
+		return c.Status(http.StatusUnauthorized).JSON(models.NewApiError(
+			http.StatusUnauthorized, "Unauthorized", "Authorization header is required",
+		))
+	}
+
+	var request models.DirectDeviceConfigurationRequest
+	decoder := json.NewDecoder(bytes.NewReader(c.Body()))
+	decoder.UseNumber()
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(models.NewApiError(
+			http.StatusBadRequest, "Bad Request", "configuration and optional when fields are required",
+		))
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return c.Status(http.StatusBadRequest).JSON(models.NewApiError(
+			http.StatusBadRequest, "Bad Request", "Request body must contain a single JSON object",
+		))
+	}
+
+	data, err := h.svc.PushDirectDeviceConfiguration(
+		c.Context(), c.Params("serial"), request, token, c.Get("X-Request-Id"), c.Get("X-Correlation-Id"),
+	)
 	if err != nil {
 		var apiErr models.ApiError
 		if errors.As(err, &apiErr) {

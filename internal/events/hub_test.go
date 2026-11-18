@@ -47,6 +47,9 @@ func (m *mockProvClientForHub) GetInventoryItem(ctx context.Context, serial, tok
 func (m *mockProvClientForHub) DeleteInventoryItem(ctx context.Context, serial, token, reqID, corrID string) error {
 	return nil
 }
+func (m *mockProvClientForHub) ApplyDeviceConfiguration(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+	return json.RawMessage(`{"errorCode":0}`), nil
+}
 func (m *mockProvClientForHub) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
 	return &models.DeviceCommandAuthResult{Allowed: true}, nil
 }

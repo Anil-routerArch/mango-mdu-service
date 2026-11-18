@@ -2,6 +2,7 @@ package services_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -19,6 +20,7 @@ type mockProvClient struct {
 	getInventorySerialsFn    func(ctx context.Context, token, reqID, corrID string) ([]string, error)
 	getInventoryItemFn       func(ctx context.Context, serial, token, reqID, corrID string) (*models.InventoryTag, error)
 	deleteInventoryItemFn    func(ctx context.Context, serial, token, reqID, corrID string) error
+	applyDeviceConfigFn      func(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error)
 	authorizeDeviceCommandFn func(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error)
 }
 
@@ -83,6 +85,13 @@ func (m *mockProvClient) DeleteInventoryItem(ctx context.Context, serial, token,
 		return m.deleteInventoryItemFn(ctx, serial, token, reqID, corrID)
 	}
 	return nil
+}
+
+func (m *mockProvClient) ApplyDeviceConfiguration(ctx context.Context, serial, token, reqID, corrID string) (json.RawMessage, error) {
+	if m.applyDeviceConfigFn != nil {
+		return m.applyDeviceConfigFn(ctx, serial, token, reqID, corrID)
+	}
+	return json.RawMessage(`{"errorCode":0}`), nil
 }
 
 func (m *mockProvClient) AuthorizeDeviceCommand(ctx context.Context, serial, action, token, reqID, corrID string) (*models.DeviceCommandAuthResult, error) {
