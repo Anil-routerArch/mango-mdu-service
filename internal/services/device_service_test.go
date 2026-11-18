@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/routerarchitects/mango-mdu-service/internal/models"
@@ -582,10 +583,24 @@ func TestDeviceService_PushDirectDeviceConfiguration_AuthorizesAndBuildsEnvelope
 			if payload.Configuration["radios"] == nil || payload.Configuration["uuid"] != float64(payload.UUID) {
 				t.Fatalf("unexpected gateway configuration: %+v", payload.Configuration)
 			}
+			uuidKeys := 0
+			for key := range payload.Configuration {
+				if strings.EqualFold(strings.TrimSpace(key), "uuid") {
+					uuidKeys++
+				}
+			}
+			if uuidKeys != 1 || len(payload.Configuration) != 2 {
+				t.Fatalf("expected one canonical uuid and the supplied settings, got %+v", payload.Configuration)
+			}
 			return json.RawMessage(`{"UUID":"cmd-1","serialNumber":"60cf84f22290","command":"configure","status":"pending","errorCode":0}`), nil
 		},
 	}
-	requestConfig := map[string]any{"uuid": float64(7), "radios": map[string]any{"band": "5G"}}
+	requestConfig := map[string]any{
+		"uuid":   float64(7),
+		"UUID":   float64(8),
+		" Uuid ": float64(9),
+		"radios": map[string]any{"band": "5G"},
+	}
 	result, err := services.NewDeviceService(prov, gw).PushDirectDeviceConfiguration(
 		context.Background(), "60-cf-84-f2-22-90", models.DirectDeviceConfigurationRequest{Configuration: requestConfig, When: 42}, "jwt", "req", "corr",
 	)
@@ -597,6 +612,9 @@ func TestDeviceService_PushDirectDeviceConfiguration_AuthorizesAndBuildsEnvelope
 	}
 	if requestConfig["uuid"] != float64(7) {
 		t.Fatalf("service mutated caller configuration: %+v", requestConfig)
+	}
+	if requestConfig["UUID"] != float64(8) || requestConfig[" Uuid "] != float64(9) {
+		t.Fatalf("service mutated caller UUID variants: %+v", requestConfig)
 	}
 	if string(result) != `{"UUID":"cmd-1","serialNumber":"60cf84f22290","command":"configure","status":"pending","errorCode":0}` {
 		t.Fatalf("unexpected response: %s", result)
@@ -661,6 +679,8 @@ func TestDeviceService_ExecuteDeviceCommand_InterpretsOWGWStatus(t *testing.T) {
 		{name: "missing command identity is rejected", response: `{"UUID":"cmd-6","status":"completed","errorCode":0}`, wantStatus: http.StatusBadGateway},
 		{name: "different serial is rejected", response: `{"UUID":"cmd-7","serialNumber":"60cf84f22291","command":"reboot","status":"completed","errorCode":0}`, wantStatus: http.StatusBadGateway},
 		{name: "null error code is rejected", response: `{"UUID":"cmd-8","serialNumber":"60cf84f22290","command":"reboot","status":"completed","errorCode":null}`, wantStatus: http.StatusBadGateway},
+		{name: "concatenated JSON objects are rejected", response: `{"UUID":"cmd-9","serialNumber":"60cf84f22290","command":"reboot","status":"completed","errorCode":0}{"errorCode":7}`, wantStatus: http.StatusBadGateway},
+		{name: "trailing non-whitespace content is rejected", response: `{"UUID":"cmd-10","serialNumber":"60cf84f22290","command":"reboot","status":"completed","errorCode":0} trailing`, wantStatus: http.StatusBadGateway},
 		{name: "invalid JSON is rejected", response: `not-json`, wantStatus: http.StatusBadGateway},
 	}
 

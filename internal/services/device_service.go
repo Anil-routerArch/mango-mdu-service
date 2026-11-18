@@ -86,6 +86,10 @@ func validateOWGWCommandResponse(raw json.RawMessage, expectedSerial, command st
 	if err := decoder.Decode(&response); err != nil || response == nil {
 		return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command response")
 	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWGW returned an invalid command response")
+	}
 
 	// OWGW's telemetry handler returns a telemetry status object rather than the
 	// CommandDetails object used by commands executed through WaitForCommand.
@@ -651,6 +655,9 @@ func (s *deviceService) PushDirectDeviceConfiguration(ctx context.Context, seria
 	commandUUID := uint64(time.Now().Unix())
 	configuration := make(map[string]any, len(req.Configuration)+1)
 	for key, value := range req.Configuration {
+		if strings.EqualFold(strings.TrimSpace(key), "uuid") {
+			continue
+		}
 		configuration[key] = value
 	}
 	configuration["uuid"] = commandUUID
