@@ -188,6 +188,9 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 	deviceService := services.NewDeviceService(owprovClient, owgwClient, rootLog)
 	deviceHandler := handlers.NewDeviceHandler(deviceService, rootLog)
 
+	propertyService := services.NewPropertyService(owprovClient, owgwClient, rootLog)
+	propertyHandler := handlers.NewPropertyHandler(propertyService, rootLog)
+
 	// 7. Initialize Realtime Event Hub and Kafka Consumer
 	hub := events.NewHub(owprovClient, logger.Subsystem("event-hub"))
 	deviceEventsHandler := handlers.NewDeviceEventsHandler(hub, tokenValidator, logger.Subsystem("event-stream"))
@@ -211,6 +214,7 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 		TokenValidator:      tokenValidator,
 		AuthEnabled:         cfg.Auth.Enabled,
 		PolicyHandler:       policyHandler,
+		PropertyHandler:     propertyHandler,
 		DeviceHandler:       deviceHandler,
 		DeviceEventsHandler: deviceEventsHandler,
 	})

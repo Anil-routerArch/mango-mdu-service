@@ -65,7 +65,7 @@ type Config struct {
 }
 
 // NewClient creates a new OWPROV client instance.
-func NewClient(cfg Config) Client {
+func NewClient(cfg Config) *client {
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = 60 * time.Second
