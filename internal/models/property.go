@@ -17,12 +17,13 @@ type OWProvTreeNode struct {
 // Devices are retained only for internal aggregation and must never be exposed
 // by the structural tree or portfolio hierarchy response.
 type PropertyTreeNode struct {
-	ID       string             `json:"id"`
-	Type     string             `json:"type"`
-	Name     string             `json:"name"`
-	Devices  []string           `json:"-"`
-	Children []PropertyTreeNode `json:"children"`
-	Summary  *ScopeSummary      `json:"summary,omitempty"`
+	ID          string             `json:"id"`
+	Type        string             `json:"type"`
+	Name        string             `json:"name"`
+	Devices     []string           `json:"-"`
+	Children    []PropertyTreeNode `json:"children"`
+	Summary     *ScopeSummary      `json:"summary,omitempty"`
+	DeviceNames map[string]string  `json:"-"`
 }
 
 type PropertyTreeResponse struct {
@@ -33,6 +34,7 @@ type PropertyTreeResponse struct {
 // hierarchy map. Availability is factual and never implies Device health.
 type PropertyMapDevice struct {
 	SerialNumber string   `json:"serialNumber"`
+	Name         string   `json:"name,omitempty"`
 	Availability string   `json:"availability"`
 	Sanity       *float64 `json:"sanity,omitempty"`
 }
@@ -101,21 +103,22 @@ type ScopeOverviewResponse struct {
 }
 
 type PropertyDeviceItem struct {
-	SerialNumber string `json:"serialNumber"`
-	Name         string `json:"name"`
-	Description  string `json:"description,omitempty"`
-	DeviceType   string `json:"deviceType,omitempty"`
-	DeviceGroup  string `json:"deviceGroup,omitempty"`
-	EntityID     string `json:"entityId,omitempty"`
-	EntityName   string `json:"entityName,omitempty"`
-	VenueID      string `json:"venueId,omitempty"`
-	VenueName    string `json:"venueName,omitempty"`
-	Availability string `json:"availability"`
-	Connected    bool   `json:"connected"`
-	StatusKnown  bool   `json:"statusKnown"`
-	IPAddress    string `json:"ipAddress,omitempty"`
-	Firmware     string `json:"firmware,omitempty"`
-	LastContact  any    `json:"lastContact,omitempty"`
+	SerialNumber string   `json:"serialNumber"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description,omitempty"`
+	DeviceType   string   `json:"deviceType,omitempty"`
+	DeviceGroup  string   `json:"deviceGroup,omitempty"`
+	EntityID     string   `json:"entityId,omitempty"`
+	EntityName   string   `json:"entityName,omitempty"`
+	VenueID      string   `json:"venueId,omitempty"`
+	VenueName    string   `json:"venueName,omitempty"`
+	Availability string   `json:"availability"`
+	Connected    bool     `json:"connected"`
+	StatusKnown  bool     `json:"statusKnown"`
+	IPAddress    string   `json:"ipAddress,omitempty"`
+	Firmware     string   `json:"firmware,omitempty"`
+	LastContact  any      `json:"lastContact,omitempty"`
+	Sanity       *float64 `json:"sanity,omitempty"`
 }
 
 type ScopedDevicesResponse struct {
@@ -135,4 +138,5 @@ type ScopedDevicesQuery struct {
 	VenueID      string
 	Availability string
 	DeviceType   string
+	Attention    string
 }

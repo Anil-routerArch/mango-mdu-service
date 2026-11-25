@@ -45,6 +45,7 @@ func buildPropertyMapNode(node models.PropertyTreeNode, statuses map[string]mode
 		}
 		devices = append(devices, models.PropertyMapDevice{
 			SerialNumber: serial,
+			Name:         node.DeviceNames[normalizeSerial(serial)],
 			Availability: mapAvailability(serial, statuses),
 			Sanity:       sanity,
 		})
@@ -264,9 +265,11 @@ func (s *propertyService) hydrateScopeInventory(ctx context.Context, node *model
 		return err
 	}
 	node.Devices = node.Devices[:0]
+	node.DeviceNames = make(map[string]string, len(tags))
 	for _, tag := range tags {
 		if strings.TrimSpace(tag.SerialNumber) != "" {
 			node.Devices = append(node.Devices, tag.SerialNumber)
+			node.DeviceNames[normalizeSerial(tag.SerialNumber)] = tag.Name
 		}
 	}
 	for i := range node.Children {
@@ -448,6 +451,7 @@ func propertyDeviceItem(tag models.InventoryTag, statuses map[string]models.Gate
 	}
 	if known {
 		item.IPAddress, item.Firmware, item.LastContact = status.IPAddress, status.Firmware, status.LastContact
+		item.Sanity = status.Sanity
 		if item.DeviceType == "" {
 			item.DeviceType = status.Compatible
 		}
@@ -474,6 +478,16 @@ func matchesDevice(item models.PropertyDeviceItem, q models.ScopedDevicesQuery) 
 	}
 	if q.DeviceType != "" && !strings.EqualFold(item.DeviceType, q.DeviceType) && !strings.EqualFold(item.DeviceGroup, q.DeviceType) {
 		return false
+	}
+	switch strings.ToLower(q.Attention) {
+	case "low-sanity":
+		if item.Availability == "offline" || item.Sanity == nil || *item.Sanity >= 90 {
+			return false
+		}
+	case "sanity-unavailable":
+		if item.Availability == "offline" || item.Sanity != nil {
+			return false
+		}
 	}
 	return true
 }

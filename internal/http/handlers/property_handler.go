@@ -80,7 +80,7 @@ func (h *PropertyHandler) getDevices(c fiber.Ctx, scopeType string) error {
 	query := models.ScopedDevicesQuery{
 		PageIndex: intQuery(c, "pageIndex", 0), PageSize: intQuery(c, "pageSize", 25),
 		Search: c.Query("search"), VenueID: c.Query("venue"), Availability: c.Query("availability"),
-		DeviceType: c.Query("type"),
+		DeviceType: c.Query("type"), Attention: c.Query("attention"),
 	}
 	data, err := h.svc.GetDevices(c.Context(), scopeType, c.Params("id"), token, reqID, corrID, query)
 	return h.respond(c, data, err)

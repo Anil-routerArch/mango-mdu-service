@@ -134,8 +134,8 @@ func TestPropertyMapReturnsDirectDevicesWithFactualAvailability(t *testing.T) {
 			Venues: []models.OWProvTreeNode{{Type: "venue", Name: "Lobby", UUID: "venue-a"}},
 		},
 		inventory: map[string][]models.InventoryTag{
-			"entity:property-a": {{SerialNumber: "property-device"}},
-			"venue:venue-a":     {{SerialNumber: "venue-device"}},
+			"entity:property-a": {{SerialNumber: "property-device", Name: "Property AP"}},
+			"venue:venue-a":     {{SerialNumber: "venue-device", Name: "Venue AP"}},
 		},
 	}, &fakePropertyGW{statuses: []models.GatewayDeviceStatus{
 		{SerialNumber: "property-device", Connected: true, Sanity: &healthySanity},
@@ -149,11 +149,41 @@ func TestPropertyMapReturnsDirectDevicesWithFactualAvailability(t *testing.T) {
 	if len(result.Nodes) != 1 || len(result.Nodes[0].Devices) != 1 || len(result.Nodes[0].Children) != 1 {
 		t.Fatalf("unexpected map hierarchy: %+v", result)
 	}
-	if got := result.Nodes[0].Devices[0]; got.SerialNumber != "property-device" || got.Availability != "online" || got.Sanity == nil || *got.Sanity != healthySanity {
+	if got := result.Nodes[0].Devices[0]; got.SerialNumber != "property-device" || got.Name != "Property AP" || got.Availability != "online" || got.Sanity == nil || *got.Sanity != healthySanity {
 		t.Fatalf("unexpected Property Device projection: %+v", got)
 	}
-	if got := result.Nodes[0].Children[0].Devices[0]; got.SerialNumber != "venue-device" || got.Availability != "offline" || got.Sanity == nil || *got.Sanity != lowSanity {
+	if got := result.Nodes[0].Children[0].Devices[0]; got.SerialNumber != "venue-device" || got.Name != "Venue AP" || got.Availability != "offline" || got.Sanity == nil || *got.Sanity != lowSanity {
 		t.Fatalf("unexpected Venue Device projection: %+v", got)
+	}
+}
+
+func TestScopedDevicesFiltersAttentionReasonsBeforePagination(t *testing.T) {
+	lowSanity := 45.0
+	healthySanity := 96.0
+	service := NewPropertyService(&fakePropertyProv{
+		tree: &models.OWProvTreeNode{Type: "entity", Name: "Property A", UUID: "property-a"},
+		inventory: map[string][]models.InventoryTag{
+			"entity:property-a": {
+				{SerialNumber: "low", Name: "Low Sanity AP"},
+				{SerialNumber: "missing", Name: "Missing Sanity AP"},
+				{SerialNumber: "offline", Name: "Offline AP"},
+				{SerialNumber: "healthy", Name: "Healthy AP"},
+			},
+		},
+	}, &fakePropertyGW{statuses: []models.GatewayDeviceStatus{
+		{SerialNumber: "low", Connected: true, Sanity: &lowSanity},
+		{SerialNumber: "missing", Connected: true},
+		{SerialNumber: "offline", Connected: false},
+		{SerialNumber: "healthy", Connected: true, Sanity: &healthySanity},
+	}})
+
+	low, err := service.GetDevices(context.Background(), "property", "property-a", "token", "req", "corr", models.ScopedDevicesQuery{PageSize: 25, Attention: "low-sanity"})
+	if err != nil || low.TotalCount != 1 || low.Devices[0].SerialNumber != "low" {
+		t.Fatalf("expected only the online low-sanity Device, result=%+v err=%v", low, err)
+	}
+	missing, err := service.GetDevices(context.Background(), "property", "property-a", "token", "req", "corr", models.ScopedDevicesQuery{PageSize: 25, Attention: "sanity-unavailable"})
+	if err != nil || missing.TotalCount != 1 || missing.Devices[0].SerialNumber != "missing" {
+		t.Fatalf("expected only the online Device with unavailable sanity, result=%+v err=%v", missing, err)
 	}
 }
 
