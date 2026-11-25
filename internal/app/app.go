@@ -198,6 +198,17 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 		deviceEventsHandler.SetWriteTimeout(cfg.Server.WSWriteTimeout)
 	}
 	kafkaConsumer := events.NewKafkaConsumer(cfg.Kafka.Config, hub, logger.Subsystem("kafka-events"))
+	kafkaConsumer.AddCallback(func(event *events.DeviceEvent) {
+		if event == nil {
+			return
+		}
+		var sanity *float64
+		if event.Sanity != nil {
+			s := float64(*event.Sanity)
+			sanity = &s
+		}
+		propertyService.UpdateDeviceStatus(event.Type, event.SerialNumber, event.Connected, sanity, event.ConnectionIP)
+	})
 
 	// 8. Assemble Fiber HTTP apps module
 	publicAuthConfig := auth.PublicAuthConfig{}

@@ -4,23 +4,39 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/routerarchitects/mango-mdu-service/internal/models"
 )
 
 type fakePropertyProv struct {
-	tree         *models.OWProvTreeNode
-	inventory    map[string][]models.InventoryTag
-	inventoryErr map[string]error
+	tree           *models.OWProvTreeNode
+	inventory      map[string][]models.InventoryTag
+	inventoryErr   map[string]error
+	mu             sync.Mutex
+	treeCalls      int
+	inventoryCalls int
+	delay          time.Duration
 }
 
 func (f *fakePropertyProv) GetPropertyTree(context.Context, string, string, string) (*models.OWProvTreeNode, error) {
+	f.mu.Lock()
+	f.treeCalls++
+	f.mu.Unlock()
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	return f.tree, nil
 }
 
 func (f *fakePropertyProv) GetInventoryForScope(_ context.Context, entityID, venueID, _, _, _ string) ([]models.InventoryTag, error) {
+	f.mu.Lock()
+	f.inventoryCalls++
+	f.mu.Unlock()
 	key := "entity:" + entityID
 	if venueID != "" {
 		key = "venue:" + venueID
@@ -32,11 +48,31 @@ func (f *fakePropertyProv) GetInventoryForScope(_ context.Context, entityID, ven
 }
 
 type fakePropertyGW struct {
-	statuses []models.GatewayDeviceStatus
-	err      error
+	statuses    []models.GatewayDeviceStatus
+	err         error
+	mu          sync.Mutex
+	calls       int
+	inFlight    int
+	maxInFlight int
+	delay       time.Duration
 }
 
 func (f *fakePropertyGW) GetDevicesStatus(context.Context, []string, string, string, string) ([]models.GatewayDeviceStatus, error) {
+	f.mu.Lock()
+	f.calls++
+	f.inFlight++
+	if f.inFlight > f.maxInFlight {
+		f.maxInFlight = f.inFlight
+	}
+	f.mu.Unlock()
+	defer func() {
+		f.mu.Lock()
+		f.inFlight--
+		f.mu.Unlock()
+	}()
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	return append([]models.GatewayDeviceStatus(nil), f.statuses...), f.err
 }
 
@@ -84,8 +120,8 @@ func TestPropertyTreeResponseOmitsDeviceSerials(t *testing.T) {
 	if strings.Contains(serialized, "devices") || strings.Contains(serialized, "sensitive-serial") {
 		t.Fatalf("structural tree exposed Device inventory: %s", serialized)
 	}
-	if len(tree.Nodes) != 1 || len(tree.Nodes[0].Devices) != 1 {
-		t.Fatalf("internal tree must retain Device serials for aggregation: %+v", tree.Nodes)
+	if len(tree.Nodes) != 1 || len(tree.Nodes[0].Devices) != 0 || len(tree.Nodes[0].Children[0].Devices) != 0 {
+		t.Fatalf("structural tree must discard embedded Device serials: %+v", tree.Nodes)
 	}
 }
 
@@ -307,4 +343,210 @@ func TestScopedDevicesRejectsIncompleteInventory(t *testing.T) {
 	if err == nil || result != nil {
 		t.Fatalf("incomplete inventory must fail closed, result=%+v err=%v", result, err)
 	}
+}
+
+func TestOperationalSnapshotIsReusedAcrossPropertyEndpoints(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{Type: "entity", Name: "Property A", UUID: "property-a"},
+		inventory: map[string][]models.InventoryTag{
+			"entity:property-a": {{SerialNumber: "aa", Name: "Lobby AP"}},
+		},
+	}
+	gw := &fakePropertyGW{statuses: []models.GatewayDeviceStatus{{SerialNumber: "aa", Connected: true}}}
+	service := NewPropertyService(prov, gw)
+	ctx := context.Background()
+
+	if _, err := service.GetPortfolio(ctx, "token-a", "req", "corr"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetMap(ctx, "token-a", "req", "corr"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetOverview(ctx, "property", "property-a", "token-a", "req", "corr"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetDevices(ctx, "property", "property-a", "token-a", "req", "corr", models.ScopedDevicesQuery{PageSize: 25}); err != nil {
+		t.Fatal(err)
+	}
+
+	prov.mu.Lock()
+	treeCalls, inventoryCalls := prov.treeCalls, prov.inventoryCalls
+	prov.mu.Unlock()
+	gw.mu.Lock()
+	statusCalls := gw.calls
+	gw.mu.Unlock()
+	if treeCalls != 1 || inventoryCalls != 1 || statusCalls != 1 {
+		t.Fatalf("expected one shared snapshot load, tree=%d inventory=%d status=%d", treeCalls, inventoryCalls, statusCalls)
+	}
+}
+
+func TestOperationalSnapshotSingleflightAndPrincipalIsolation(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree:      &models.OWProvTreeNode{Type: "entity", Name: "Property A", UUID: "property-a"},
+		inventory: map[string][]models.InventoryTag{"entity:property-a": {{SerialNumber: "aa"}}},
+		delay:     15 * time.Millisecond,
+	}
+	gw := &fakePropertyGW{
+		statuses: []models.GatewayDeviceStatus{{SerialNumber: "aa", Connected: true}},
+		delay:    15 * time.Millisecond,
+	}
+	service := NewPropertyService(prov, gw)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := service.GetPortfolio(context.Background(), "token-a", "req", "corr"); err != nil {
+				t.Errorf("GetPortfolio: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	prov.mu.Lock()
+	firstPrincipalTreeCalls := prov.treeCalls
+	prov.mu.Unlock()
+	gw.mu.Lock()
+	firstPrincipalStatusCalls := gw.calls
+	gw.mu.Unlock()
+	if firstPrincipalTreeCalls != 1 || firstPrincipalStatusCalls != 1 {
+		t.Fatalf("singleflight did not coalesce requests: tree=%d status=%d", firstPrincipalTreeCalls, firstPrincipalStatusCalls)
+	}
+
+	if _, err := service.GetPortfolio(context.Background(), "token-b", "req", "corr"); err != nil {
+		t.Fatal(err)
+	}
+	prov.mu.Lock()
+	totalTreeCalls := prov.treeCalls
+	prov.mu.Unlock()
+	gw.mu.Lock()
+	totalStatusCalls := gw.calls
+	gw.mu.Unlock()
+	if totalTreeCalls != 2 || totalStatusCalls != 2 {
+		t.Fatalf("a different principal reused another token's snapshot: tree=%d status=%d", totalTreeCalls, totalStatusCalls)
+	}
+}
+
+func TestOWGWStatusConcurrencyIsBoundedAcrossPrincipals(t *testing.T) {
+	const (
+		principalCount = 10
+		deviceCount    = 1_000
+	)
+	inventory := make([]models.InventoryTag, deviceCount)
+	for i := range inventory {
+		inventory[i] = models.InventoryTag{SerialNumber: fmt.Sprintf("device-%04d", i)}
+	}
+	prov := &fakePropertyProv{
+		tree:      &models.OWProvTreeNode{Type: "entity", Name: "Property A", UUID: "property-a"},
+		inventory: map[string][]models.InventoryTag{"entity:property-a": inventory},
+	}
+	gw := &fakePropertyGW{delay: 5 * time.Millisecond}
+	service := NewPropertyService(prov, gw)
+
+	var wg sync.WaitGroup
+	for i := 0; i < principalCount; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			token := fmt.Sprintf("token-%d", index)
+			if _, err := service.GetPortfolio(context.Background(), token, "req", "corr"); err != nil {
+				t.Errorf("GetPortfolio(%s): %v", token, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	gw.mu.Lock()
+	calls, maxInFlight := gw.calls, gw.maxInFlight
+	gw.mu.Unlock()
+	expectedCalls := principalCount * (deviceCount / propertyStatusBatchSize)
+	if calls != expectedCalls {
+		t.Fatalf("expected %d OWGW batches, got %d", expectedCalls, calls)
+	}
+	if maxInFlight > propertyOWGWConcurrency {
+		t.Fatalf("global OWGW concurrency exceeded %d: observed %d", propertyOWGWConcurrency, maxInFlight)
+	}
+	if maxInFlight < 2 {
+		t.Fatalf("test did not exercise concurrent OWGW calls: observed %d", maxInFlight)
+	}
+}
+
+func TestKafkaStatusPatchesDoNotOverwriteAbsentFields(t *testing.T) {
+	sanity := 95.0
+	prov := &fakePropertyProv{
+		tree:      &models.OWProvTreeNode{Type: "entity", Name: "Property A", UUID: "property-a"},
+		inventory: map[string][]models.InventoryTag{"entity:property-a": {{SerialNumber: "aa"}}},
+	}
+	service := NewPropertyService(prov, &fakePropertyGW{statuses: []models.GatewayDeviceStatus{{SerialNumber: "aa", Connected: true, Sanity: &sanity}}})
+	ctx := context.Background()
+	if _, err := service.GetMap(ctx, "token", "req", "corr"); err != nil {
+		t.Fatal(err)
+	}
+
+	service.UpdateDeviceStatus("state", "aa", nil, nil, "")
+	result, err := service.GetMap(ctx, "token", "req", "corr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := result.Nodes[0].Devices[0]
+	if device.Availability != "online" || device.Sanity == nil || *device.Sanity != sanity {
+		t.Fatalf("state event overwrote cached availability or sanity: %+v", device)
+	}
+
+	service.UpdateDeviceStatus("healthcheck", "aa", nil, nil, "")
+	result, err = service.GetMap(ctx, "token", "req", "corr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Nodes[0].Devices[0].Sanity != nil {
+		t.Fatalf("healthcheck without sanity must clear the cached measurement: %+v", result.Nodes[0].Devices[0])
+	}
+}
+
+func TestStaleSnapshotKeepsMeasurementTimeAndSurvivesFailedRefresh(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree:      &models.OWProvTreeNode{Type: "entity", Name: "Property A", UUID: "property-a"},
+		inventory: map[string][]models.InventoryTag{"entity:property-a": {{SerialNumber: "aa"}}},
+	}
+	gw := &fakePropertyGW{statuses: []models.GatewayDeviceStatus{{SerialNumber: "aa", Connected: true}}}
+	service := NewPropertyService(prov, gw)
+	ctx := context.Background()
+	if _, err := service.GetMap(ctx, "token", "req", "corr"); err != nil {
+		t.Fatal(err)
+	}
+	impl := service.(*propertyService)
+	cacheKey := principalCacheKey("token") + ":portfolio"
+	measuredAt := time.Now().Add(-propertyCacheTTL - time.Second).UTC().Truncate(time.Second)
+	impl.cacheMu.Lock()
+	impl.snapshots[cacheKey].fetchedAt = measuredAt
+	impl.cacheMu.Unlock()
+	gw.mu.Lock()
+	gw.err = errors.New("owgw unavailable")
+	beforeCalls := gw.calls
+	gw.mu.Unlock()
+
+	result, err := service.GetMap(ctx, "token", "req", "corr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.DataQuality.State != "stale" || result.DataQuality.AsOf != measuredAt.Format(time.RFC3339) {
+		t.Fatalf("stale response did not preserve snapshot measurement time: %+v", result.DataQuality)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		gw.mu.Lock()
+		calls := gw.calls
+		gw.mu.Unlock()
+		if calls > beforeCalls || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	impl.cacheMu.RLock()
+	cached := impl.snapshots[cacheKey]
+	if cached == nil || !cached.fetchedAt.Equal(measuredAt) || len(cached.statusErrors) != 0 {
+		impl.cacheMu.RUnlock()
+		t.Fatalf("failed refresh replaced the last complete stale snapshot: %+v", cached)
+	}
+	impl.cacheMu.RUnlock()
 }

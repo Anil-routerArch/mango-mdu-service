@@ -14,8 +14,9 @@ type OWProvTreeNode struct {
 
 // PropertyTreeNode is the normalized hierarchy model. Every OWPROV entity is
 // represented as a property and every OWPROV venue is represented as a venue.
-// Devices are retained only for internal aggregation and must never be exposed
-// by the structural tree or portfolio hierarchy response.
+// Device identifiers from OWPROV's structural tree are discarded. Operational
+// views populate Devices from separately authorized inventory reads, and the
+// field must never be exposed by structural tree or portfolio responses.
 type PropertyTreeNode struct {
 	ID          string             `json:"id"`
 	Type        string             `json:"type"`
