@@ -151,6 +151,7 @@ type propertyService struct {
 	cacheMu     sync.RWMutex
 	snapshots   map[string]*operationalSnapshot
 	livePatches map[string]deviceStatusPatch
+	lastPatchCleanup time.Time
 	owgwLimiter chan struct{}
 }
 
@@ -424,6 +425,26 @@ func applyDeviceStatusPatch(status models.GatewayDeviceStatus, patch deviceStatu
 	return status
 }
 
+// Caller must hold cacheMu.
+func (s *propertyService) cleanupLivePatches(now time.Time) {
+	if now.Sub(s.lastPatchCleanup) < propertyMaxStaleAge {
+		return
+	}
+	s.lastPatchCleanup = now
+	for serial, patch := range s.livePatches {
+		latest := patch.connectedAt
+		if patch.sanityAt.After(latest) {
+			latest = patch.sanityAt
+		}
+		if patch.ipAddressAt.After(latest) {
+			latest = patch.ipAddressAt
+		}
+		if now.Sub(latest) > propertyMaxStaleAge {
+			delete(s.livePatches, serial)
+		}
+	}
+}
+
 // UpdateDeviceStatus merges only fields carried by a Kafka event. State events
 // contain no availability or sanity fields and therefore cannot overwrite a
 // complete OWGW status with Go zero values.
@@ -435,6 +456,7 @@ func (s *propertyService) UpdateDeviceStatus(eventType, serial string, connected
 	now := time.Now()
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
+	s.cleanupLivePatches(now)
 	patch := s.livePatches[norm]
 	eventPatch := deviceStatusPatch{}
 	changed := false
@@ -543,18 +565,7 @@ func (s *propertyService) refreshAndStoreOperationalSnapshot(ctx context.Context
 		}
 		delete(s.snapshots, oldestKey)
 	}
-	for serial, patch := range s.livePatches {
-		latest := patch.connectedAt
-		if patch.sanityAt.After(latest) {
-			latest = patch.sanityAt
-		}
-		if patch.ipAddressAt.After(latest) {
-			latest = patch.ipAddressAt
-		}
-		if now.Sub(latest) > propertyMaxStaleAge {
-			delete(s.livePatches, serial)
-		}
-	}
+	s.cleanupLivePatches(now)
 	return operationalSnapshotView(refreshed), nil
 }
 

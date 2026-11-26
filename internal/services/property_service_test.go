@@ -577,6 +577,43 @@ func TestKafkaPatchDoesNotOverwriteNewerOWGWStatus(t *testing.T) {
 	}
 }
 
+func TestPeriodicKafkaPatchCleanup(t *testing.T) {
+	service := NewPropertyService(&fakePropertyProv{}, &fakePropertyGW{})
+	impl := service.(*propertyService)
+
+	// Add an old patch
+	service.UpdateDeviceStatus("state", "olddevice", nil, nil, "10.0.0.1")
+
+	// Artificially make the patch older than propertyMaxStaleAge
+	impl.cacheMu.Lock()
+	patch := impl.livePatches["olddevice"]
+	patch.ipAddressAt = time.Now().Add(-propertyMaxStaleAge - time.Second)
+	impl.livePatches["olddevice"] = patch
+	// Set last cleanup older than propertyMaxStaleAge so the next Kafka event triggers cleanup
+	impl.lastPatchCleanup = time.Now().Add(-propertyMaxStaleAge - time.Second)
+	impl.cacheMu.Unlock()
+
+	// New Kafka event arrives for a different device
+	service.UpdateDeviceStatus("state", "newdevice", nil, nil, "10.0.0.2")
+
+	// Verify olddevice was pruned and newdevice was retained
+	impl.cacheMu.RLock()
+	_, oldExists := impl.livePatches["olddevice"]
+	_, newExists := impl.livePatches["newdevice"]
+	cleanupTime := impl.lastPatchCleanup
+	impl.cacheMu.RUnlock()
+
+	if oldExists {
+		t.Fatal("expected expired patch for olddevice to be pruned during periodic cleanup")
+	}
+	if !newExists {
+		t.Fatal("expected newdevice patch to be stored in livePatches")
+	}
+	if time.Since(cleanupTime) > 5*time.Second {
+		t.Fatalf("expected lastPatchCleanup to be updated to recent time, got %v", cleanupTime)
+	}
+}
+
 func TestStaleSnapshotKeepsMeasurementTimeAndSurvivesFailedRefresh(t *testing.T) {
 	prov := &fakePropertyProv{
 		tree:      &models.OWProvTreeNode{Type: "entity", Name: "Property A", UUID: "property-a"},
