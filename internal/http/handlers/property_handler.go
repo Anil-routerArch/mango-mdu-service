@@ -88,3 +88,51 @@ func (h *PropertyHandler) getDevices(c fiber.Ctx, scopeType string) error {
 
 func (h *PropertyHandler) GetPropertyDevices(c fiber.Ctx) error { return h.getDevices(c, "property") }
 func (h *PropertyHandler) GetVenueDevices(c fiber.Ctx) error    { return h.getDevices(c, "venue") }
+
+func (h *PropertyHandler) GetVenueMonitoring(c fiber.Ctx) error {
+	token, reqID, corrID := propertyRequestMetadata(c)
+	data, err := h.svc.GetVenueMonitoring(c.Context(), c.Params("id"), token, reqID, corrID)
+	return h.respond(c, data, err)
+}
+
+func (h *PropertyHandler) StartVenueMonitoring(c fiber.Ctx) error {
+	token, reqID, corrID := propertyRequestMetadata(c)
+	var req models.StartVenueMonitoringRequest
+	if len(c.Body()) > 0 {
+		if err := c.Bind().Body(&req); err != nil {
+			return c.Status(http.StatusBadRequest).JSON(models.NewApiError(http.StatusBadRequest, "Bad Request", "Invalid JSON request body"))
+		}
+	}
+	data, err := h.svc.StartVenueMonitoring(c.Context(), c.Params("id"), req, token, reqID, corrID)
+	return h.respond(c, data, err)
+}
+
+func (h *PropertyHandler) StopVenueMonitoring(c fiber.Ctx) error {
+	token, reqID, corrID := propertyRequestMetadata(c)
+	data, err := h.svc.StopVenueMonitoring(c.Context(), c.Params("id"), token, reqID, corrID)
+	return h.respond(c, data, err)
+}
+
+func (h *PropertyHandler) GetVenueMonitoringClients(c fiber.Ctx) error {
+	token, reqID, corrID := propertyRequestMetadata(c)
+	data, err := h.svc.GetVenueMonitoringClients(c.Context(), c.Params("id"), token, reqID, corrID)
+	if err != nil {
+		return h.respond(c, nil, err)
+	}
+	return c.Status(http.StatusOK).JSON(map[string]any{"entries": data})
+}
+
+func (h *PropertyHandler) GetVenueClientLifecycle(c fiber.Ctx) error {
+	token, reqID, corrID := propertyRequestMetadata(c)
+	fromDate, _ := strconv.ParseInt(c.Query("fromDate"), 10, 64)
+	endDate, _ := strconv.ParseInt(c.Query("endDate"), 10, 64)
+	limit := intQuery(c, "limit", 100)
+	offset := intQuery(c, "offset", 0)
+
+	data, err := h.svc.GetVenueClientLifecycle(c.Context(), c.Params("id"), c.Params("client"), fromDate, endDate, limit, offset, token, reqID, corrID)
+	if err != nil {
+		return h.respond(c, nil, err)
+	}
+	c.Set("Content-Type", "application/json")
+	return c.Status(http.StatusOK).Send(data)
+}

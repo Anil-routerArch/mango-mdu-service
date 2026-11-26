@@ -1,8 +1,10 @@
 package owprov
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -152,4 +154,58 @@ func (c *client) GetInventoryForScope(ctx context.Context, entityID, venueID, to
 		return nil, models.NewApiError(http.StatusBadGateway, "Bad Gateway", "OWPROV returned incomplete scoped inventory")
 	}
 	return all, nil
+}
+
+// GetVenue retrieves a single venue record by ID from OWPROV.
+func (c *client) GetVenue(ctx context.Context, id, token, reqID, corrID string) (*models.VenueDetails, error) {
+	baseURL, key, err := c.resolveTarget()
+	if err != nil {
+		return nil, err
+	}
+	endpoint := fmt.Sprintf("%s/api/v1/venue/%s", baseURL, url.PathEscape(id))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to create get venue request", err)
+	}
+	c.setHeaders(req, key, token, reqID, corrID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, models.ParseResponseError(resp, maxErrorBytes)
+	}
+
+	var venue models.VenueDetails
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&venue); err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to decode venue response", err)
+	}
+	return &venue, nil
+}
+
+// UpdateVenue updates a venue record by ID in OWPROV.
+func (c *client) UpdateVenue(ctx context.Context, id string, body []byte, token, reqID, corrID string) error {
+	baseURL, key, err := c.resolveTarget()
+	if err != nil {
+		return err
+	}
+	endpoint := fmt.Sprintf("%s/api/v1/venue/%s", baseURL, url.PathEscape(id))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return apperror.Wrap(apperror.CodeInternal, "failed to create update venue request", err)
+	}
+	c.setHeaders(req, key, token, reqID, corrID)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "downstream OWPROV service unreachable")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return models.ParseResponseError(resp, maxErrorBytes)
+	}
+	return nil
 }

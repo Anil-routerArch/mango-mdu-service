@@ -4,15 +4,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/routerarchitects/mango-mdu-service/internal/models"
+	"github.com/routerarchitects/ra-common-mods/apperror"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -32,6 +35,11 @@ type PropertyService interface {
 	GetPortfolio(ctx context.Context, token, reqID, corrID string) (*models.PropertyPortfolioResponse, error)
 	GetOverview(ctx context.Context, scopeType, scopeID, token, reqID, corrID string) (*models.ScopeOverviewResponse, error)
 	GetDevices(ctx context.Context, scopeType, scopeID, token, reqID, corrID string, query models.ScopedDevicesQuery) (*models.ScopedDevicesResponse, error)
+	GetVenueMonitoring(ctx context.Context, venueID, token, reqID, corrID string) (*models.VenueMonitoringResponse, error)
+	StartVenueMonitoring(ctx context.Context, venueID string, req models.StartVenueMonitoringRequest, token, reqID, corrID string) (*models.VenueMonitoringResponse, error)
+	StopVenueMonitoring(ctx context.Context, venueID, token, reqID, corrID string) (*models.VenueMonitoringResponse, error)
+	GetVenueMonitoringClients(ctx context.Context, venueID, token, reqID, corrID string) ([]string, error)
+	GetVenueClientLifecycle(ctx context.Context, venueID, clientMac string, fromDate, toDate int64, limit, offset int, token, reqID, corrID string) (json.RawMessage, error)
 	UpdateDeviceStatus(eventType, serial string, connected *bool, sanity *float64, ipAddress string)
 }
 
@@ -137,6 +145,19 @@ func (s *propertyService) GetPortfolio(ctx context.Context, token, reqID, corrID
 type propertyProvisioningClient interface {
 	GetPropertyTree(ctx context.Context, token, reqID, corrID string) (*models.OWProvTreeNode, error)
 	GetInventoryForScope(ctx context.Context, entityID, venueID, token, reqID, corrID string) ([]models.InventoryTag, error)
+	GetVenue(ctx context.Context, id, token, reqID, corrID string) (*models.VenueDetails, error)
+	UpdateVenue(ctx context.Context, id string, body []byte, token, reqID, corrID string) error
+}
+
+type propertyAnalyticsClient interface {
+	GetBoard(ctx context.Context, id, token, reqID, corrID string) (*models.AnalyticsBoard, error)
+	CreateBoard(ctx context.Context, req models.CreateAnalyticsBoardRequest, token, reqID, corrID string) (string, error)
+	UpdateBoard(ctx context.Context, id string, req models.CreateAnalyticsBoardRequest, token, reqID, corrID string) error
+	DeleteBoard(ctx context.Context, id, token, reqID, corrID string) error
+	GetBoardDevices(ctx context.Context, id, token, reqID, corrID string) ([]models.AnalyticsBoardDevice, error)
+	GetBoardTimepoints(ctx context.Context, id string, fromDate, toDate int64, token, reqID, corrID string) (json.RawMessage, error)
+	GetWifiClients(ctx context.Context, venueID string, token, reqID, corrID string) ([]string, error)
+	GetClientLifecycle(ctx context.Context, venueID, clientMac string, fromDate, toDate int64, limit, offset int, token, reqID, corrID string) (json.RawMessage, error)
 }
 
 type propertyGatewayClient interface {
@@ -144,29 +165,35 @@ type propertyGatewayClient interface {
 }
 
 type propertyService struct {
-	provClient  propertyProvisioningClient
-	gwClient    propertyGatewayClient
-	logger      *slog.Logger
-	sfGroup     singleflight.Group
-	cacheMu     sync.RWMutex
-	snapshots   map[string]*operationalSnapshot
-	livePatches map[string]deviceStatusPatch
+	provClient       propertyProvisioningClient
+	gwClient         propertyGatewayClient
+	analyticsClient  propertyAnalyticsClient
+	logger           *slog.Logger
+	sfGroup          singleflight.Group
+	cacheMu          sync.RWMutex
+	snapshots        map[string]*operationalSnapshot
+	livePatches      map[string]deviceStatusPatch
 	lastPatchCleanup time.Time
-	owgwLimiter chan struct{}
+	owgwLimiter      chan struct{}
 }
 
 func NewPropertyService(provClient propertyProvisioningClient, gwClient propertyGatewayClient, logger ...*slog.Logger) PropertyService {
+	return NewPropertyServiceWithAnalytics(provClient, gwClient, nil, logger...)
+}
+
+func NewPropertyServiceWithAnalytics(provClient propertyProvisioningClient, gwClient propertyGatewayClient, analyticsClient propertyAnalyticsClient, logger ...*slog.Logger) PropertyService {
 	l := slog.Default()
 	if len(logger) > 0 && logger[0] != nil {
 		l = logger[0]
 	}
 	return &propertyService{
-		provClient:  provClient,
-		gwClient:    gwClient,
-		logger:      l,
-		snapshots:   make(map[string]*operationalSnapshot),
-		livePatches: make(map[string]deviceStatusPatch),
-		owgwLimiter: make(chan struct{}, propertyOWGWConcurrency),
+		provClient:      provClient,
+		gwClient:        gwClient,
+		analyticsClient: analyticsClient,
+		logger:          l,
+		snapshots:       make(map[string]*operationalSnapshot),
+		livePatches:     make(map[string]deviceStatusPatch),
+		owgwLimiter:     make(chan struct{}, propertyOWGWConcurrency),
 	}
 }
 
@@ -842,4 +869,214 @@ func (s *propertyService) GetDevices(ctx context.Context, scopeType, scopeID, to
 		Devices: pageDevices, TotalCount: total, PageIndex: q.PageIndex, PageSize: q.PageSize,
 		TotalPages: totalPages, Summary: summary, DataQuality: makeDataQuality(summary, snapshot.statusErrors, dqState, snapshot.fetchedAt),
 	}, nil
+}
+
+func (s *propertyService) checkVenueAuthorized(ctx context.Context, venueID, token, reqID, corrID string) error {
+	tree, err := s.GetTree(ctx, token, reqID, corrID)
+	if err != nil {
+		return err
+	}
+	if _, authorized := findScope(tree.Nodes, "venue", venueID); !authorized {
+		return models.NewApiError(http.StatusNotFound, "Not Found", "Venue not found in the authorized hierarchy")
+	}
+	return nil
+}
+
+func (s *propertyService) invalidatePrincipalSnapshot(token string) {
+	principalKey := principalCacheKey(token)
+	if principalKey != "" {
+		fullKey := principalKey + ":portfolio"
+		s.cacheMu.Lock()
+		delete(s.snapshots, fullKey)
+		s.cacheMu.Unlock()
+	}
+}
+
+func (s *propertyService) GetVenueMonitoring(ctx context.Context, venueID, token, reqID, corrID string) (*models.VenueMonitoringResponse, error) {
+	if err := s.checkVenueAuthorized(ctx, venueID, token, reqID, corrID); err != nil {
+		return nil, err
+	}
+	venue, err := s.provClient.GetVenue(ctx, venueID, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+	if len(venue.Boards) == 0 || strings.TrimSpace(venue.Boards[0]) == "" {
+		return &models.VenueMonitoringResponse{Active: false, VenueID: venueID}, nil
+	}
+	boardID := strings.TrimSpace(venue.Boards[0])
+	resp := &models.VenueMonitoringResponse{
+		Active:  true,
+		VenueID: venueID,
+		BoardID: boardID,
+	}
+	if s.analyticsClient == nil {
+		return resp, nil
+	}
+
+	board, err := s.analyticsClient.GetBoard(ctx, boardID, token, reqID, corrID)
+	if err == nil && board != nil && len(board.VenueList) > 0 {
+		resp.Interval = board.VenueList[0].Interval
+		resp.Retention = board.VenueList[0].Retention
+	}
+
+	devices, err := s.analyticsClient.GetBoardDevices(ctx, boardID, token, reqID, corrID)
+	if err != nil {
+		return resp, nil
+	}
+	resp.Devices = devices
+
+	summary := &models.VenueMonitoringSummary{
+		TotalDevices: len(devices),
+	}
+	var totalHealth, totalMemory float64
+	var healthCount, memoryCount int
+	for _, dev := range devices {
+		if dev.Connected {
+			summary.ConnectedDevices++
+		} else {
+			summary.DisconnectedDevices++
+		}
+		summary.TwoGAssociations += dev.Associations2G
+		summary.FiveGAssociations += dev.Associations5G
+		summary.SixGAssociations += dev.Associations6G
+
+		if dev.Health > 0 {
+			totalHealth += dev.Health
+			healthCount++
+		}
+		if dev.Memory > 0 {
+			totalMemory += dev.Memory
+			memoryCount++
+		}
+	}
+	summary.TotalAssociations = summary.TwoGAssociations + summary.FiveGAssociations + summary.SixGAssociations
+	if healthCount > 0 {
+		summary.AvgHealth = math.Round((totalHealth/float64(healthCount))*10) / 10
+	}
+	if memoryCount > 0 {
+		summary.AvgMemoryUsed = math.Round((totalMemory/float64(memoryCount))*10) / 10
+	}
+	resp.Summary = summary
+
+	return resp, nil
+}
+
+func (s *propertyService) StartVenueMonitoring(ctx context.Context, venueID string, req models.StartVenueMonitoringRequest, token, reqID, corrID string) (*models.VenueMonitoringResponse, error) {
+	if err := s.checkVenueAuthorized(ctx, venueID, token, reqID, corrID); err != nil {
+		return nil, err
+	}
+	if s.analyticsClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owanalytics service not available")
+	}
+
+	venue, err := s.provClient.GetVenue(ctx, venueID, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = venue.Name
+	}
+	interval := req.Interval
+	if interval <= 0 {
+		interval = 60
+	}
+	retention := req.Retention
+	if retention <= 0 {
+		retention = 604800 // 7 days
+	}
+
+	boardReq := models.CreateAnalyticsBoardRequest{
+		Name: name,
+		VenueList: []models.AnalyticsBoardVenue{
+			{
+				ID:               venueID,
+				Name:             name,
+				Interval:         interval,
+				Retention:        retention,
+				MonitorSubVenues: req.MonitorSubVenues,
+			},
+		},
+	}
+
+	boardID, err := s.analyticsClient.CreateBoard(ctx, boardReq, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+
+	updateBody, err := json.Marshal(map[string]any{
+		"boards": []string{boardID},
+	})
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to marshal venue update body", err)
+	}
+
+	if err := s.provClient.UpdateVenue(ctx, venueID, updateBody, token, reqID, corrID); err != nil {
+		_ = s.analyticsClient.DeleteBoard(ctx, boardID, token, reqID, corrID)
+		return nil, err
+	}
+
+	s.invalidatePrincipalSnapshot(token)
+
+	return &models.VenueMonitoringResponse{
+		Active:    true,
+		VenueID:   venueID,
+		BoardID:   boardID,
+		Interval:  interval,
+		Retention: retention,
+	}, nil
+}
+
+func (s *propertyService) StopVenueMonitoring(ctx context.Context, venueID, token, reqID, corrID string) (*models.VenueMonitoringResponse, error) {
+	if err := s.checkVenueAuthorized(ctx, venueID, token, reqID, corrID); err != nil {
+		return nil, err
+	}
+
+	venue, err := s.provClient.GetVenue(ctx, venueID, token, reqID, corrID)
+	if err != nil {
+		return nil, err
+	}
+
+	updateBody, err := json.Marshal(map[string]any{
+		"boards": []string{},
+	})
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "failed to marshal venue update body", err)
+	}
+
+	if err := s.provClient.UpdateVenue(ctx, venueID, updateBody, token, reqID, corrID); err != nil {
+		return nil, err
+	}
+
+	if len(venue.Boards) > 0 && strings.TrimSpace(venue.Boards[0]) != "" && s.analyticsClient != nil {
+		_ = s.analyticsClient.DeleteBoard(ctx, strings.TrimSpace(venue.Boards[0]), token, reqID, corrID)
+	}
+
+	s.invalidatePrincipalSnapshot(token)
+
+	return &models.VenueMonitoringResponse{
+		Active:  false,
+		VenueID: venueID,
+	}, nil
+}
+
+func (s *propertyService) GetVenueMonitoringClients(ctx context.Context, venueID, token, reqID, corrID string) ([]string, error) {
+	if err := s.checkVenueAuthorized(ctx, venueID, token, reqID, corrID); err != nil {
+		return nil, err
+	}
+	if s.analyticsClient == nil {
+		return []string{}, nil
+	}
+	return s.analyticsClient.GetWifiClients(ctx, venueID, token, reqID, corrID)
+}
+
+func (s *propertyService) GetVenueClientLifecycle(ctx context.Context, venueID, clientMac string, fromDate, toDate int64, limit, offset int, token, reqID, corrID string) (json.RawMessage, error) {
+	if err := s.checkVenueAuthorized(ctx, venueID, token, reqID, corrID); err != nil {
+		return nil, err
+	}
+	if s.analyticsClient == nil {
+		return json.RawMessage("{}"), nil
+	}
+	return s.analyticsClient.GetClientLifecycle(ctx, venueID, clientMac, fromDate, toDate, limit, offset, token, reqID, corrID)
 }

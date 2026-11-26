@@ -49,6 +49,11 @@ func RegisterPublic(app *fiber.App, deps PublicDeps) {
 		group.Get("/api/v1/properties/:id/devices", deps.PropertyHandler.GetPropertyDevices)
 		group.Get("/api/v1/venues/:id/overview", deps.PropertyHandler.GetVenueOverview)
 		group.Get("/api/v1/venues/:id/devices", deps.PropertyHandler.GetVenueDevices)
+		group.Get("/api/v1/venues/:id/monitoring", deps.PropertyHandler.GetVenueMonitoring)
+		group.Post("/api/v1/venues/:id/monitoring", deps.PropertyHandler.StartVenueMonitoring)
+		group.Delete("/api/v1/venues/:id/monitoring", deps.PropertyHandler.StopVenueMonitoring)
+		group.Get("/api/v1/venues/:id/monitoring/clients", deps.PropertyHandler.GetVenueMonitoringClients)
+		group.Get("/api/v1/venues/:id/monitoring/clients/:client", deps.PropertyHandler.GetVenueClientLifecycle)
 	}
 
 	// Register device routes

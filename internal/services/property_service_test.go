@@ -17,6 +17,7 @@ type fakePropertyProv struct {
 	tree           *models.OWProvTreeNode
 	inventory      map[string][]models.InventoryTag
 	inventoryErr   map[string]error
+	venues         map[string]*models.VenueDetails
 	mu             sync.Mutex
 	treeCalls      int
 	inventoryCalls int
@@ -45,6 +46,17 @@ func (f *fakePropertyProv) GetInventoryForScope(_ context.Context, entityID, ven
 		return nil, err
 	}
 	return append([]models.InventoryTag(nil), f.inventory[key]...), nil
+}
+
+func (f *fakePropertyProv) GetVenue(_ context.Context, id, _, _, _ string) (*models.VenueDetails, error) {
+	if f.venues != nil && f.venues[id] != nil {
+		return f.venues[id], nil
+	}
+	return &models.VenueDetails{ID: id, Name: "Venue " + id}, nil
+}
+
+func (f *fakePropertyProv) UpdateVenue(_ context.Context, _ string, _ []byte, _, _, _ string) error {
+	return nil
 }
 
 type fakePropertyGW struct {
@@ -661,4 +673,186 @@ func TestStaleSnapshotKeepsMeasurementTimeAndSurvivesFailedRefresh(t *testing.T)
 		t.Fatalf("failed refresh replaced the last complete stale snapshot: %+v", cached)
 	}
 	impl.cacheMu.RUnlock()
+}
+
+type fakePropertyAnalytics struct {
+	board        *models.AnalyticsBoard
+	devices      []models.AnalyticsBoardDevice
+	clients      []string
+	lifecycle    json.RawMessage
+	createdBoard models.CreateAnalyticsBoardRequest
+	deletedBoard string
+}
+
+func (f *fakePropertyAnalytics) GetBoard(_ context.Context, id, _, _, _ string) (*models.AnalyticsBoard, error) {
+	if f.board != nil {
+		return f.board, nil
+	}
+	return &models.AnalyticsBoard{
+		ID:   id,
+		Name: "Test Board",
+		VenueList: []models.AnalyticsBoardVenue{
+			{ID: "venue-1", Interval: 60, Retention: 604800, MonitorSubVenues: true},
+		},
+	}, nil
+}
+
+func (f *fakePropertyAnalytics) CreateBoard(_ context.Context, req models.CreateAnalyticsBoardRequest, _, _, _ string) (string, error) {
+	f.createdBoard = req
+	return "created-board-uuid", nil
+}
+
+func (f *fakePropertyAnalytics) UpdateBoard(_ context.Context, _ string, _ models.CreateAnalyticsBoardRequest, _, _, _ string) error {
+	return nil
+}
+
+func (f *fakePropertyAnalytics) DeleteBoard(_ context.Context, id, _, _, _ string) error {
+	f.deletedBoard = id
+	return nil
+}
+
+func (f *fakePropertyAnalytics) GetBoardDevices(_ context.Context, _ string, _, _, _ string) ([]models.AnalyticsBoardDevice, error) {
+	return f.devices, nil
+}
+
+func (f *fakePropertyAnalytics) GetBoardTimepoints(_ context.Context, _ string, _, _ int64, _, _, _ string) (json.RawMessage, error) {
+	return json.RawMessage(`{"points":[]}`), nil
+}
+
+func (f *fakePropertyAnalytics) GetWifiClients(_ context.Context, _ string, _, _, _ string) ([]string, error) {
+	return f.clients, nil
+}
+
+func (f *fakePropertyAnalytics) GetClientLifecycle(_ context.Context, _, _ string, _, _ int64, _, _ int, _, _, _ string) (json.RawMessage, error) {
+	return f.lifecycle, nil
+}
+
+func TestVenueMonitoring_UnauthorizedVenueBlocked(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "Authorized Venue", UUID: "venue-authorized",
+		},
+	}
+	gw := &fakePropertyGW{}
+	analytics := &fakePropertyAnalytics{}
+
+	service := NewPropertyServiceWithAnalytics(prov, gw, analytics)
+	ctx := context.Background()
+
+	// Calling unauthorized venue must fail with 404
+	_, err := service.GetVenueMonitoring(ctx, "venue-unauthorized", "token", "req", "corr")
+	if err == nil {
+		t.Fatal("expected unauthorized venue to be rejected, got nil error")
+	}
+	var apiErr models.ApiError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != 404 {
+		t.Fatalf("expected 404 ApiError, got %v", err)
+	}
+
+	// Start on unauthorized venue must fail
+	_, err = service.StartVenueMonitoring(ctx, "venue-unauthorized", models.StartVenueMonitoringRequest{}, "token", "req", "corr")
+	if err == nil {
+		t.Fatal("expected unauthorized venue start to be rejected, got nil error")
+	}
+
+	// Clients query on unauthorized venue must fail
+	_, err = service.GetVenueMonitoringClients(ctx, "venue-unauthorized", "token", "req", "corr")
+	if err == nil {
+		t.Fatal("expected unauthorized venue clients to be rejected, got nil error")
+	}
+}
+
+func TestVenueMonitoring_AuthorizedActiveAndInactive(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "My Venue", UUID: "venue-1",
+		},
+	}
+	gw := &fakePropertyGW{}
+	analytics := &fakePropertyAnalytics{
+		devices: []models.AnalyticsBoardDevice{
+			{
+				SerialNumber:   "ap-1",
+				Connected:      true,
+				Health:         90,
+				Memory:         40,
+				Associations2G: 5,
+				Associations5G: 10,
+				Associations6G: 2,
+			},
+			{
+				SerialNumber: "ap-2",
+				Connected:    false,
+				Health:       0,
+				Memory:       0,
+			},
+		},
+		clients:   []string{"00:11:22:33:44:55"},
+		lifecycle: json.RawMessage(`{"entries":[{"timestamp":1234}]}`),
+	}
+
+	service := NewPropertyServiceWithAnalytics(prov, gw, analytics)
+	ctx := context.Background()
+
+	// Inactive venue (no boards attached)
+	resp, err := service.GetVenueMonitoring(ctx, "venue-1", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Active {
+		t.Fatal("expected venue monitoring to be inactive")
+	}
+
+	// Start monitoring
+	startResp, err := service.StartVenueMonitoring(ctx, "venue-1", models.StartVenueMonitoringRequest{
+		Interval: 60, Retention: 604800,
+	}, "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("start monitoring failed: %v", err)
+	}
+	if !startResp.Active || startResp.BoardID != "created-board-uuid" {
+		t.Fatalf("unexpected start response: %+v", startResp)
+	}
+
+	// Active venue query with boards
+	fakeProvWithBoard := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "My Venue", UUID: "venue-1",
+		},
+		venues: map[string]*models.VenueDetails{
+			"venue-1": {ID: "venue-1", Name: "My Venue", Boards: []string{"board-1"}},
+		},
+	}
+	serviceActive := NewPropertyServiceWithAnalytics(fakeProvWithBoard, gw, analytics)
+	activeResp, err := serviceActive.GetVenueMonitoring(ctx, "venue-1", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("active monitoring fetch failed: %v", err)
+	}
+	if activeResp.Summary == nil || activeResp.Summary.TotalDevices != 2 || activeResp.Summary.ConnectedDevices != 1 {
+		t.Fatalf("unexpected summary in active response: %+v", activeResp.Summary)
+	}
+	if activeResp.Summary.TotalAssociations != 17 {
+		t.Fatalf("expected 17 total associations, got %d", activeResp.Summary.TotalAssociations)
+	}
+
+	// Get clients
+	clients, err := serviceActive.GetVenueMonitoringClients(ctx, "venue-1", "token", "req", "corr")
+	if err != nil || len(clients) != 1 || clients[0] != "00:11:22:33:44:55" {
+		t.Fatalf("unexpected clients response: %v, err: %v", clients, err)
+	}
+
+	// Get client lifecycle
+	lc, err := serviceActive.GetVenueClientLifecycle(ctx, "venue-1", "00:11:22:33:44:55", 0, 0, 10, 0, "token", "req", "corr")
+	if err != nil || len(lc) == 0 {
+		t.Fatalf("unexpected lifecycle response: %s, err: %v", string(lc), err)
+	}
+
+	// Stop monitoring
+	stopResp, err := serviceActive.StopVenueMonitoring(ctx, "venue-1", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("stop monitoring failed: %v", err)
+	}
+	if stopResp.Active {
+		t.Fatal("expected stopped monitoring response to have active: false")
+	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/routerarchitects/mango-mdu-service/internal/config"
 	"github.com/routerarchitects/mango-mdu-service/internal/db"
 	"github.com/routerarchitects/mango-mdu-service/internal/events"
+	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owanalytics"
 	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owgw"
 	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owprov"
 	"github.com/routerarchitects/mango-mdu-service/internal/gateway/owsec"
@@ -182,13 +183,27 @@ func New(ctx context.Context, cfg *config.Config, rootLog *slog.Logger) (*App, e
 		Logger:    rootLog,
 	})
 
+	owanalyticsClient := owanalytics.NewClient(owanalytics.Config{
+		URLResolver: func() string {
+			if discovery != nil {
+				if inst := discovery.Store().GetServiceInstances("owanalytics"); inst != nil {
+					return inst.PrivateEndPoint
+				}
+			}
+			return ""
+		},
+		Timeout:   60 * time.Second,
+		TLSConfig: tlsConfig,
+		Logger:    rootLog,
+	})
+
 	policyService := services.NewPolicyService(owprovClient, owsecClient)
 	policyHandler := handlers.NewPolicyHandler(policyService, rootLog)
 
 	deviceService := services.NewDeviceService(owprovClient, owgwClient, rootLog)
 	deviceHandler := handlers.NewDeviceHandler(deviceService, rootLog)
 
-	propertyService := services.NewPropertyService(owprovClient, owgwClient, rootLog)
+	propertyService := services.NewPropertyServiceWithAnalytics(owprovClient, owgwClient, owanalyticsClient, rootLog)
 	propertyHandler := handlers.NewPropertyHandler(propertyService, rootLog)
 
 	// 7. Initialize Realtime Event Hub and Kafka Consumer
