@@ -1052,6 +1052,20 @@ func (s *propertyService) StopVenueMonitoring(ctx context.Context, venueID, toke
 		return nil, err
 	}
 
+	hasBoard := len(venue.Boards) > 0 && strings.TrimSpace(venue.Boards[0]) != ""
+	if !hasBoard {
+		return &models.VenueMonitoringResponse{
+			Active:  false,
+			VenueID: venueID,
+		}, nil
+	}
+
+	if s.analyticsClient == nil {
+		return nil, models.NewApiError(http.StatusServiceUnavailable, "Service Unavailable", "owanalytics service not available")
+	}
+
+	boardID := strings.TrimSpace(venue.Boards[0])
+
 	updateBody, err := json.Marshal(map[string]any{
 		"boards": []string{},
 	})
@@ -1063,16 +1077,27 @@ func (s *propertyService) StopVenueMonitoring(ctx context.Context, venueID, toke
 		return nil, err
 	}
 
-	if len(venue.Boards) > 0 && strings.TrimSpace(venue.Boards[0]) != "" && s.analyticsClient != nil {
-		boardID := strings.TrimSpace(venue.Boards[0])
-		if delErr := s.analyticsClient.DeleteBoard(ctx, boardID, token, reqID, corrID); delErr != nil && s.logger != nil {
-			s.logger.Error("failed to delete analytics board during venue monitoring stop",
+	if delErr := s.analyticsClient.DeleteBoard(ctx, boardID, token, reqID, corrID); delErr != nil {
+		if s.logger != nil {
+			s.logger.Error("failed to delete analytics board during venue monitoring stop, attempting to restore venue association",
 				"venue_id", venueID,
 				"board_id", boardID,
 				"request_id", reqID,
 				"error", delErr,
 			)
 		}
+		restoreBody, _ := json.Marshal(map[string]any{
+			"boards": venue.Boards,
+		})
+		if restoreErr := s.provClient.UpdateVenue(ctx, venueID, restoreBody, token, reqID, corrID); restoreErr != nil && s.logger != nil {
+			s.logger.Error("failed to restore venue board association after analytics delete failure",
+				"venue_id", venueID,
+				"board_id", boardID,
+				"request_id", reqID,
+				"error", restoreErr,
+			)
+		}
+		return nil, delErr
 	}
 
 	s.invalidatePrincipalSnapshot(token)
