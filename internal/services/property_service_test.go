@@ -502,6 +502,81 @@ func TestKafkaStatusPatchesDoNotOverwriteAbsentFields(t *testing.T) {
 	}
 }
 
+func TestKafkaPatchDoesNotOverwriteNewerOWGWStatus(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree:      &models.OWProvTreeNode{Type: "entity", Name: "Property A", UUID: "property-a"},
+		inventory: map[string][]models.InventoryTag{"entity:property-a": {{SerialNumber: "aa"}}},
+	}
+	gw := &fakePropertyGW{
+		statuses: []models.GatewayDeviceStatus{
+			{SerialNumber: "aa", Connected: true, IPAddress: "192.168.1.1"},
+		},
+	}
+	service := NewPropertyService(prov, gw)
+	ctx := context.Background()
+
+	// Initial fetch warms the cache with IP 192.168.1.1
+	if _, err := service.GetDevices(ctx, "property", "property-a", "token", "req", "corr", models.ScopedDevicesQuery{PageSize: 25}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Kafka event sets IP to 192.168.1.10
+	service.UpdateDeviceStatus("state", "aa", nil, nil, "192.168.1.10")
+	res, err := service.GetDevices(ctx, "property", "property-a", "token", "req", "corr", models.ScopedDevicesQuery{PageSize: 25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Devices) == 0 || res.Devices[0].IPAddress != "192.168.1.10" {
+		t.Fatalf("expected Kafka IP 192.168.1.10, got %+v", res.Devices)
+	}
+
+	// 2. OWGW updates device IP to 192.168.1.20 and snapshot refreshes
+	gw.mu.Lock()
+	gw.statuses = []models.GatewayDeviceStatus{
+		{SerialNumber: "aa", Connected: true, IPAddress: "192.168.1.20"},
+	}
+	gw.mu.Unlock()
+
+	impl := service.(*propertyService)
+	cacheKey := principalCacheKey("token") + ":portfolio"
+	// Invalidate cache to force a fresh fetch from OWGW
+	impl.cacheMu.Lock()
+	delete(impl.snapshots, cacheKey)
+	// Set livePatches timestamp older so it won't override the newer OWGW poll
+	patch := impl.livePatches["aa"]
+	patch.ipAddressAt = time.Now().Add(-10 * time.Second)
+	impl.livePatches["aa"] = patch
+	impl.cacheMu.Unlock()
+
+	res, err = service.GetDevices(ctx, "property", "property-a", "token", "req", "corr", models.ScopedDevicesQuery{PageSize: 25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Devices) == 0 || res.Devices[0].IPAddress != "192.168.1.20" {
+		t.Fatalf("expected refreshed OWGW IP 192.168.1.20, got %+v", res.Devices)
+	}
+
+	// 3. New Kafka healthcheck event arrives containing ONLY sanity (sanity = 98, NO IP)
+	sanityVal := 98.0
+	service.UpdateDeviceStatus("healthcheck", "aa", nil, &sanityVal, "")
+
+	// 4. Verify that sanity was updated, and the newer OWGW IP (192.168.1.20) was NOT overwritten by the old Kafka patch (192.168.1.10)
+	res, err = service.GetDevices(ctx, "property", "property-a", "token", "req", "corr", models.ScopedDevicesQuery{PageSize: 25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Devices) == 0 {
+		t.Fatal("expected at least 1 device in response")
+	}
+	device := res.Devices[0]
+	if device.Sanity == nil || *device.Sanity != 98.0 {
+		t.Fatalf("expected sanity 98.0, got %v", device.Sanity)
+	}
+	if device.IPAddress != "192.168.1.20" {
+		t.Fatalf("CRITICAL: old Kafka patch overwrote newer OWGW IP! Expected 192.168.1.20, got %s", device.IPAddress)
+	}
+}
+
 func TestStaleSnapshotKeepsMeasurementTimeAndSurvivesFailedRefresh(t *testing.T) {
 	prov := &fakePropertyProv{
 		tree:      &models.OWProvTreeNode{Type: "entity", Name: "Property A", UUID: "property-a"},

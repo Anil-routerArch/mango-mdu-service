@@ -436,22 +436,30 @@ func (s *propertyService) UpdateDeviceStatus(eventType, serial string, connected
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 	patch := s.livePatches[norm]
+	eventPatch := deviceStatusPatch{}
 	changed := false
 	if connected != nil {
 		value := *connected
 		patch.connected = &value
 		patch.connectedAt = now
+		eventPatch.connected = &value
+		eventPatch.connectedAt = now
 		changed = true
 	}
 	if eventType == "healthcheck" {
 		patch.sanity = sanity
 		patch.sanitySet = true
 		patch.sanityAt = now
+		eventPatch.sanity = sanity
+		eventPatch.sanitySet = true
+		eventPatch.sanityAt = now
 		changed = true
 	}
 	if ipAddress != "" {
 		patch.ipAddress = ipAddress
 		patch.ipAddressAt = now
+		eventPatch.ipAddress = ipAddress
+		eventPatch.ipAddressAt = now
 		changed = true
 	}
 	if !changed {
@@ -464,7 +472,7 @@ func (s *propertyService) UpdateDeviceStatus(eventType, serial string, connected
 			for key, value := range snap.statuses {
 				nextStatuses[key] = value
 			}
-			nextStatuses[norm] = applyDeviceStatusPatch(cur, patch, time.Time{})
+			nextStatuses[norm] = applyDeviceStatusPatch(cur, eventPatch, time.Time{})
 			snap.statuses = nextStatuses
 		}
 	}
