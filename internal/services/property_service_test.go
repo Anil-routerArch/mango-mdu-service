@@ -18,6 +18,7 @@ type fakePropertyProv struct {
 	inventory      map[string][]models.InventoryTag
 	inventoryErr   map[string]error
 	venues         map[string]*models.VenueDetails
+	updateVenueErr error
 	mu             sync.Mutex
 	treeCalls      int
 	inventoryCalls int
@@ -56,7 +57,7 @@ func (f *fakePropertyProv) GetVenue(_ context.Context, id, _, _, _ string) (*mod
 }
 
 func (f *fakePropertyProv) UpdateVenue(_ context.Context, _ string, _ []byte, _, _, _ string) error {
-	return nil
+	return f.updateVenueErr
 }
 
 type fakePropertyGW struct {
@@ -681,7 +682,9 @@ type fakePropertyAnalytics struct {
 	clients      []string
 	lifecycle    json.RawMessage
 	createdBoard models.CreateAnalyticsBoardRequest
+	createCount  int
 	deletedBoard string
+	deleteErr    error
 }
 
 func (f *fakePropertyAnalytics) GetBoard(_ context.Context, id, _, _, _ string) (*models.AnalyticsBoard, error) {
@@ -699,6 +702,7 @@ func (f *fakePropertyAnalytics) GetBoard(_ context.Context, id, _, _, _ string) 
 
 func (f *fakePropertyAnalytics) CreateBoard(_ context.Context, req models.CreateAnalyticsBoardRequest, _, _, _ string) (string, error) {
 	f.createdBoard = req
+	f.createCount++
 	return "created-board-uuid", nil
 }
 
@@ -708,7 +712,7 @@ func (f *fakePropertyAnalytics) UpdateBoard(_ context.Context, _ string, _ model
 
 func (f *fakePropertyAnalytics) DeleteBoard(_ context.Context, id, _, _, _ string) error {
 	f.deletedBoard = id
-	return nil
+	return f.deleteErr
 }
 
 func (f *fakePropertyAnalytics) GetBoardDevices(_ context.Context, _ string, _, _, _ string) ([]models.AnalyticsBoardDevice, error) {
@@ -854,5 +858,98 @@ func TestVenueMonitoring_AuthorizedActiveAndInactive(t *testing.T) {
 	}
 	if stopResp.Active {
 		t.Fatal("expected stopped monitoring response to have active: false")
+	}
+}
+
+func TestVenueMonitoring_StartIdempotency(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "My Venue", UUID: "venue-1",
+		},
+		venues: map[string]*models.VenueDetails{
+			"venue-1": {ID: "venue-1", Name: "My Venue", Boards: []string{"board-existing"}},
+		},
+	}
+	gw := &fakePropertyGW{}
+	analytics := &fakePropertyAnalytics{
+		board: &models.AnalyticsBoard{
+			ID:   "board-existing",
+			Name: "My Venue",
+			VenueList: []models.AnalyticsBoardVenue{
+				{ID: "venue-1", Interval: 60, Retention: 604800},
+			},
+		},
+	}
+
+	service := NewPropertyServiceWithAnalytics(prov, gw, analytics)
+	ctx := context.Background()
+
+	// Calling StartVenueMonitoring when a board already exists should NOT create a new board.
+	resp, err := service.StartVenueMonitoring(ctx, "venue-1", models.StartVenueMonitoringRequest{
+		Interval: 60,
+	}, "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Active || resp.BoardID != "board-existing" {
+		t.Fatalf("expected existing board to be returned, got %+v", resp)
+	}
+	if analytics.createCount != 0 {
+		t.Fatalf("expected CreateBoard not to be called, got %d calls", analytics.createCount)
+	}
+}
+
+func TestVenueMonitoring_StopDeleteBoardFailureLogged(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "My Venue", UUID: "venue-1",
+		},
+		venues: map[string]*models.VenueDetails{
+			"venue-1": {ID: "venue-1", Name: "My Venue", Boards: []string{"board-1"}},
+		},
+	}
+	gw := &fakePropertyGW{}
+	analytics := &fakePropertyAnalytics{
+		deleteErr: errors.New("owanalytics connection timeout"),
+	}
+
+	service := NewPropertyServiceWithAnalytics(prov, gw, analytics)
+	ctx := context.Background()
+
+	// Stopping monitoring should succeed even if DeleteBoard in analytics returns an error
+	resp, err := service.StopVenueMonitoring(ctx, "venue-1", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error when stopping monitoring: %v", err)
+	}
+	if resp.Active {
+		t.Fatal("expected monitoring to be marked inactive")
+	}
+	if analytics.deletedBoard != "board-1" {
+		t.Fatalf("expected delete attempt for board-1, got %q", analytics.deletedBoard)
+	}
+}
+
+func TestVenueMonitoring_StartRollbackDeleteFailureLogged(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "My Venue", UUID: "venue-1",
+		},
+		updateVenueErr: errors.New("owprov update failure"),
+	}
+	gw := &fakePropertyGW{}
+	analytics := &fakePropertyAnalytics{
+		deleteErr: errors.New("owanalytics delete failure during rollback"),
+	}
+
+	service := NewPropertyServiceWithAnalytics(prov, gw, analytics)
+	ctx := context.Background()
+
+	// Start monitoring update failure returns the original error even if rollback delete fails
+	_, err := service.StartVenueMonitoring(ctx, "venue-1", models.StartVenueMonitoringRequest{}, "token", "req", "corr")
+	if err == nil {
+		t.Fatal("expected start monitoring error when UpdateVenue fails")
+	}
+	if !strings.Contains(err.Error(), "owprov update failure") {
+		t.Fatalf("expected owprov update failure error, got %v", err)
 	}
 }

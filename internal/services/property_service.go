@@ -974,6 +974,10 @@ func (s *propertyService) StartVenueMonitoring(ctx context.Context, venueID stri
 		return nil, err
 	}
 
+	if len(venue.Boards) > 0 && strings.TrimSpace(venue.Boards[0]) != "" {
+		return s.GetVenueMonitoring(ctx, venueID, token, reqID, corrID)
+	}
+
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		name = venue.Name
@@ -1013,7 +1017,14 @@ func (s *propertyService) StartVenueMonitoring(ctx context.Context, venueID stri
 	}
 
 	if err := s.provClient.UpdateVenue(ctx, venueID, updateBody, token, reqID, corrID); err != nil {
-		_ = s.analyticsClient.DeleteBoard(ctx, boardID, token, reqID, corrID)
+		if delErr := s.analyticsClient.DeleteBoard(ctx, boardID, token, reqID, corrID); delErr != nil && s.logger != nil {
+			s.logger.Error("failed to delete analytics board during start rollback",
+				"venue_id", venueID,
+				"board_id", boardID,
+				"request_id", reqID,
+				"error", delErr,
+			)
+		}
 		return nil, err
 	}
 
@@ -1050,7 +1061,15 @@ func (s *propertyService) StopVenueMonitoring(ctx context.Context, venueID, toke
 	}
 
 	if len(venue.Boards) > 0 && strings.TrimSpace(venue.Boards[0]) != "" && s.analyticsClient != nil {
-		_ = s.analyticsClient.DeleteBoard(ctx, strings.TrimSpace(venue.Boards[0]), token, reqID, corrID)
+		boardID := strings.TrimSpace(venue.Boards[0])
+		if delErr := s.analyticsClient.DeleteBoard(ctx, boardID, token, reqID, corrID); delErr != nil && s.logger != nil {
+			s.logger.Error("failed to delete analytics board during venue monitoring stop",
+				"venue_id", venueID,
+				"board_id", boardID,
+				"request_id", reqID,
+				"error", delErr,
+			)
+		}
 	}
 
 	s.invalidatePrincipalSnapshot(token)
