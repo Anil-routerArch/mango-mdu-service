@@ -896,9 +896,15 @@ func (s *propertyService) invalidatePrincipalSnapshot(token string) {
 }
 
 func (s *propertyService) GetVenueMonitoring(ctx context.Context, venueID, token, reqID, corrID string) (*models.VenueMonitoringResponse, error) {
-	if err := s.checkVenueAuthorized(ctx, venueID, token, reqID, corrID); err != nil {
+	tree, err := s.GetTree(ctx, token, reqID, corrID)
+	if err != nil {
 		return nil, err
 	}
+	node, authorized := findScope(tree.Nodes, "venue", venueID)
+	if !authorized {
+		return nil, models.NewApiError(http.StatusNotFound, "Not Found", "Venue not found in the authorized hierarchy")
+	}
+
 	venue, err := s.provClient.GetVenue(ctx, venueID, token, reqID, corrID)
 	if err != nil {
 		return nil, err
@@ -911,6 +917,7 @@ func (s *propertyService) GetVenueMonitoring(ctx context.Context, venueID, token
 		Active:  true,
 		VenueID: venueID,
 		BoardID: boardID,
+		Devices: []models.AnalyticsBoardDevice{},
 	}
 	if s.analyticsClient == nil {
 		return resp, nil
@@ -926,14 +933,29 @@ func (s *propertyService) GetVenueMonitoring(ctx context.Context, venueID, token
 	if err != nil {
 		return resp, nil
 	}
-	resp.Devices = devices
+
+	// Authorize and filter analytics devices against caller's visible inventory in this venue subtree
+	inventory := make(map[string]models.InventoryTag)
+	if err := s.hydrateScopeInventory(ctx, node, inventory, token, reqID, corrID); err != nil {
+		return nil, err
+	}
+	authorizedSerials := make(map[string]string)
+	collectSerials(*node, true, authorizedSerials)
+
+	filteredDevices := make([]models.AnalyticsBoardDevice, 0, len(devices))
+	for _, dev := range devices {
+		if _, ok := authorizedSerials[normalizeSerial(dev.SerialNumber)]; ok {
+			filteredDevices = append(filteredDevices, dev)
+		}
+	}
+	resp.Devices = filteredDevices
 
 	summary := &models.VenueMonitoringSummary{
-		TotalDevices: len(devices),
+		TotalDevices: len(filteredDevices),
 	}
 	var totalHealth, totalMemory float64
 	var healthCount, memoryCount int
-	for _, dev := range devices {
+	for _, dev := range filteredDevices {
 		if dev.Connected {
 			summary.ConnectedDevices++
 		} else {

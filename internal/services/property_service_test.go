@@ -832,6 +832,12 @@ func TestVenueMonitoring_AuthorizedActiveAndInactive(t *testing.T) {
 		venues: map[string]*models.VenueDetails{
 			"venue-1": {ID: "venue-1", Name: "My Venue", Boards: []string{"board-1"}},
 		},
+		inventory: map[string][]models.InventoryTag{
+			"venue:venue-1": {
+				{SerialNumber: "ap-1"},
+				{SerialNumber: "ap-2"},
+			},
+		},
 	}
 	serviceActive := NewPropertyServiceWithAnalytics(fakeProvWithBoard, gw, analytics)
 	activeResp, err := serviceActive.GetVenueMonitoring(ctx, "venue-1", "token", "req", "corr")
@@ -1047,5 +1053,170 @@ func TestVenueMonitoring_StartRollbackDeleteFailureLogged(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "owprov update failure") {
 		t.Fatalf("expected owprov update failure error, got %v", err)
+	}
+}
+
+func TestVenueMonitoring_ParentOnlyAdmin_UnauthorizedChildDevicesExcluded(t *testing.T) {
+	// The caller's tree contains ONLY the parent venue. Unauthorized child venue is omitted.
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "Parent Venue", UUID: "venue-parent",
+		},
+		venues: map[string]*models.VenueDetails{
+			"venue-parent": {ID: "venue-parent", Name: "Parent Venue", Boards: []string{"board-1"}},
+		},
+		inventory: map[string][]models.InventoryTag{
+			"venue:venue-parent": {
+				{SerialNumber: "parent-ap-1"},
+			},
+			// Note: child venue inventory exists in backend, but user is parent-only
+			"venue:venue-child": {
+				{SerialNumber: "child-ap-1"},
+				{SerialNumber: "child-ap-2"},
+			},
+		},
+	}
+	gw := &fakePropertyGW{}
+	// Analytics board collects devices recursively from parent and children
+	analytics := &fakePropertyAnalytics{
+		devices: []models.AnalyticsBoardDevice{
+			{SerialNumber: "parent-ap-1", Connected: true, Associations2G: 5, Associations5G: 5, Health: 100, Memory: 40},
+			{SerialNumber: "child-ap-1", Connected: true, Associations2G: 10, Associations5G: 10, Health: 80, Memory: 60},
+			{SerialNumber: "child-ap-2", Connected: false, Associations2G: 0, Associations5G: 0, Health: 0, Memory: 0},
+		},
+	}
+
+	service := NewPropertyServiceWithAnalytics(prov, gw, analytics)
+	ctx := context.Background()
+
+	resp, err := service.GetVenueMonitoring(ctx, "venue-parent", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only parent-ap-1 should be returned to the parent-only admin
+	if len(resp.Devices) != 1 || resp.Devices[0].SerialNumber != "parent-ap-1" {
+		t.Fatalf("expected only parent-ap-1, got %+v", resp.Devices)
+	}
+	if resp.Summary == nil || resp.Summary.TotalDevices != 1 || resp.Summary.ConnectedDevices != 1 {
+		t.Fatalf("expected summary to reflect only 1 authorized device, got %+v", resp.Summary)
+	}
+	if resp.Summary.TotalAssociations != 10 {
+		t.Fatalf("expected 10 associations from parent AP, got %d", resp.Summary.TotalAssociations)
+	}
+}
+
+func TestVenueMonitoring_AuthorizedParentAndChild_AllDevicesIncluded(t *testing.T) {
+	// The caller's tree contains parent venue AND authorized child venue
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "Parent Venue", UUID: "venue-parent",
+			Venues: []models.OWProvTreeNode{
+				{Type: "venue", Name: "Child Venue", UUID: "venue-child"},
+			},
+		},
+		venues: map[string]*models.VenueDetails{
+			"venue-parent": {ID: "venue-parent", Name: "Parent Venue", Boards: []string{"board-1"}},
+		},
+		inventory: map[string][]models.InventoryTag{
+			"venue:venue-parent": {
+				{SerialNumber: "parent-ap-1"},
+			},
+			"venue:venue-child": {
+				{SerialNumber: "child-ap-1"},
+			},
+		},
+	}
+	gw := &fakePropertyGW{}
+	analytics := &fakePropertyAnalytics{
+		devices: []models.AnalyticsBoardDevice{
+			{SerialNumber: "parent-ap-1", Connected: true, Associations2G: 5, Associations5G: 5, Health: 90, Memory: 40},
+			{SerialNumber: "child-ap-1", Connected: true, Associations2G: 10, Associations5G: 10, Health: 85, Memory: 50},
+		},
+	}
+
+	service := NewPropertyServiceWithAnalytics(prov, gw, analytics)
+	ctx := context.Background()
+
+	resp, err := service.GetVenueMonitoring(ctx, "venue-parent", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.Devices) != 2 {
+		t.Fatalf("expected 2 devices for fully authorized admin, got %d", len(resp.Devices))
+	}
+	if resp.Summary.TotalDevices != 2 || resp.Summary.TotalAssociations != 30 {
+		t.Fatalf("unexpected summary for 2 devices: %+v", resp.Summary)
+	}
+}
+
+func TestVenueMonitoring_UnmatchedDeviceSerial_Excluded(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "My Venue", UUID: "venue-1",
+		},
+		venues: map[string]*models.VenueDetails{
+			"venue-1": {ID: "venue-1", Name: "My Venue", Boards: []string{"board-1"}},
+		},
+		inventory: map[string][]models.InventoryTag{
+			"venue:venue-1": {
+				{SerialNumber: "known-ap"},
+			},
+		},
+	}
+	gw := &fakePropertyGW{}
+	analytics := &fakePropertyAnalytics{
+		devices: []models.AnalyticsBoardDevice{
+			{SerialNumber: "known-ap", Connected: true, Associations2G: 2},
+			{SerialNumber: "unmatched-rogue-ap", Connected: true, Associations2G: 10},
+		},
+	}
+
+	service := NewPropertyServiceWithAnalytics(prov, gw, analytics)
+	ctx := context.Background()
+
+	resp, err := service.GetVenueMonitoring(ctx, "venue-1", "token", "req", "corr")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.Devices) != 1 || resp.Devices[0].SerialNumber != "known-ap" {
+		t.Fatalf("expected only known-ap, got %+v", resp.Devices)
+	}
+	if resp.Summary.TotalDevices != 1 || resp.Summary.TotalAssociations != 2 {
+		t.Fatalf("expected summary to exclude rogue AP, got %+v", resp.Summary)
+	}
+}
+
+func TestVenueMonitoring_InventoryFailure_ReturnsErrorFailClosed(t *testing.T) {
+	prov := &fakePropertyProv{
+		tree: &models.OWProvTreeNode{
+			Type: "venue", Name: "My Venue", UUID: "venue-1",
+		},
+		venues: map[string]*models.VenueDetails{
+			"venue-1": {ID: "venue-1", Name: "My Venue", Boards: []string{"board-1"}},
+		},
+		inventoryErr: map[string]error{
+			"venue:venue-1": errors.New("owprov inventory db timeout"),
+		},
+	}
+	gw := &fakePropertyGW{}
+	analytics := &fakePropertyAnalytics{
+		devices: []models.AnalyticsBoardDevice{
+			{SerialNumber: "ap-1", Connected: true},
+		},
+	}
+
+	service := NewPropertyServiceWithAnalytics(prov, gw, analytics)
+	ctx := context.Background()
+
+	// Must fail-closed: return error rather than leaking unfiltered analytics devices
+	_, err := service.GetVenueMonitoring(ctx, "venue-1", "token", "req", "corr")
+	if err == nil {
+		t.Fatal("expected error when inventory retrieval fails")
+	}
+	if !strings.Contains(err.Error(), "owprov inventory db timeout") {
+		t.Fatalf("expected inventory timeout error, got %v", err)
 	}
 }
