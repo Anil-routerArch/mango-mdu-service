@@ -626,10 +626,13 @@ func (s *propertyService) getOperationalSnapshot(ctx context.Context, token, req
 		if age < propertyMaxStaleAge {
 			out := operationalSnapshotView(cached)
 			s.cacheMu.RUnlock()
+			bgToken := strings.Clone(token)
+			bgReqID := strings.Clone(reqID)
+			bgCorrID := strings.Clone(corrID)
 			_ = s.sfGroup.DoChan(fullKey, func() (any, error) {
 				bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
-				return s.refreshAndStoreOperationalSnapshot(bgCtx, token, reqID, corrID, fullKey)
+				return s.refreshAndStoreOperationalSnapshot(bgCtx, bgToken, bgReqID, bgCorrID, fullKey)
 			})
 			return out, "stale", nil
 		}

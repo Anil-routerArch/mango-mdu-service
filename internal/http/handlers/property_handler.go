@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/routerarchitects/mango-mdu-service/internal/models"
@@ -25,7 +26,7 @@ func NewPropertyHandler(svc services.PropertyService, logger ...*slog.Logger) *P
 }
 
 func propertyRequestMetadata(c fiber.Ctx) (string, string, string) {
-	return c.Get("Authorization"), c.Get("X-Request-Id"), c.Get("X-Correlation-Id")
+	return strings.Clone(c.Get("Authorization")), strings.Clone(c.Get("X-Request-Id")), strings.Clone(c.Get("X-Correlation-Id"))
 }
 
 func (h *PropertyHandler) respond(c fiber.Ctx, data any, err error) error {
